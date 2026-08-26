@@ -25,6 +25,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [receivingRow, setReceivingRow] = useState(null);
   const [receiveQtyInput, setReceiveQtyInput] = useState('');
+  const [scrapQtyInput, setScrapQtyInput] = useState('');
   const [liveJobWorks, setLiveJobWorks] = useState([]);
 
   useEffect(() => {
@@ -40,6 +41,40 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     const unsub = subscribeJobWorks(setLiveJobWorks);
     return () => unsub();
   }, []);
+
+  const handleReceiveSubmit = async (e) => {
+    e.preventDefault();
+    if (!receivingRow) return;
+
+    const recKg = Number(receiveQtyInput) || 0;
+    const scrapKg = Number(scrapQtyInput) || 0;
+
+    if (recKg <= 0 && scrapKg <= 0) {
+      alert('Please enter a valid received quantity or scrap quantity.');
+      return;
+    }
+
+    try {
+      await receiveJobWork({
+        jwId: receivingRow.firestoreId || receivingRow.id,
+        currentRecKg: receivingRow.receivedQty,
+        currentScrapKg: receivingRow.scrapQtyKg || 0,
+        totalSentKg: receivingRow.inputQty,
+        recQtyKg: recKg,
+        scrapQtyKg: scrapKg,
+        rawMaterialId: receivingRow.rawMaterialId,
+        itemLabel: receivingRow.material
+      });
+
+      alert(`GRN Receipt recorded for ${receivingRow.id}!\nReceived: ${recKg} KG\nScrap/Wastage: ${scrapKg} KG`);
+      setReceivingRow(null);
+      setReceiveQtyInput('');
+      setScrapQtyInput('');
+    } catch (err) {
+      console.error('Error submitting GRN receipt:', err);
+      alert('Failed to record receipt: ' + err.message);
+    }
+  };
 
   const handleBack = () => {
     setSelectedJwId(null);
@@ -60,24 +95,33 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     }
   };
 
-  const allJobWorkData = liveJobWorks.map(jw => ({
-    id: jw.jwNo || jw.id,
-    firestoreId: jw.id,
-    rawMaterialId: jw.rawMaterialId,
-    challan: jw.chNo || `CH-${jw.jwNo}`,
-    date: jw.date || '2026-08-25',
-    party: jw.vendor || 'Job Worker',
-    material: jw.rawMat || 'PP Granules',
-    process: jw.process || 'Extrusion / Yarn Making',
-    batch: jw.batch || 'BATCH-RM-JW',
-    inputQty: jw.sentQtyKg || Number(String(jw.sentQty || '').replace(/[^0-9]/g, '')) || 2000,
-    receivedQty: jw.recQtyKg || Number(String(jw.recQty || '').replace(/[^0-9]/g, '')) || 0,
-    pendingQty: jw.balQtyKg !== undefined ? jw.balQtyKg : Number(String(jw.balQty || '').replace(/[^0-9]/g, '')) || 0,
-    wastage: jw.wastage || '-',
-    charges: jw.charges || 17500,
-    expectedReturn: jw.expectedReturn || '2026-08-30',
-    status: jw.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : jw.status === 'COMPLETED' ? 'FULLY RECEIVED' : jw.status || 'SENT'
-  }));
+  const allJobWorkData = liveJobWorks.map(jw => {
+    const inputQty = jw.sentQtyKg || Number(String(jw.sentQty || '').replace(/[^0-9]/g, '')) || 2000;
+    const receivedQty = jw.recQtyKg || Number(String(jw.recQty || '').replace(/[^0-9]/g, '')) || 0;
+    const pendingQty = jw.balQtyKg !== undefined ? jw.balQtyKg : Number(String(jw.balQty || '').replace(/[^0-9]/g, '')) || 0;
+    const scrapKg = jw.scrapQtyKg !== undefined ? jw.scrapQtyKg : Math.max(0, inputQty - receivedQty - pendingQty);
+    const wastage = scrapKg > 0 ? `${scrapKg.toLocaleString()} KG` : (jw.wastage && jw.wastage !== '-' ? jw.wastage : '-');
+
+    return {
+      id: jw.jwNo || jw.id,
+      firestoreId: jw.id,
+      rawMaterialId: jw.rawMaterialId,
+      challan: jw.chNo || `CH-${jw.jwNo}`,
+      date: jw.date || '2026-08-25',
+      party: jw.vendor || 'Job Worker',
+      material: jw.rawMat || 'PP Granules',
+      process: jw.process || 'Extrusion / Yarn Making',
+      batch: jw.batch || 'BATCH-RM-JW',
+      inputQty,
+      receivedQty,
+      pendingQty,
+      scrapQtyKg: scrapKg,
+      wastage,
+      charges: jw.charges || 17500,
+      expectedReturn: jw.expectedReturn || '2026-08-30',
+      status: jw.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : jw.status === 'COMPLETED' ? 'FULLY RECEIVED' : jw.status || 'SENT'
+    };
+  });
 
   const totalSentKg = allJobWorkData.reduce((acc, curr) => acc + (Number(curr.inputQty) || 0), 0);
   const totalReceivedKg = allJobWorkData.reduce((acc, curr) => acc + (Number(curr.receivedQty) || 0), 0);
@@ -246,28 +290,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     }
   };
 
-  const handleReceiveSubmit = async (e) => {
-    e.preventDefault();
-    if (!receivingRow || !receiveQtyInput) return;
-    const recKg = Number(receiveQtyInput);
-    try {
-      if (receivingRow.firestoreId) {
-        await receiveJobWork({
-          jwId: receivingRow.firestoreId,
-          rawMaterialId: receivingRow.rawMaterialId,
-          recQtyKg: recKg,
-          currentRecKg: receivingRow.receivedQty,
-          totalSentKg: receivingRow.inputQty,
-          itemLabel: receivingRow.material
-        });
-      }
-      alert(`Successfully received ${recKg} KG for ${receivingRow.id} from ${receivingRow.party}.`);
-    } catch (err) {
-      console.error('Error receiving job work:', err);
-    }
-    setReceivingRow(null);
-    setReceiveQtyInput('');
-  };
+
 
   return (
     <div className="jw-hub-container">
@@ -939,7 +962,14 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                   </div>
                   <div className="mform-field">
                     <label className="mform-label">Scrap / Wastage (KG)</label>
-                    <input type="number" className="mform-input" placeholder="e.g. 20" min="0" />
+                    <input
+                      type="number"
+                      className="mform-input"
+                      placeholder="e.g. 20"
+                      value={scrapQtyInput}
+                      onChange={e => setScrapQtyInput(e.target.value)}
+                      min="0"
+                    />
                   </div>
                 </div>
               </div>

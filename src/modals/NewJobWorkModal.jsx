@@ -62,7 +62,8 @@ export default function NewJobWorkModal({ onClose, onSave }) {
   const dispatchQty = parseFloat(form.dispatchQty) || 0;
   const wastageKg = dispatchQty * (parseFloat(form.wastage) || 0) / 100;
   const targetOutput = Math.max(0, dispatchQty - wastageKg);
-  const totalPayable = dispatchQty * (parseFloat(form.processingRate) || 0) + (parseFloat(form.freight) || 0);
+  const currentRate = form.processingRate !== '' ? parseFloat(form.processingRate) || 0 : 18;
+  const totalPayable = dispatchQty * currentRate + (parseFloat(form.freight) || 0);
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
