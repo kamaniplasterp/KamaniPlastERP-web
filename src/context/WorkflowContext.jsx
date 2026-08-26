@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { 
   addRawMaterial, 
   addFinishedGood, 
@@ -22,6 +23,7 @@ import {
 const WorkflowContext = createContext();
 
 export function WorkflowProvider({ children }) {
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(0); // Last executed step
   const [activeStepTarget, setActiveStepTarget] = useState(1); // Next active step
   const [completedSteps, setCompletedSteps] = useState([]);
@@ -36,8 +38,18 @@ export function WorkflowProvider({ children }) {
   const [dispatchList, setDispatchList] = useState([]);
   const [movementList, setMovementList] = useState([]);
 
-  // Subscribe to real-time Firestore updates
+  // Subscribe to real-time Firestore updates only when user is authenticated
   useEffect(() => {
+    if (!user) {
+      setRmList([]);
+      setFgList([]);
+      setJobWorkList([]);
+      setSalesOrderList([]);
+      setDispatchList([]);
+      setMovementList([]);
+      return () => {};
+    }
+
     const unsubRm = subscribeRawMaterials(setRmList);
     const unsubFg = subscribeFinishedGoods(setFgList);
     const unsubJw = subscribeJobWorks(setJobWorkList);
@@ -53,7 +65,7 @@ export function WorkflowProvider({ children }) {
       unsubDc();
       unsubMov();
     };
-  }, []);
+  }, [user]);
 
   // Computed metrics derived from Firestore live data
   const rmStock = rmList.reduce((acc, curr) => acc + (Number(curr.availFactory) || 0), 0);
