@@ -1,0 +1,163 @@
+/* Add Finished Goods Stock Modal */
+.afg-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(3px);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.15s ease;
+}
+
+.afg-modal-content {
+  width: 500px;
+  max-width: 95vw;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+  animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Header */
+.afg-modal-header {
+  background: #0f172a;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.afg-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+.afg-modal-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.afg-modal-close:hover { color: #ffffff; }
+
+/* Form */
+.afg-modal-form {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Summary Box */
+.afg-product-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.afg-prod-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.afg-prod-sub {
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+/* Form Group */
+.afg-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.afg-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334155;
+}
+.afg-input {
+  padding: 9px 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  color: #0f172a;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.afg-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.afg-textarea {
+  padding: 9px 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  color: #0f172a;
+  outline: none;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 65px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.afg-textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Footer */
+.afg-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid #f1f5f9;
+}
+.afg-btn-cancel {
+  padding: 8px 18px;
+  background: #e2e8f0;
+  color: #475569;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.afg-btn-cancel:hover { background: #cbd5e1; }
+
+.afg-btn-submit {
+  padding: 8px 22px;
+  background: #059669;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.afg-btn-submit:hover { background: #047857; }

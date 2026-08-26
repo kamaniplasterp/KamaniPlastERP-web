@@ -1,0 +1,446 @@
+/* ============================================================
+   KAMANI PLAST ERP – Modal Components Stylesheet
+   ============================================================ */
+
+/* ─── Modal Overlay ─── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.68);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: overlay-in 0.18s ease;
+}
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ─── Dialog Box ─── */
+.modal-dialog {
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow: hidden;
+  animation: dialog-in 0.2s cubic-bezier(0.34, 1.4, 0.64, 1);
+  width: 100%;
+}
+@keyframes dialog-in {
+  from { transform: scale(0.94) translateY(10px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+.modal-lg { max-width: 780px; }
+.modal-md { max-width: 700px; }
+
+/* ─── Dark Header ─── */
+.modal-header-dark {
+  background: #0f172a;
+  padding: 18px 22px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 14px 14px 0 0;
+  flex-shrink: 0;
+}
+.modal-header-icon-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.modal-header-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.2);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0;
+  line-height: 1.3;
+}
+.modal-subtitle {
+  font-size: 0.74rem;
+  color: #64748b;
+  margin-top: 3px;
+}
+.modal-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #f1f5f9;
+}
+
+/* ─── Modal Body ─── */
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #e2e8f0 transparent;
+  background: #ffffff;
+}
+.modal-body::-webkit-scrollbar { width: 4px; }
+.modal-body::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+
+/* ─── Form Grids ─── */
+.mform-row { display: grid; gap: 12px; }
+.mform-col-2 { grid-template-columns: 1fr 1fr; }
+.mform-col-3 { grid-template-columns: 1fr 1fr 1fr; }
+.mform-col-2-auto { grid-template-columns: 1fr auto; }
+.mform-col-group { display: flex; flex-direction: column; gap: 12px; }
+
+/* ─── Form Field ─── */
+.mform-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.mform-field-wide { flex: 1; }
+.mform-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #374151;
+}
+.mform-label-sm {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+.req { color: #ef4444; }
+
+/* Inputs & Selects */
+.mform-input,
+.mform-select,
+.mform-textarea {
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-family: var(--font, 'Inter', sans-serif);
+  color: #111827;
+  background: #ffffff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  appearance: auto;
+}
+.mform-input:focus,
+.mform-select:focus,
+.mform-textarea:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.mform-input-sm,
+.mform-select-sm {
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+.mform-textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+/* Form Hints */
+.mform-hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+.hint-green { color: #16a34a; font-weight: 700; }
+.hint-blue  { color: #2563eb; font-weight: 700; }
+
+/* Calculated Read-Only Fields */
+.mform-calc-field {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 12px;
+  min-height: 38px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 7px;
+}
+.calc-value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #15803d;
+}
+.calc-total { font-size: 1rem; }
+.calc-note {
+  font-size: 0.65rem;
+  color: #4ade80;
+  margin-top: 1px;
+}
+
+/* Section Box */
+.mform-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 14px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mform-section-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  color: #92400e;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.msec-icon { color: #f97316; }
+
+/* Plain Section Header */
+.mform-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.mform-section-plain-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  color: #374151;
+  text-transform: uppercase;
+}
+.mform-add-line-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #2563eb;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font, 'Inter', sans-serif);
+}
+.mform-add-line-btn:hover { text-decoration: underline; }
+
+/* Order Lines */
+.mform-lines { display: flex; flex-direction: column; gap: 10px; }
+.mform-line-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+.mform-line-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+.mform-amount-display {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #111827;
+}
+.mform-remove-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mform-remove-line:hover { background: #fee2e2; }
+
+/* Summary Box */
+.mform-summary-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 14px 16px;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.summary-label { font-size: 0.72rem; color: #6b7280; white-space: nowrap; }
+.summary-val   { font-size: 0.78rem; font-weight: 600; color: #111827; }
+.summary-gst   { color: #2563eb; }
+.summary-freight-input {
+  width: 80px;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  font-family: var(--font, 'Inter', sans-serif);
+  color: #111827;
+  text-align: right;
+  outline: none;
+}
+.summary-freight-input:focus { border-color: #3b82f6; }
+.summary-divider { height: 1px; background: #e2e8f0; margin: 2px 0; }
+.summary-total-label { font-size: 0.82rem; font-weight: 800; color: #111827; }
+.summary-total-val   { font-size: 0.92rem; font-weight: 800; color: #111827; }
+
+/* Modal Footer */
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
+}
+.mfooter-btn {
+  padding: 9px 20px;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  font-family: var(--font, 'Inter', sans-serif);
+  transition: all 0.15s;
+}
+.mfooter-btn.cancel {
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid #e2e8f0;
+}
+.mfooter-btn.cancel:hover { background: #f8fafc; color: #374151; }
+.mfooter-btn.confirm { background: #0f172a; color: #f8fafc; }
+.mfooter-btn.confirm:hover { background: #1e293b; }
+.mfooter-btn.green-btn { background: #059669; color: #ffffff; }
+.mfooter-btn.green-btn:hover { background: #047857; }
+
+/* Dispatch Challan Item Box */
+.dispatch-items-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dispatch-items-title {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  text-transform: uppercase;
+}
+.dispatch-item-row {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dispatch-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dispatch-item-name {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: #0f172a;
+}
+.dispatch-item-sub {
+  font-size: 0.68rem;
+  color: #64748b;
+}
+.dispatch-qty-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.dispatch-qty-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+}
+.dispatch-qty-input {
+  width: 75px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #059669;
+  text-align: center;
+  outline: none;
+  font-family: var(--font, 'Inter', sans-serif);
+}
+.dispatch-qty-input:focus {
+  border-color: #059669;
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.15);
+}
+
+/* Modal Responsive */
+@media (max-width: 680px) {
+  .modal-overlay { padding: 10px; align-items: flex-end; }
+  .modal-dialog  { border-radius: 14px 14px 0 0; max-height: 92vh; }
+  .mform-col-3 { grid-template-columns: 1fr 1fr; }
+  .mform-col-2 { grid-template-columns: 1fr; }
+  .mform-col-2-auto { grid-template-columns: 1fr; }
+  .mform-line-grid { grid-template-columns: 1fr 1fr; }
+  .mform-summary-box { min-width: unset; }
+}
+@media (max-width: 480px) {
+  .mform-col-3 { grid-template-columns: 1fr; }
+  .mform-line-grid { grid-template-columns: 1fr; }
+}

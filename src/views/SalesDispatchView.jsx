@@ -1,0 +1,553 @@
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import {
+  ShoppingCart, Truck, Download, Search, Plus, ArrowUpRight,
+  FileText, ChevronRight, CheckCircle2, AlertTriangle, ArrowUpDown
+} from 'lucide-react';
+import SalesOrderModal from '../modals/SalesOrderModal';
+import DispatchChallanModal from '../modals/DispatchChallanModal';
+import SalesOrderDetailView from '../drawers/SalesOrderDetailView';
+import { useWorkflow } from '../context/WorkflowContext';
+import { exportToCsv } from '../utils/exportCsv';
+import { subscribeSalesOrders, subscribeDispatches, createSalesOrder, createDispatch } from '../api/sales.api';
+import { seedInitialData } from '../api/seed';
+import '../styles/SalesDispatch.css';
+
+
+
+export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModal }) {
+  const location = useLocation();
+  const { openOrdersCount } = useWorkflow();
+  const [activeTab, setActiveTab] = useState(location.state?.tab || 'orders');
+  const [selectedOrderId, setSelectedOrderId] = useState(location.state?.selectedOrderId || null);
+
+  const [liveOrders, setLiveOrders] = useState([]);
+  const [liveDispatches, setLiveDispatches] = useState([]);
+
+  useEffect(() => {
+    if (location.state?.tab) {
+      setActiveTab(location.state.tab);
+    }
+    if (location.state?.selectedOrderId) {
+      setSelectedOrderId(location.state.selectedOrderId);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
+    const unsubSo = subscribeSalesOrders(setLiveOrders);
+    const unsubDc = subscribeDispatches(setLiveDispatches);
+    return () => {
+      unsubSo();
+      unsubDc();
+    };
+  }, []);
+
+  const [orderSearch, setOrderSearch] = useState('');
+  const [dispatchSearch, setDispatchSearch] = useState('');
+  const [showSalesModal, setShowSalesModal] = useState(false);
+  const [showDispatchChallanModal, setShowDispatchChallanModal] = useState(false);
+  const [salesModalMode, setSalesModalMode] = useState('sales');
+
+  const openNewSalesOrder = () => {
+    if (onOpenSalesOrder) onOpenSalesOrder();
+    else {
+      setSalesModalMode('sales');
+      setShowSalesModal(true);
+    }
+  };
+
+  const openDispatchChallan = () => {
+    if (onOpenDispatchModal) onOpenDispatchModal();
+    else {
+      setShowDispatchChallanModal(true);
+    }
+  };
+
+  const handleSaveSalesOrder = async (data) => {
+    try {
+      await createSalesOrder(data);
+    } catch (err) {
+      console.error('Error saving sales order:', err);
+    }
+  };
+
+  const handleSaveDispatch = async (data) => {
+    try {
+      await createDispatch(data);
+    } catch (err) {
+      console.error('Error saving dispatch:', err);
+    }
+  };
+
+  if (selectedOrderId) {
+    return (
+      <div className="sd-hub-container">
+        <SalesOrderDetailView
+          orderId={selectedOrderId}
+          onBack={() => setSelectedOrderId(null)}
+          onCreateDispatch={openDispatchChallan}
+        />
+        {showDispatchChallanModal && (
+          <DispatchChallanModal onClose={() => setShowDispatchChallanModal(false)} />
+        )}
+      </div>
+    );
+  }
+
+  const parseVal = (v) => {
+    if (typeof v === 'number') return v;
+    if (!v) return 0;
+    const n = parseFloat(String(v).replace(/[^0-9.]/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+
+  const totalBookedRevenueInr = liveOrders.reduce((sum, o) => {
+    return sum + (o.totalValue || o.grandTotal || parseVal(o.orderValue));
+  }, 0);
+  const totalBookedRevenueLakhs = (totalBookedRevenueInr / 100000).toFixed(2);
+
+  const totalReadyCoils = liveOrders.reduce((sum, o) => {
+    return sum + (o.reservedCoils || parseVal(o.reserved) || parseVal(o.orderedQty) || 0);
+  }, 0);
+
+  const totalDispatchedValInr = liveDispatches.reduce((sum, d) => {
+    return sum + (d.totalValue || parseVal(d.value));
+  }, 0);
+  const totalDispatchedValLakhs = (totalDispatchedValInr / 100000).toFixed(2);
+
+  const displaySalesOrders = liveOrders.map(o => ({
+    id: o.id,
+    orderNo: o.orderNo || `SO-2026-${o.id.slice(0, 4).toUpperCase()}`,
+    orderDate: o.orderDate || o.date || '2026-08-26',
+    customer: o.customer || 'ABC Marine Traders',
+    destination: o.destination || 'Veraval, Gujarat',
+    poRef: o.poRef || 'PO-2026-901',
+    itemSummary: o.itemSummary || 'PP Danline Rope 6mm (Yellow)',
+    orderedQty: typeof o.orderedQtyCoils === 'number' ? `${o.orderedQtyCoils} Coils` : o.orderedQty || '300 Coils',
+    reserved: typeof o.reservedCoils === 'number' ? `${o.reservedCoils} Coils` : o.reserved || '300 Coils',
+    dispatched: typeof o.dispatchedCoils === 'number' ? `${o.dispatchedCoils} Coils` : o.dispatched || '0 Coils',
+    balance: typeof o.balanceCoils === 'number' ? `${o.balanceCoils} Coils` : o.balance || '300 Coils',
+    totalValue: typeof o.totalValue === 'number' ? `₹${o.totalValue.toLocaleString('en-IN')}` : o.orderValue || '₹8,68,800',
+    status: o.status || 'STOCK RESERVED',
+    statusClass: o.statusClass || (o.status === 'COMPLETED' ? 'pill-completed' : 'pill-reserved')
+  }));
+
+  const { globalSearch } = useWorkflow();
+  const activeOrderQuery = orderSearch || globalSearch || '';
+  const activeDispatchQuery = dispatchSearch || globalSearch || '';
+
+  const filteredOrders = displaySalesOrders.filter(o =>
+    (o.orderNo || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
+    (o.customer || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
+    (o.poRef || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
+    (o.itemSummary || '').toLowerCase().includes(activeOrderQuery.toLowerCase())
+  );
+
+  const displayDispatches = liveDispatches.map(d => ({
+    id: d.id,
+    dispatchNo: d.dispatchNo || `DSP-2026-${d.id.slice(0, 4).toUpperCase()}`,
+    date: d.date || '2026-08-26',
+    customer: d.customer || 'ABC Marine Traders',
+    orderRef: d.orderRef || 'SO-2026-5601',
+    challanNo: d.challanNo || 'DC-2026-360',
+    invoiceNo: d.invoiceNo || 'INV-2026-549',
+    ewayBill: d.ewayBill || 'G00354008407',
+    dispatchedQty: typeof d.dispatchedQtyCoils === 'number' ? `${d.dispatchedQtyCoils} Coils` : d.dispatchedQty || '300 Coils',
+    totalValue: typeof d.totalValue === 'number' ? `₹${d.totalValue.toLocaleString('en-IN')}` : d.value || '₹7,35,000',
+    vehicleNo: d.vehicle || 'GJ-03-BW-7821',
+    transporter: d.transporter || 'Shree Saurashtra Roadlines',
+    status: d.status || 'DISPATCHED'
+  }));
+
+  const filteredDispatches = displayDispatches.filter(d =>
+    (d.dispatchNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+    (d.challanNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+    (d.invoiceNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+    (d.customer || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+    (d.vehicleNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="sd-hub-container">
+      {/* ── Page Header ── */}
+      <div className="sd-page-header">
+        <div className="sd-header-left">
+          <div className="sd-title-row">
+            <h1 className="sd-page-title">Sales &amp; Dispatch Logistics Hub</h1>
+            <span className="sd-badge-blue">{liveOrders.length} Open Orders</span>
+          </div>
+          <p className="sd-page-subtitle">
+            End-to-end sales booking, inventory allocation, delivery challan generation, and dispatch tracking.
+          </p>
+        </div>
+
+        <div className="sd-header-right">
+          <button className="sd-btn-primary-blue" onClick={openNewSalesOrder}>
+            <Plus size={15} /> New Sales Order
+          </button>
+          <button className="sd-btn-dark-head" onClick={openDispatchChallan}>
+            <Plus size={15} /> Dispatch Challan
+          </button>
+        </div>
+      </div>
+
+      {/* ── Top 4 KPI Cards Grid ── */}
+      <div className="sd-top-kpis">
+        <div className="sd-kpi-card">
+          <span className="sd-kpi-title">TOTAL BOOKED REVENUE</span>
+          <div className="sd-kpi-val-row">
+            <span className="sd-kpi-num">₹{totalBookedRevenueLakhs}L</span>
+          </div>
+        </div>
+
+        <div className="sd-kpi-card">
+          <span className="sd-kpi-title">READY FOR DISPATCH</span>
+          <div className="sd-kpi-val-row">
+            <span className="sd-kpi-num">{totalReadyCoils.toLocaleString()}</span>
+            <span className="sd-kpi-sublabel">Coils</span>
+          </div>
+        </div>
+
+        <div className="sd-kpi-card">
+          <span className="sd-kpi-title">COMPLETED DISPATCHES</span>
+          <div className="sd-kpi-val-row">
+            <span className="sd-kpi-num">{liveDispatches.length}</span>
+            <span className="sd-kpi-sublabel">shipments</span>
+          </div>
+        </div>
+
+        <div className="sd-kpi-card">
+          <span className="sd-kpi-title">DISPATCHED VALUE</span>
+          <div className="sd-kpi-val-row">
+            <span className="sd-kpi-num">₹{totalDispatchedValLakhs}L</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Segmented Tab Bar ── */}
+      <div className="sd-tab-bar">
+        <button
+          className={`sd-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
+          onClick={() => setActiveTab('orders')}
+        >
+          <ShoppingCart size={14} />
+          Sales Orders &amp; Stock Allocation
+          <span className="sd-tab-badge">{liveOrders.length}</span>
+        </button>
+
+        <button
+          className={`sd-tab-btn ${activeTab === 'dispatches' ? 'active' : ''}`}
+          onClick={() => setActiveTab('dispatches')}
+        >
+          <Truck size={14} />
+          Dispatches &amp; Delivery Challans
+          <span className="sd-tab-badge">{liveDispatches.length}</span>
+        </button>
+      </div>
+
+      {/* ── TAB 1: Sales Orders & Stock Allocation ── */}
+      {activeTab === 'orders' && (
+        <div className="sd-section-card">
+          <div className="sd-section-header">
+            <div className="sd-title-group">
+              <div className="sd-title-row-inner">
+                <h2 className="sd-section-title">Sales Orders Ledger</h2>
+                <span className="sd-badge-purple">{liveOrders.length} Booked Orders</span>
+              </div>
+              <p className="sd-section-subtitle">
+                Manage customer POs, finished goods stock reservations, partial dispatches, and delivery status.
+              </p>
+            </div>
+
+            <div className="sd-header-right">
+              <button className="sd-btn-ghost" onClick={() => exportToCsv('Sales_Orders_Ledger.csv', filteredOrders)} style={{ cursor: 'pointer' }}>
+                <Download size={14} /> Export CSV
+              </button>
+              <button className="sd-btn-dark-pill" onClick={openNewSalesOrder}>
+                <Plus size={14} /> New Sales Order
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Summary KPI Cards Row */}
+          <div className="sd-summary-kpi-grid">
+            <div className="sd-skpi-card">
+              <div className="sd-skpi-title">TOTAL BOOKED ORDERS</div>
+              <div className="sd-skpi-val-row">
+                <span className="sd-skpi-val">{liveOrders.length}</span>
+              </div>
+              <div className="sd-skpi-sub">Value: ₹{totalBookedRevenueLakhs} Lakhs</div>
+            </div>
+
+            <div className="sd-skpi-card">
+              <div className="sd-skpi-title">OPEN PENDING ORDERS</div>
+              <div className="sd-skpi-val-row">
+                <span className="sd-skpi-val sd-text-blue">{liveOrders.filter(o => o.status !== 'COMPLETED').length}</span>
+              </div>
+              <div className="sd-skpi-sub">Awaiting fulfillment / dispatch</div>
+            </div>
+
+            <div className="sd-skpi-card sd-skpi-green">
+              <div className="sd-skpi-title sd-skpi-title-green">READY TO DISPATCH</div>
+              <div className="sd-skpi-val-row">
+                <span className="sd-skpi-val sd-text-green">{liveOrders.filter(o => (o.reservedCoils || parseVal(o.reserved) || parseVal(o.orderedQty) || 0) > 0).length}</span>
+              </div>
+              <div className="sd-skpi-sub">Stock reserved &amp; ready</div>
+            </div>
+
+            <div className="sd-skpi-card">
+              <div className="sd-skpi-title">TOTAL ORDER PIPELINE</div>
+              <div className="sd-skpi-val-row">
+                <span className="sd-skpi-val">₹{totalBookedRevenueInr.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="sd-skpi-sub">Gross commercial bookings</div>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="sd-filter-bar">
+            <div className="sd-search-input-wrap">
+              <Search size={14} className="sd-search-icon" />
+              <input
+                type="text"
+                placeholder="Search Order No (SO-...), Customer Name, PO Number..."
+                className="sd-filter-search"
+                value={orderSearch}
+                onChange={e => setOrderSearch(e.target.value)}
+              />
+            </div>
+
+            <select className="sd-filter-select">
+              <option value="All">All Order Statuses</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Reserved">Stock Reserved</option>
+              <option value="Ready">Ready to Dispatch</option>
+              <option value="Partially">Partially Dispatched</option>
+            </select>
+
+            <select className="sd-filter-select">
+              <option value="All">All Customers</option>
+              <option value="Oceanic">Oceanic Rope Traders</option>
+              <option value="Gujarat">Gujarat Industrial Supply</option>
+              <option value="Shree">Shree Fisheries Supply Co.</option>
+              <option value="ABC">ABC Marine Traders</option>
+            </select>
+          </div>
+
+          {/* Dark Header Table */}
+          <div className="sd-table-container">
+            <table className="sd-table">
+              <thead>
+                <tr>
+                  <th>ORDER NO ↕</th>
+                  <th>ORDER DATE ↕</th>
+                  <th>CUSTOMER &amp; DESTINATION</th>
+                  <th>ITEMS SUMMARY</th>
+                  <th>ORDERED QTY</th>
+                  <th>RESERVED</th>
+                  <th>DISPATCHED</th>
+                  <th>BALANCE</th>
+                  <th>ORDER VALUE ↕</th>
+                  <th>STATUS</th>
+                  <th>ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOrders.map(row => (
+                  <tr
+                    key={row.orderNo}
+                    onClick={() => setSelectedOrderId(row.orderNo)}
+                    style={{ cursor: 'pointer' }}
+                    title={`Click to open Sales Order Detail page for ${row.orderNo}`}
+                  >
+                    <td className="td-order-num">
+                      <span className="sd-id-link">{row.orderNo}</span>
+                      <span className="sd-po-sub">{row.poRef}</span>
+                    </td>
+                    <td className="td-date">{row.date}</td>
+                    <td>
+                      <div className="td-cust-name">{row.customer}</div>
+                      <div className="sd-po-sub">{row.expDate}</div>
+                    </td>
+                    <td className="td-items-col">
+                      <div className="sd-item-main">{row.itemSummary}</div>
+                      {row.moreItems && <div className="sd-items-more">{row.moreItems}</div>}
+                    </td>
+                    <td className="td-qty-bold">{row.orderedQty}</td>
+                    <td className="td-qty-blue">{row.reserved}</td>
+                    <td className="td-qty-green">{row.dispatched}</td>
+                    <td className="td-qty-orange">{row.balance}</td>
+                    <td className="td-order-val">{row.orderValue}</td>
+                    <td>
+                      <span className={`sd-status-pill ${row.statusClass}`}>
+                        • {row.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="sd-action-group" onClick={e => e.stopPropagation()}>
+                        <button className="sd-btn-dispatch" onClick={openDispatchChallan}>
+                          Dispatch
+                        </button>
+                        <button className="sd-icon-action" title="View Details">
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 2: Dispatches & Delivery Challans ── */}
+      {activeTab === 'dispatches' && (
+        <div className="sd-section-card">
+          <div className="sd-section-header">
+            <div className="sd-title-group">
+              <div className="sd-title-row-inner">
+                <h2 className="sd-section-title">Dispatch &amp; Delivery Challan Registry</h2>
+                <span className="sd-badge-green">{liveDispatches.length} Outward Consignments</span>
+              </div>
+              <p className="sd-section-subtitle">
+                Generate delivery challans, GST tax invoices, E-Way bills, and transport vehicle gate passes for customer deliveries.
+              </p>
+            </div>
+
+            <div className="sd-header-right">
+              <button className="sd-btn-ghost" onClick={() => exportToCsv('Delivery_Dispatches_Ledger.csv', filteredDispatches)} style={{ cursor: 'pointer' }}>
+                <Download size={14} /> Export CSV
+              </button>
+              <button className="sd-btn-dark-pill" onClick={openDispatchChallan}>
+                <Plus size={14} /> New Dispatch Challan
+              </button>
+            </div>
+          </div>
+
+          {/* 3 Summary KPI Cards Row */}
+          <div className="sd-summary-kpi-grid">
+            <div className="sd-skpi-card">
+              <div className="sd-skpi-title">TOTAL DISPATCHES EXECUTED</div>
+              <div className="sd-skpi-val-row">
+                <span className="sd-skpi-val">{liveDispatches.length}</span>
+              </div>
+              <div className="sd-skpi-sub">With full statutory compliance</div>
+            </div>
+
+            <div className="sd-skpi-card sd-skpi-green">
+              <div className="sd-skpi-title sd-skpi-title-green">TOTAL QUANTITY DELIVERED</div>
+              <div className="sd-skpi-val-row">
+                <span className="sd-skpi-val sd-text-green">
+                  {liveDispatches.reduce((sum, d) => sum + (Number(d.qty) || Number(d.dispatchedQtyCoils) || 0), 0)}
+                </span>
+                <span className="sd-skpi-unit">Coils</span>
+              </div>
+              <div className="sd-skpi-sub">Dispatched to customer docks</div>
+            </div>
+
+            <div className="sd-skpi-card">
+              <div className="sd-skpi-title">TOTAL DISPATCHED VALUE</div>
+              <div className="sd-skpi-val-row">
+                <span className="sd-skpi-val">
+                  ₹{liveDispatches.reduce((sum, d) => sum + (Number(d.value) || Number(d.dispatchedValue) || 0), 0).toLocaleString()}
+                </span>
+              </div>
+              <div className="sd-skpi-sub">Invoiced customer revenue</div>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="sd-filter-bar">
+            <div className="sd-search-input-wrap">
+              <Search size={14} className="sd-search-icon" />
+              <input
+                type="text"
+                placeholder="Search Dispatch No, Challan No (DC-...), Tax Invoice (INV-...), Vehicle, Customer..."
+                className="sd-filter-search"
+                value={dispatchSearch}
+                onChange={e => setDispatchSearch(e.target.value)}
+              />
+            </div>
+
+            <select className="sd-filter-select">
+              <option value="All">All Dispatch Statuses</option>
+              <option value="Dispatched">Dispatched</option>
+              <option value="InTransit">In Transit</option>
+              <option value="Delivered">Delivered</option>
+            </select>
+          </div>
+
+          {/* Dark Header Table */}
+          <div className="sd-table-container">
+            <table className="sd-table">
+              <thead>
+                <tr>
+                  <th>DISPATCH NO</th>
+                  <th>DATE</th>
+                  <th>CUSTOMER &amp; ORDER REF</th>
+                  <th>DELIVERY CHALLAN</th>
+                  <th>TAX INVOICE</th>
+                  <th>DISPATCHED QTY</th>
+                  <th>VALUE (₹)</th>
+                  <th>TRANSPORTER &amp; VEHICLE</th>
+                  <th>STATUS</th>
+                  <th>PRINT DOCUMENTS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDispatches.map(row => (
+                  <tr key={row.dispatchNo}>
+                    <td className="td-order-num">{row.dispatchNo}</td>
+                    <td className="td-date">{row.date}</td>
+                    <td>
+                      <div className="td-cust-name">{row.customer}</div>
+                      <div className="sd-po-sub">{row.orderRef}</div>
+                    </td>
+                    <td className="td-code">{row.challanNo}</td>
+                    <td>
+                      <div className="inv-item-name">{row.taxInvoice}</div>
+                      <div className="sd-po-sub">{row.ewayBill}</div>
+                    </td>
+                    <td className="td-qty-green">{row.dispatchedQty}</td>
+                    <td className="td-order-val">{row.value}</td>
+                    <td>
+                      <div className="sd-item-main">{row.vehicle}</div>
+                      <div className="sd-po-sub">{row.transporter}</div>
+                    </td>
+                    <td>
+                      <span className="sd-status-pill pill-dispatched">
+                        • {row.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="sd-action-group">
+                        <button className="sd-btn-doc-dark" onClick={() => alert(`Print Challan ${row.challanNo}`)}>
+                          Challan
+                        </button>
+                        <button className="sd-btn-doc" onClick={() => alert(`Print Invoice ${row.taxInvoice}`)}>
+                          Invoice
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Local Modals ── */}
+      {showSalesModal && (
+        <SalesOrderModal
+          mode={salesModalMode}
+          onClose={() => setShowSalesModal(false)}
+        />
+      )}
+      {showDispatchChallanModal && (
+        <DispatchChallanModal onClose={() => setShowDispatchChallanModal(false)} />
+      )}
+    </div>
+  );
+}
