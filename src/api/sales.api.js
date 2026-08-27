@@ -2,21 +2,22 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
-  updateDoc, 
   doc, 
   serverTimestamp,
   query,
-  orderBy
+  orderBy,
+  limit,
+  runTransaction
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { updateFgStock, logStockMovement } from './inventory.api';
 
 /**
- * Subscribe to real-time Sales Orders collection
+ * Subscribe to real-time Sales Orders collection with optional limit
  */
-export function subscribeSalesOrders(callback) {
+export function subscribeSalesOrders(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'salesOrders'), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'salesOrders'), orderBy('createdAt', 'desc'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -30,11 +31,11 @@ export function subscribeSalesOrders(callback) {
 }
 
 /**
- * Subscribe to real-time Dispatches collection
+ * Subscribe to real-time Dispatches collection with optional limit
  */
-export function subscribeDispatches(callback) {
+export function subscribeDispatches(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'dispatches'), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'dispatches'), orderBy('createdAt', 'desc'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -98,18 +99,21 @@ export async function createSalesOrder(data) {
 }
 
 /**
- * Reserve stock for a Sales Order
+ * Reserve stock for a Sales Order atomically
  */
 export async function reserveSalesOrderStock(soId, fgSkuId, reserveCoils = 500) {
   if (!db || !soId) throw new Error('Firestore not initialized');
 
   const soRef = doc(db, 'salesOrders', soId);
-  await updateDoc(soRef, {
-    reserved: `${reserveCoils}`,
-    reservedCoils: reserveCoils,
-    status: 'STOCK RESERVED',
-    statusClass: 'pill-reserved',
-    updatedAt: serverTimestamp()
+
+  await runTransaction(db, async (transaction) => {
+    transaction.set(soRef, {
+      reserved: `${reserveCoils}`,
+      reservedCoils: reserveCoils,
+      status: 'STOCK RESERVED',
+      statusClass: 'pill-reserved',
+      updatedAt: serverTimestamp()
+    }, { merge: true });
   });
 
   if (fgSkuId) {
@@ -131,7 +135,7 @@ export async function reserveSalesOrderStock(soId, fgSkuId, reserveCoils = 500) 
 }
 
 /**
- * Create a Dispatch Challan
+ * Create a Dispatch Challan atomically
  */
 export async function createDispatch(data) {
   if (!db) throw new Error('Firestore not initialized');
@@ -159,26 +163,31 @@ export async function createDispatch(data) {
 
   const docRef = await addDoc(collection(db, 'dispatches'), dispatchDoc);
 
-  // Update Sales Order record if soId provided
+  // Update Sales Order record if soId provided using runTransaction
   if (data.soId) {
-    const currentDispatched = Number(data.currentDispatchedCoils || 0) + dispatchQtyCoils;
-    const totalOrdered = Number(data.totalOrderedCoils || 500);
-    const balanceCoils = Math.max(0, totalOrdered - currentDispatched);
-    const isCompleted = balanceCoils <= 0;
-
     const soRef = doc(db, 'salesOrders', data.soId);
-    await updateDoc(soRef, {
-      dispatched: `${currentDispatched}`,
-      dispatchedCoils: currentDispatched,
-      balance: `${balanceCoils}`,
-      balanceCoils: balanceCoils,
-      status: isCompleted ? 'COMPLETED' : 'PARTIALLY DISPATCHED',
-      statusClass: isCompleted ? 'pill-completed' : 'pill-partial-disp',
-      updatedAt: serverTimestamp()
+    await runTransaction(db, async (transaction) => {
+      const soSnap = await transaction.get(soRef);
+      const existingSo = soSnap.exists() ? soSnap.data() : {};
+
+      const currentDispatched = (Number(existingSo.dispatchedCoils) || Number(data.currentDispatchedCoils) || 0) + dispatchQtyCoils;
+      const totalOrdered = Number(existingSo.orderedQtyCoils) || Number(data.totalOrderedCoils) || 500;
+      const balanceCoils = Math.max(0, totalOrdered - currentDispatched);
+      const isCompleted = balanceCoils <= 0;
+
+      transaction.set(soRef, {
+        dispatched: `${currentDispatched}`,
+        dispatchedCoils: currentDispatched,
+        balance: `${balanceCoils}`,
+        balanceCoils: balanceCoils,
+        status: isCompleted ? 'COMPLETED' : 'PARTIALLY DISPATCHED',
+        statusClass: isCompleted ? 'pill-completed' : 'pill-partial-disp',
+        updatedAt: serverTimestamp()
+      }, { merge: true });
     });
   }
 
-  // Deduct FG Stock
+  // Deduct FG Stock atomically
   if (data.fgSkuId) {
     await updateFgStock(data.fgSkuId, -dispatchQtyCoils, -dispatchQtyCoils);
   }
@@ -199,3 +208,4 @@ export async function createDispatch(data) {
 
   return docRef.id;
 }
+

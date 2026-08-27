@@ -2,22 +2,22 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
-  updateDoc, 
   doc, 
   serverTimestamp,
   query,
   orderBy,
-  increment
+  limit,
+  runTransaction
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { updateRmStock, logStockMovement } from './inventory.api';
 
 /**
- * Subscribe to real-time Job Works collection
+ * Subscribe to real-time Job Works collection with optional limit
  */
-export function subscribeJobWorks(callback) {
+export function subscribeJobWorks(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'jobWorks'), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'jobWorks'), orderBy('createdAt', 'desc'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -31,7 +31,7 @@ export function subscribeJobWorks(callback) {
 }
 
 /**
- * Create a new Job Work Order
+ * Create a new Job Work Order with atomic stock update & movement logging
  */
 export async function createJobWork(data) {
   if (!db) throw new Error('Firestore not initialized');
@@ -61,7 +61,7 @@ export async function createJobWork(data) {
 
   const docRef = await addDoc(collection(db, 'jobWorks'), jwDoc);
 
-  // If rawMaterialId is specified, update stock counts
+  // If rawMaterialId is specified, update RM stock atomically
   if (data.rawMaterialId) {
     await updateRmStock(data.rawMaterialId, -sentKg, sentKg);
   }
@@ -84,7 +84,7 @@ export async function createJobWork(data) {
 }
 
 /**
- * Receive partial or full completed material from Job Worker
+ * Receive partial or full completed material from Job Worker atomically
  */
 export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg = 0, currentRecKg = 0, currentScrapKg = 0, totalSentKg, itemLabel, remarks }) {
   if (!db || !jwId) throw new Error('Firestore not initialized');
@@ -96,19 +96,31 @@ export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg
   const isCompleted = remainingBal <= 0;
 
   const jwRef = doc(db, 'jobWorks', jwId);
-  await updateDoc(jwRef, {
-    recQty: `${newRecTotal.toLocaleString()} KG`,
-    recQtyKg: newRecTotal,
-    scrapQty: `${newScrapTotal.toLocaleString()} KG`,
-    scrapQtyKg: newScrapTotal,
-    balQty: `${remainingBal.toLocaleString()} KG`,
-    balQtyKg: remainingBal,
-    status: isCompleted ? 'COMPLETED' : 'PARTIAL',
-    statusClass: isCompleted ? 'pill-green' : 'pill-orange',
-    updatedAt: serverTimestamp()
+
+  await runTransaction(db, async (transaction) => {
+    const docSnap = await transaction.get(jwRef);
+    const existingData = docSnap.exists() ? docSnap.data() : {};
+    
+    const recSoFar = (Number(existingData.recQtyKg) || Number(currentRecKg) || 0) + Number(recQtyKg || 0);
+    const scrapSoFar = (Number(existingData.scrapQtyKg) || Number(currentScrapKg) || 0) + Number(scrapQtyKg || 0);
+    const sentTotal = Number(existingData.sentQtyKg) || Number(totalSentKg) || 2000;
+    const remBal = Math.max(0, sentTotal - (recSoFar + scrapSoFar));
+    const compState = remBal <= 0;
+
+    transaction.set(jwRef, {
+      recQty: `${recSoFar.toLocaleString()} KG`,
+      recQtyKg: recSoFar,
+      scrapQty: `${scrapSoFar.toLocaleString()} KG`,
+      scrapQtyKg: scrapSoFar,
+      balQty: `${remBal.toLocaleString()} KG`,
+      balQtyKg: remBal,
+      status: compState ? 'COMPLETED' : 'PARTIAL',
+      statusClass: compState ? 'pill-green' : 'pill-orange',
+      updatedAt: serverTimestamp()
+    }, { merge: true });
   });
 
-  // Update RM stock (increase factory available stock, decrease atJobWork count)
+  // Update RM stock atomically (increase factory available stock, decrease atJobWork count)
   const totalDeduction = Number(recQtyKg || 0) + Number(scrapQtyKg || 0);
   const recInward = Number(recQtyKg || 0);
   await updateRmStock(rawMaterialId, recInward, -totalDeduction);
@@ -127,3 +139,4 @@ export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg
     remarks: remarks || `Receipt of ${recQtyKg} KG processed material from Job Worker`
   });
 }
+

@@ -2,21 +2,22 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
-  updateDoc, 
-  getDoc,
   doc, 
   serverTimestamp,
   query,
-  orderBy
+  orderBy,
+  limit,
+  runTransaction,
+  getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 
 /**
- * Subscribe to real-time Raw Materials collection
+ * Subscribe to real-time Raw Materials collection with optional query limit
  */
-export function subscribeRawMaterials(callback) {
+export function subscribeRawMaterials(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'rawMaterials'));
+  const q = query(collection(db, 'rawMaterials'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -30,11 +31,11 @@ export function subscribeRawMaterials(callback) {
 }
 
 /**
- * Subscribe to real-time Finished Goods collection
+ * Subscribe to real-time Finished Goods collection with optional query limit
  */
-export function subscribeFinishedGoods(callback) {
+export function subscribeFinishedGoods(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'finishedGoods'));
+  const q = query(collection(db, 'finishedGoods'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -48,11 +49,11 @@ export function subscribeFinishedGoods(callback) {
 }
 
 /**
- * Subscribe to real-time Stock Ledger / Movements collection
+ * Subscribe to real-time Stock Ledger / Movements collection with default limit of 100
  */
-export function subscribeStockMovements(callback) {
+export function subscribeStockMovements(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'stockMovements'), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'stockMovements'), orderBy('createdAt', 'desc'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -157,76 +158,124 @@ export async function addFinishedGood(data) {
     });
   }
 
+  return docRef.id;
 }
 
 /**
- * Update RM Stock counts safely with non-negative bounds
+ * Update RM Stock counts safely using atomic Firestore runTransaction
  */
 export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0) {
   if (!db) return;
   try {
-    let rmRef = skuId ? doc(db, 'rawMaterials', skuId) : null;
-    let docSnap = rmRef ? await getDoc(rmRef) : null;
+    let targetRef = skuId ? doc(db, 'rawMaterials', skuId) : null;
 
-    if (!docSnap || !docSnap.exists()) {
+    if (!targetRef) {
       const allSnap = await getDocs(collection(db, 'rawMaterials'));
       if (!allSnap.empty) {
-        rmRef = allSnap.docs[0].ref;
-        docSnap = allSnap.docs[0];
+        targetRef = allSnap.docs[0].ref;
       } else {
         return;
       }
     }
 
-    const data = docSnap.data();
-    const newAvail = Math.max(0, (Number(data.availFactory) || 0) + factoryDelta);
-    const newJw = Math.max(0, (Number(data.atJobWork) || 0) + jwDelta);
-    const reorderLvl = Number(data.reorderLevel || 1000);
-    const newStatus = newAvail >= reorderLvl ? 'IN STOCK' : newAvail > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
+    await runTransaction(db, async (transaction) => {
+      const docSnap = await transaction.get(targetRef);
+      if (!docSnap.exists()) {
+        const fallbackSnap = await getDocs(collection(db, 'rawMaterials'));
+        if (fallbackSnap.empty) return;
+        const fbRef = fallbackSnap.docs[0].ref;
+        const fbDoc = await transaction.get(fbRef);
+        if (!fbDoc.exists()) return;
+        
+        const fbData = fbDoc.data();
+        const newAvail = Math.max(0, (Number(fbData.availFactory) || 0) + factoryDelta);
+        const newJw = Math.max(0, (Number(fbData.atJobWork) || 0) + jwDelta);
+        const reorderLvl = Number(fbData.reorderLevel || 1000);
+        const newStatus = newAvail >= reorderLvl ? 'IN STOCK' : newAvail > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
 
-    await updateDoc(rmRef, {
-      availFactory: newAvail,
-      atJobWork: newJw,
-      status: newStatus,
-      updatedAt: serverTimestamp()
+        transaction.update(fbRef, {
+          availFactory: newAvail,
+          atJobWork: newJw,
+          status: newStatus,
+          updatedAt: serverTimestamp()
+        });
+        return;
+      }
+
+      const data = docSnap.data();
+      const newAvail = Math.max(0, (Number(data.availFactory) || 0) + factoryDelta);
+      const newJw = Math.max(0, (Number(data.atJobWork) || 0) + jwDelta);
+      const reorderLvl = Number(data.reorderLevel || 1000);
+      const newStatus = newAvail >= reorderLvl ? 'IN STOCK' : newAvail > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
+
+      transaction.update(targetRef, {
+        availFactory: newAvail,
+        atJobWork: newJw,
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
     });
   } catch (err) {
-    console.error('Error updating RM stock:', err);
+    console.error('Error updating RM stock atomically:', err);
   }
 }
 
 /**
- * Update FG Stock counts safely with non-negative bounds
+ * Update FG Stock counts safely using atomic Firestore runTransaction
  */
 export async function updateFgStock(skuId, stockDelta = 0, reservedDelta = 0) {
   if (!db) return;
   try {
-    let fgRef = skuId ? doc(db, 'finishedGoods', skuId) : null;
-    let docSnap = fgRef ? await getDoc(fgRef) : null;
+    let targetRef = skuId ? doc(db, 'finishedGoods', skuId) : null;
 
-    if (!docSnap || !docSnap.exists()) {
+    if (!targetRef) {
       const allSnap = await getDocs(collection(db, 'finishedGoods'));
       if (!allSnap.empty) {
-        fgRef = allSnap.docs[0].ref;
-        docSnap = allSnap.docs[0];
+        targetRef = allSnap.docs[0].ref;
       } else {
         return;
       }
     }
 
-    const data = docSnap.data();
-    const newStock = Math.max(0, (Number(data.stockQty) || 0) + stockDelta);
-    const newReserved = Math.max(0, (Number(data.reservedQty) || 0) + reservedDelta);
-    const reorderLvl = Number(data.reorderLevel || 50);
-    const newStatus = newStock >= reorderLvl ? 'IN STOCK' : newStock > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
+    await runTransaction(db, async (transaction) => {
+      const docSnap = await transaction.get(targetRef);
+      if (!docSnap.exists()) {
+        const fallbackSnap = await getDocs(collection(db, 'finishedGoods'));
+        if (fallbackSnap.empty) return;
+        const fbRef = fallbackSnap.docs[0].ref;
+        const fbDoc = await transaction.get(fbRef);
+        if (!fbDoc.exists()) return;
+        
+        const fbData = fbDoc.data();
+        const newStock = Math.max(0, (Number(fbData.stockQty) || 0) + stockDelta);
+        const newReserved = Math.max(0, (Number(fbData.reservedQty) || 0) + reservedDelta);
+        const reorderLvl = Number(fbData.reorderLevel || 50);
+        const newStatus = newStock >= reorderLvl ? 'IN STOCK' : newStock > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
 
-    await updateDoc(fgRef, {
-      stockQty: newStock,
-      reservedQty: newReserved,
-      status: newStatus,
-      updatedAt: serverTimestamp()
+        transaction.update(fbRef, {
+          stockQty: newStock,
+          reservedQty: newReserved,
+          status: newStatus,
+          updatedAt: serverTimestamp()
+        });
+        return;
+      }
+
+      const data = docSnap.data();
+      const newStock = Math.max(0, (Number(data.stockQty) || 0) + stockDelta);
+      const newReserved = Math.max(0, (Number(data.reservedQty) || 0) + reservedDelta);
+      const reorderLvl = Number(data.reorderLevel || 50);
+      const newStatus = newStock >= reorderLvl ? 'IN STOCK' : newStock > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
+
+      transaction.update(targetRef, {
+        stockQty: newStock,
+        reservedQty: newReserved,
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
     });
   } catch (err) {
-    console.error('Error updating FG stock:', err);
+    console.error('Error updating FG stock atomically:', err);
   }
 }
+

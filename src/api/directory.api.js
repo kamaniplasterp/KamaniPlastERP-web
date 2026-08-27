@@ -5,16 +5,17 @@ import {
   updateDoc, 
   doc, 
   serverTimestamp,
-  query
+  query,
+  limit
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 
 /**
- * Subscribe to real-time vendors collection
+ * Subscribe to real-time vendors collection with optional limit
  */
-export function subscribeVendors(callback) {
+export function subscribeVendors(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'vendors'));
+  const q = query(collection(db, 'vendors'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -28,11 +29,11 @@ export function subscribeVendors(callback) {
 }
 
 /**
- * Subscribe to real-time buyers collection
+ * Subscribe to real-time buyers collection with optional limit
  */
-export function subscribeBuyers(callback) {
+export function subscribeBuyers(callback, limitCount = 100) {
   if (!db) return () => {};
-  const q = query(collection(db, 'buyers'));
+  const q = query(collection(db, 'buyers'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
     const list = snapshot.docs.map(docSnap => ({
       id: docSnap.id,
@@ -92,3 +93,4 @@ export async function updateBuyer(id, buyerData) {
     updatedAt: serverTimestamp()
   });
 }
+
