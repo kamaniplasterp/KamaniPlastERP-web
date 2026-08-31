@@ -5,6 +5,8 @@ import {
   doc, 
   serverTimestamp,
   query,
+  where,
+  getDocs,
   orderBy,
   limit,
   runTransaction
@@ -100,25 +102,27 @@ export async function createJobWork(data) {
 export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg = 0, currentRecKg = 0, currentScrapKg = 0, totalSentKg, itemLabel, remarks }) {
   if (!db || !jwId) throw new Error('Firestore not initialized');
 
-  const newRecTotal = (Number(currentRecKg) || 0) + Number(recQtyKg || 0);
-  const newScrapTotal = (Number(currentScrapKg) || 0) + Number(scrapQtyKg || 0);
-  const totalAccounted = newRecTotal + newScrapTotal;
-  const remainingBal = Math.max(0, (Number(totalSentKg) || 0) - totalAccounted);
-  const isCompleted = remainingBal <= 0;
-
-  const jwRef = doc(db, 'jobWorks', jwId);
+  let targetRef = doc(db, 'jobWorks', jwId);
+  try {
+    const qSnap = await getDocs(query(collection(db, 'jobWorks'), where('jwNo', '==', jwId)));
+    if (!qSnap.empty) {
+      targetRef = qSnap.docs[0].ref;
+    }
+  } catch (e) {
+    console.warn('Direct ID used for jobWork receive');
+  }
 
   await runTransaction(db, async (transaction) => {
-    const docSnap = await transaction.get(jwRef);
+    const docSnap = await transaction.get(targetRef);
     const existingData = docSnap.exists() ? docSnap.data() : {};
     
     const recSoFar = (Number(existingData.recQtyKg) || Number(currentRecKg) || 0) + Number(recQtyKg || 0);
     const scrapSoFar = (Number(existingData.scrapQtyKg) || Number(currentScrapKg) || 0) + Number(scrapQtyKg || 0);
-    const sentTotal = Number(existingData.sentQtyKg) || Number(totalSentKg) || 2000;
+    const sentTotal = Number(existingData.sentQtyKg) || Number(totalSentKg) || (recSoFar + scrapSoFar);
     const remBal = Math.max(0, sentTotal - (recSoFar + scrapSoFar));
     const compState = remBal <= 0;
 
-    transaction.set(jwRef, {
+    transaction.set(targetRef, {
       recQty: `${recSoFar.toLocaleString()} KG`,
       recQtyKg: recSoFar,
       scrapQty: `${scrapSoFar.toLocaleString()} KG`,
@@ -134,15 +138,17 @@ export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg
   // Update RM stock atomically (increase factory available stock, decrease atJobWork count)
   const totalDeduction = Number(recQtyKg || 0) + Number(scrapQtyKg || 0);
   const recInward = Number(recQtyKg || 0);
-  await updateRmStock(rawMaterialId, recInward, -totalDeduction);
+  if (rawMaterialId) {
+    await updateRmStock(rawMaterialId, recInward, -totalDeduction);
+  }
 
   // Log stock movement
   await logStockMovement({
     type: 'JWReturn',
     typeBadge: 'inv-badge-jwreturn',
     icon: '↙',
-    ref: `GRN-${jwId.slice(0, 6).toUpperCase()}`,
-    item: itemLabel || 'PP Danline Rope 6mm (Yellow)',
+    ref: `GRN-${String(jwId).slice(0, 8).toUpperCase()}`,
+    item: itemLabel || 'Processed Material',
     batch: 'WIP-RECEIPT',
     inward: `+${recQtyKg} KG`,
     outward: '0 KG',

@@ -5,8 +5,16 @@ import { printSalesOrderAck } from '../utils/printDocument';
 import '../styles/SalesOrderDetail.css';
 
 export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch }) {
-  const { simulatedSalesOrders } = useWorkflow();
+  const { simulatedSalesOrders, simulatedDispatches } = useWorkflow();
   const simMatch = simulatedSalesOrders.find(so => so.orderNo === orderId || so.id === orderId);
+
+  const linkedDispatches = (simulatedDispatches || []).filter(d =>
+    d.soId === orderId ||
+    d.soId === simMatch?.id ||
+    d.orderRef === orderId ||
+    d.orderRef === simMatch?.orderNo ||
+    (typeof d.orderRef === 'string' && (d.orderRef.includes(orderId) || (simMatch?.orderNo && d.orderRef.includes(simMatch.orderNo))))
+  );
 
   const parseVal = (v) => {
     if (typeof v === 'number') return v;
@@ -23,13 +31,13 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
   // Rate per unit (taxable rate)
   const rateNum = Number(simMatch?.rate) || Number(simMatch?.pricePerUnit) || 2450;
   // Subtotal (Taxable)
-  const taxableSubtotalNum = simMatch?.taxableSubtotal || (orderedQtyNum > 0 ? orderedQtyNum * rateNum : parseVal(simMatch?.orderValue) || 735000);
+  const taxableSubtotalNum = (orderedQtyNum > 0 && rateNum > 0) ? (orderedQtyNum * rateNum) : (Number(simMatch?.taxableSubtotal) || 0);
   // GST (18%)
   const gstNum = Math.round(taxableSubtotalNum * 0.18);
   // Freight
   const freightNum = Number(simMatch?.freight) || 0;
   // Grand Total
-  const grandTotalNum = simMatch?.grandTotal || simMatch?.totalValue || (taxableSubtotalNum + gstNum + freightNum);
+  const grandTotalNum = taxableSubtotalNum + gstNum + freightNum;
 
   const defaultItems = (simMatch?.items && simMatch.items.length > 0) ? simMatch.items : [
     {
@@ -222,14 +230,14 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
       <div className="so-section-card">
         <div className="so-section-header">
           <div className="so-section-title">
-            <Truck size={16} className="text-green" /> Dispatches &amp; Delivery Challans Issued ({orderDetails.dispatched > 0 ? '1' : '0'})
+            <Truck size={16} className="text-green" /> Dispatches &amp; Delivery Challans Issued ({linkedDispatches.length})
           </div>
           <button className="so-btn-create-sm" onClick={onCreateDispatch}>
             + Create Dispatch
           </button>
         </div>
 
-        {orderDetails.dispatched > 0 ? (
+        {linkedDispatches.length > 0 ? (
           <div className="so-table-wrap">
             <table className="so-table">
               <thead>
@@ -243,20 +251,22 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="so-item-name">DSP-2026-00182</td>
-                  <td>2026-08-20</td>
-                  <td>DC-2026-0182</td>
-                  <td>INV-2026-0921</td>
-                  <td className="text-green text-bold">300 Coil</td>
-                  <td><span className="so-status-badge pill-confirmed">• DISPATCHED</span></td>
-                </tr>
+                {linkedDispatches.map(d => (
+                  <tr key={d.id || d.dispatchNo}>
+                    <td className="so-item-name">{d.dispatchNo || `DSP-2026-${d.id.slice(0, 4).toUpperCase()}`}</td>
+                    <td>{d.date || '2026-08-26'}</td>
+                    <td>{d.challanNo || 'DC-2026-0182'}</td>
+                    <td>{d.taxInvoice || d.invoiceNo || 'INV-2026-0921'}</td>
+                    <td className="text-green text-bold">{typeof d.dispatchedQtyCoils === 'number' ? `${d.dispatchedQtyCoils} Coils` : (d.dispatchedQty || '0 Coils')}</td>
+                    <td><span className="so-status-badge pill-confirmed">• {d.status || 'DISPATCHED'}</span></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         ) : (
           <div className="so-empty-dispatches">
-            No dispatches made yet for this order. Click "Create Dispatch Challan" to generate delivery notes and e-way bill.
+            No outward dispatches recorded yet for this order. Click "Create Dispatch" to generate delivery notes and e-way bill.
           </div>
         )}
       </div>

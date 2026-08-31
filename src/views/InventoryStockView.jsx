@@ -55,7 +55,11 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   }, []);
 
   const [rmSearch, setRmSearch] = useState('');
+  const [rmCategoryFilter, setRmCategoryFilter] = useState('All');
   const [fgSearch, setFgSearch] = useState('');
+  const [fgCategoryFilter, setFgCategoryFilter] = useState('All');
+  const [movementSearch, setMovementSearch] = useState('');
+  const [movementTypeFilter, setMovementTypeFilter] = useState('All');
   const [traceSearch, setTraceSearch] = useState('JW-2026-0024');
   const [showJWModal, setShowJWModal] = useState(false);
   const [showSalesModal, setShowSalesModal] = useState(false);
@@ -90,8 +94,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         category: formData.category,
         brand: formData.brand,
         grade: formData.grade,
-        availFactory: Number(formData.openingStock || 0),
-        rate: Number(formData.rate || 0)
+        availFactory: Number(formData.initialStock || 0),
+        rate: Number(formData.rate || 0),
+        reorderLevel: Number(formData.reorderLevel || 1000)
       });
     } catch (err) {
       console.error('Error adding raw material:', err);
@@ -159,17 +164,29 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     status: rm.status || (rm.availFactory > 1000 ? 'IN STOCK' : 'LOW STOCK')
   }));
 
+  const uniqueRmCategories = Array.from(new Set(liveRmList.map(r => r.category).filter(Boolean)));
+  const uniqueFgCategories = Array.from(new Set(liveFgList.map(f => f.category).filter(Boolean)));
+
   const { globalSearch } = useWorkflow();
   const activeRmQuery = rmSearch || globalSearch || '';
   const activeFgQuery = fgSearch || globalSearch || '';
 
-  const filteredRm = displayRmList.filter(item =>
-    item.code.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
-    item.name.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
-    item.brand.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
-    item.grade.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
-    item.desc.toLowerCase().includes(activeRmQuery.toLowerCase())
-  );
+  const filteredRm = displayRmList.filter(item => {
+    const matchesQuery =
+      item.code.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      item.name.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      item.brand.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      item.grade.toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      item.desc.toLowerCase().includes(activeRmQuery.toLowerCase());
+
+    const matchesCategory =
+      rmCategoryFilter === 'All' ||
+      item.name.toLowerCase().includes(rmCategoryFilter.toLowerCase()) ||
+      item.desc.toLowerCase().includes(rmCategoryFilter.toLowerCase()) ||
+      item.code.toLowerCase().includes(rmCategoryFilter.toLowerCase());
+
+    return matchesQuery && matchesCategory;
+  });
 
   const displayFgList = liveFgList.map(fg => ({
     id: fg.id,
@@ -185,12 +202,37 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     status: (Number(fg.stockQty) || 0) >= (Number(fg.reorderLevel) || 50) ? 'IN STOCK' : ((Number(fg.stockQty) || 0) > 0 ? 'LOW STOCK' : 'OUT OF STOCK')
   }));
 
-  const filteredFg = displayFgList.filter(item =>
-    item.code.toLowerCase().includes(activeFgQuery.toLowerCase()) ||
-    item.name.toLowerCase().includes(activeFgQuery.toLowerCase()) ||
-    item.sub.toLowerCase().includes(activeFgQuery.toLowerCase()) ||
-    item.diaColor.toLowerCase().includes(activeFgQuery.toLowerCase())
-  );
+  const filteredFg = displayFgList.filter(item => {
+    const matchesQuery =
+      item.code.toLowerCase().includes(activeFgQuery.toLowerCase()) ||
+      item.name.toLowerCase().includes(activeFgQuery.toLowerCase()) ||
+      item.sub.toLowerCase().includes(activeFgQuery.toLowerCase()) ||
+      item.diaColor.toLowerCase().includes(activeFgQuery.toLowerCase());
+
+    const matchesCategory =
+      fgCategoryFilter === 'All' ||
+      item.name.toLowerCase().includes(fgCategoryFilter.toLowerCase()) ||
+      item.sub.toLowerCase().includes(fgCategoryFilter.toLowerCase());
+
+    return matchesQuery && matchesCategory;
+  });
+
+  const activeMovementQuery = movementSearch || globalSearch || '';
+  const filteredMovements = liveMovements.filter(m => {
+    const matchesQuery =
+      (m.ref || '').toLowerCase().includes(activeMovementQuery.toLowerCase()) ||
+      (m.item || '').toLowerCase().includes(activeMovementQuery.toLowerCase()) ||
+      (m.batch || '').toLowerCase().includes(activeMovementQuery.toLowerCase()) ||
+      (m.remarks || '').toLowerCase().includes(activeMovementQuery.toLowerCase()) ||
+      (m.location || '').toLowerCase().includes(activeMovementQuery.toLowerCase());
+
+    const matchesType =
+      movementTypeFilter === 'All' ||
+      m.type === movementTypeFilter ||
+      (m.typeBadge || '').toLowerCase().includes(movementTypeFilter.toLowerCase());
+
+    return matchesQuery && matchesType;
+  });
 
   const totalRmValuationInr = liveRmList.reduce((sum, rm) => {
     const factory = Number(rm.availFactory) || 0;
@@ -421,11 +463,15 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               />
             </div>
 
-            <select className="inv-filter-select">
+            <select
+              className="inv-filter-select"
+              value={rmCategoryFilter}
+              onChange={e => setRmCategoryFilter(e.target.value)}
+            >
               <option value="All">All Polymer Categories</option>
-              <option value="PP">PP Granules</option>
-              <option value="HDPE">HDPE Granules</option>
-              <option value="Masterbatch">Masterbatches</option>
+              {uniqueRmCategories.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
@@ -566,11 +612,15 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               />
             </div>
 
-            <select className="inv-filter-select">
+            <select
+              className="inv-filter-select"
+              value={fgCategoryFilter}
+              onChange={e => setFgCategoryFilter(e.target.value)}
+            >
               <option value="All">All Product Categories</option>
-              <option value="Rope">PP Danline Ropes</option>
-              <option value="HDPE">HDPE Ropes</option>
-              <option value="Twine">Fishing &amp; HDPE Twines</option>
+              {uniqueFgCategories.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
@@ -675,10 +725,16 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 type="text"
                 placeholder="Search Reference No (JW-..., DSP-..., SO-...), Item, Batch, Notes..."
                 className="inv-filter-search"
+                value={movementSearch}
+                onChange={e => setMovementSearch(e.target.value)}
               />
             </div>
 
-            <select className="inv-filter-select">
+            <select
+              className="inv-filter-select"
+              value={movementTypeFilter}
+              onChange={e => setMovementTypeFilter(e.target.value)}
+            >
               <option value="All">All Transaction Types</option>
               <option value="Receipt">Purchase Receipts</option>
               <option value="JWIssue">Job Work Issues</option>
@@ -705,7 +761,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 </tr>
               </thead>
               <tbody>
-                {liveMovements.map((m, i) => (
+                {filteredMovements.map((m, i) => (
                   <tr key={i}>
                     <td className="td-date">{m.time}</td>
                     <td>
@@ -758,13 +814,32 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             </div>
 
             {/* Fast Trace Presets */}
-            {/* Fast Trace Presets */}
             {liveJobWorks.length > 0 ? (
               (() => {
-                const activeTraceJw = liveJobWorks.find(j =>
-                  (j.jwNo || j.id || '').toLowerCase().includes((traceSearch || '').toLowerCase()) ||
-                  (j.vendor || '').toLowerCase().includes((traceSearch || '').toLowerCase())
-                ) || liveJobWorks[0];
+                const activeTraceJw = traceSearch.trim()
+                  ? liveJobWorks.find(j =>
+                      (j.jwNo || j.id || '').toLowerCase().includes(traceSearch.toLowerCase().trim()) ||
+                      (j.vendor || '').toLowerCase().includes(traceSearch.toLowerCase().trim())
+                    )
+                  : liveJobWorks[0];
+
+                if (traceSearch.trim() && !activeTraceJw) {
+                  return (
+                    <div style={{ padding: '50px 20px', textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', marginTop: '16px' }}>
+                      <GitBranch size={40} style={{ marginBottom: '12px', opacity: 0.4, color: '#dc2626' }} />
+                      <h3 style={{ color: '#0f172a', marginBottom: '6px' }}>No Trace Lifecycle Found</h3>
+                      <p style={{ margin: '0 auto', maxWidth: '420px', fontSize: '0.82rem' }}>
+                        No material batch or Job Work records match "<strong>{traceSearch}</strong>". Please search by a valid Job Work ID (e.g. {liveJobWorks[0]?.jwNo || 'JW-2026-340'}).
+                      </p>
+                      <button
+                        onClick={() => setTraceSearch('')}
+                        style={{ marginTop: '14px', padding: '6px 14px', borderRadius: '6px', background: '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.76rem' }}
+                      >
+                        Reset Trace Filter
+                      </button>
+                    </div>
+                  );
+                }
 
                 const matchingFg = (liveFgList && liveFgList.length > 0) ? liveFgList[0] : null;
                 const matchingDc = (liveDispatches && liveDispatches.length > 0) ? liveDispatches[0] : null;

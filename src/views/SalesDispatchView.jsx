@@ -44,7 +44,10 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
   }, []);
 
   const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('All');
+  const [orderCustomerFilter, setOrderCustomerFilter] = useState('All');
   const [dispatchSearch, setDispatchSearch] = useState('');
+  const [dispatchStatusFilter, setDispatchStatusFilter] = useState('All');
   const [showSalesModal, setShowSalesModal] = useState(false);
   const [showDispatchChallanModal, setShowDispatchChallanModal] = useState(false);
   const [salesModalMode, setSalesModalMode] = useState('sales');
@@ -64,26 +67,34 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     }
   };
 
-  const handleSaveSalesOrder = async (data) => {
-    try {
-      await createSalesOrder(data);
-    } catch (err) {
-      console.error('Error saving sales order:', err);
-    }
-  };
+  const exportToCsv = (filename, rows) => {
+    if (!rows || !rows.length) return;
+    const separator = ',';
+    const keys = Object.keys(rows[0]);
+    const csvContent =
+      keys.join(separator) +
+      '\n' +
+      rows.map(row => {
+        return keys.map(k => {
+          let cell = row[k] === null || row[k] === undefined ? '' : row[k];
+          cell = cell instanceof Date ? cell.toLocaleString() : cell.toString().replace(/"/g, '""');
+          if (cell.search(/("|,|\n)/g) >= 0) {
+            cell = `"${cell}"`;
+          }
+          return cell;
+        }).join(separator);
+      }).join('\n');
 
-  const handleSaveDispatch = async (data) => {
-    try {
-      await createDispatch(data);
-    } catch (err) {
-      console.error('Error saving dispatch:', err);
-    }
-  };
-
-  const handleBack = () => {
-    setSelectedOrderId(null);
-    if (window.history.replaceState) {
-      window.history.replaceState({}, document.title, window.location.pathname);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
@@ -92,11 +103,21 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       <div className="sd-hub-container">
         <SalesOrderDetailView
           orderId={selectedOrderId}
-          onBack={handleBack}
-          onCreateDispatch={openDispatchChallan}
+          onBack={() => {
+            setSelectedOrderId(null);
+            if (window.history.replaceState) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          }}
+          onCreateDispatch={() => {
+            setShowDispatchChallanModal(true);
+          }}
         />
         {showDispatchChallanModal && (
-          <DispatchChallanModal onClose={() => setShowDispatchChallanModal(false)} />
+          <DispatchChallanModal
+            defaultOrderId={selectedOrderId}
+            onClose={() => setShowDispatchChallanModal(false)}
+          />
         )}
       </div>
     );
@@ -109,8 +130,19 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     return isNaN(n) ? 0 : n;
   };
 
+  const calcOrderTotals = (o) => {
+    const qty = Number(o.orderedQtyCoils) || parseVal(o.orderedQty) || 0;
+    const rate = Number(o.rate) || (o.items && o.items[0]?.rate ? parseVal(o.items[0].rate) : 2450);
+    const taxable = (qty > 0 && rate > 0) ? (qty * rate) : (parseVal(o.taxableSubtotal) || parseVal(o.orderValue) || (qty * 2450));
+    const gst = Math.round(taxable * 0.18);
+    const freight = Number(o.freight) || 0;
+    const grandTotal = taxable + gst + freight;
+    return { qty, rate, taxable, gst, freight, grandTotal };
+  };
+
   const totalBookedRevenueInr = liveOrders.reduce((sum, o) => {
-    return sum + (o.totalValue || o.grandTotal || parseVal(o.orderValue));
+    const { grandTotal } = calcOrderTotals(o);
+    return sum + grandTotal;
   }, 0);
   const totalBookedRevenueLakhs = (totalBookedRevenueInr / 100000).toFixed(2);
 
@@ -119,37 +151,61 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
   }, 0);
 
   const totalDispatchedValInr = liveDispatches.reduce((sum, d) => {
-    return sum + (d.totalValue || parseVal(d.value));
+    const val = typeof d.totalValue === 'number' && d.totalValue > 0
+      ? d.totalValue
+      : (typeof d.value === 'number' && d.value > 0
+          ? d.value
+          : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || ((Number(d.dispatchedQtyCoils) || 0) * 2891)));
+    return sum + (val || 0);
   }, 0);
   const totalDispatchedValLakhs = (totalDispatchedValInr / 100000).toFixed(2);
 
-  const displaySalesOrders = liveOrders.map(o => ({
-    id: o.id,
-    orderNo: o.orderNo || `SO-2026-${o.id.slice(0, 4).toUpperCase()}`,
-    orderDate: o.orderDate || o.date || '2026-08-26',
-    customer: o.customer || 'ABC Marine Traders',
-    destination: o.destination || 'Veraval, Gujarat',
-    poRef: o.poRef || 'PO-2026-901',
-    itemSummary: o.itemSummary || 'PP Danline Rope 6mm (Yellow)',
-    orderedQty: typeof o.orderedQtyCoils === 'number' ? `${o.orderedQtyCoils} Coils` : o.orderedQty || '300 Coils',
-    reserved: typeof o.reservedCoils === 'number' ? `${o.reservedCoils} Coils` : o.reserved || '300 Coils',
-    dispatched: typeof o.dispatchedCoils === 'number' ? `${o.dispatchedCoils} Coils` : o.dispatched || '0 Coils',
-    balance: typeof o.balanceCoils === 'number' ? `${o.balanceCoils} Coils` : o.balance || '300 Coils',
-    totalValue: typeof o.totalValue === 'number' ? `₹${o.totalValue.toLocaleString('en-IN')}` : o.orderValue || '₹8,68,800',
-    status: o.status || 'STOCK RESERVED',
-    statusClass: o.statusClass || (o.status === 'COMPLETED' ? 'pill-completed' : 'pill-reserved')
-  }));
+  const displaySalesOrders = liveOrders.map(o => {
+    const { qty, grandTotal } = calcOrderTotals(o);
+    return {
+      id: o.id,
+      orderNo: o.orderNo || `SO-2026-${o.id.slice(0, 4).toUpperCase()}`,
+      orderDate: o.orderDate || o.date || '2026-08-26',
+      customer: o.customer || 'ABC Marine Traders',
+      destination: o.destination || 'Veraval, Gujarat',
+      poRef: o.poRef || 'PO-2026-901',
+      itemSummary: o.itemSummary || 'PP Danline Rope 6mm (Yellow)',
+      orderedQty: typeof o.orderedQtyCoils === 'number' ? `${o.orderedQtyCoils} Coils` : o.orderedQty || `${qty} Coils`,
+      reserved: typeof o.reservedCoils === 'number' ? `${o.reservedCoils} Coils` : o.reserved || `${qty} Coils`,
+      dispatched: typeof o.dispatchedCoils === 'number' ? `${o.dispatchedCoils} Coils` : o.dispatched || '0 Coils',
+      balance: typeof o.balanceCoils === 'number' ? `${o.balanceCoils} Coils` : o.balance || `${qty} Coils`,
+      totalValue: `₹${grandTotal.toLocaleString('en-IN')}`,
+      status: o.status || 'STOCK RESERVED',
+      statusClass: o.statusClass || (o.status === 'COMPLETED' ? 'pill-completed' : 'pill-reserved')
+    };
+  });
+
+  const uniqueCustomers = Array.from(new Set(displaySalesOrders.map(o => o.customer).filter(Boolean)));
 
   const { globalSearch } = useWorkflow();
   const activeOrderQuery = orderSearch || globalSearch || '';
   const activeDispatchQuery = dispatchSearch || globalSearch || '';
 
-  const filteredOrders = displaySalesOrders.filter(o =>
-    (o.orderNo || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
-    (o.customer || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
-    (o.poRef || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
-    (o.itemSummary || '').toLowerCase().includes(activeOrderQuery.toLowerCase())
-  );
+  const filteredOrders = displaySalesOrders.filter(o => {
+    const matchesSearch =
+      (o.orderNo || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
+      (o.customer || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
+      (o.poRef || '').toLowerCase().includes(activeOrderQuery.toLowerCase()) ||
+      (o.itemSummary || '').toLowerCase().includes(activeOrderQuery.toLowerCase());
+
+    const matchesStatus =
+      orderStatusFilter === 'All' ||
+      (orderStatusFilter === 'Confirmed' && (o.status.includes('CONFIRMED') || o.status.includes('RESERVED'))) ||
+      (orderStatusFilter === 'Reserved' && o.status.includes('RESERVED')) ||
+      (orderStatusFilter === 'Ready' && (o.status.includes('RESERVED') || o.status.includes('READY'))) ||
+      (orderStatusFilter === 'Completed' && (o.status.includes('COMPLETED') || o.status.includes('DELIVERED'))) ||
+      (orderStatusFilter === 'Partially' && o.status.includes('PARTIAL')) ||
+      o.status.toLowerCase().includes(orderStatusFilter.toLowerCase());
+
+    const matchesCustomer = orderCustomerFilter === 'All' || o.customer === orderCustomerFilter;
+
+    return matchesSearch && matchesStatus && matchesCustomer;
+  });
 
   const displayDispatches = liveDispatches.map(d => ({
     id: d.id,
@@ -157,23 +213,28 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     date: d.date || '2026-08-26',
     customer: d.customer || 'ABC Marine Traders',
     orderRef: d.orderRef || 'SO-2026-5601',
-    challanNo: d.challanNo || 'DC-2026-360',
-    invoiceNo: d.invoiceNo || 'INV-2026-549',
+    challanNo: d.challanNo || `DC-2026-${d.id.slice(0, 4).toUpperCase()}`,
+    invoiceNo: d.invoiceNo || d.taxInvoice || `INV-2026-${d.id.slice(0, 4).toUpperCase()}`,
     ewayBill: d.ewayBill || 'G00354008407',
     dispatchedQty: typeof d.dispatchedQtyCoils === 'number' ? `${d.dispatchedQtyCoils} Coils` : d.dispatchedQty || '300 Coils',
-    totalValue: typeof d.totalValue === 'number' ? `₹${d.totalValue.toLocaleString('en-IN')}` : d.value || '₹7,35,000',
-    vehicleNo: d.vehicle || 'GJ-03-BW-7821',
+    totalValue: typeof d.totalValue === 'number' ? `₹${d.totalValue.toLocaleString('en-IN')}` : (typeof d.value === 'number' ? `₹${d.value.toLocaleString('en-IN')}` : (d.value || '₹7,35,000')),
+    vehicleNo: d.vehicleNo || d.vehicle || 'GJ-03-BW-7821',
     transporter: d.transporter || 'Shree Saurashtra Roadlines',
     status: d.status || 'DISPATCHED'
   }));
 
-  const filteredDispatches = displayDispatches.filter(d =>
-    (d.dispatchNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
-    (d.challanNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
-    (d.invoiceNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
-    (d.customer || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
-    (d.vehicleNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase())
-  );
+  const filteredDispatches = displayDispatches.filter(d => {
+    const matchesSearch =
+      (d.dispatchNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+      (d.challanNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+      (d.invoiceNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+      (d.customer || '').toLowerCase().includes(activeDispatchQuery.toLowerCase()) ||
+      (d.vehicleNo || '').toLowerCase().includes(activeDispatchQuery.toLowerCase());
+
+    const matchesStatus = dispatchStatusFilter === 'All' || d.status.toLowerCase().includes(dispatchStatusFilter.toLowerCase());
+
+    return matchesSearch && matchesStatus;
+  });
 
   return (
     <div className="sd-hub-container">
@@ -325,20 +386,28 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
               />
             </div>
 
-            <select className="sd-filter-select">
+            <select
+              className="sd-filter-select"
+              value={orderStatusFilter}
+              onChange={e => setOrderStatusFilter(e.target.value)}
+            >
               <option value="All">All Order Statuses</option>
               <option value="Confirmed">Confirmed</option>
               <option value="Reserved">Stock Reserved</option>
               <option value="Ready">Ready to Dispatch</option>
+              <option value="Completed">Completed</option>
               <option value="Partially">Partially Dispatched</option>
             </select>
 
-            <select className="sd-filter-select">
+            <select
+              className="sd-filter-select"
+              value={orderCustomerFilter}
+              onChange={e => setOrderCustomerFilter(e.target.value)}
+            >
               <option value="All">All Customers</option>
-              <option value="Oceanic">Oceanic Rope Traders</option>
-              <option value="Gujarat">Gujarat Industrial Supply</option>
-              <option value="Shree">Shree Fisheries Supply Co.</option>
-              <option value="ABC">ABC Marine Traders</option>
+              {uniqueCustomers.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
@@ -462,7 +531,7 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
               <div className="sd-skpi-title">TOTAL DISPATCHED VALUE</div>
               <div className="sd-skpi-val-row">
                 <span className="sd-skpi-val">
-                  ₹{liveDispatches.reduce((sum, d) => sum + (Number(d.value) || Number(d.dispatchedValue) || 0), 0).toLocaleString()}
+                  ₹{totalDispatchedValInr.toLocaleString('en-IN')}
                 </span>
               </div>
               <div className="sd-skpi-sub">Invoiced customer revenue</div>
@@ -482,10 +551,14 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
               />
             </div>
 
-            <select className="sd-filter-select">
+            <select
+              className="sd-filter-select"
+              value={dispatchStatusFilter}
+              onChange={e => setDispatchStatusFilter(e.target.value)}
+            >
               <option value="All">All Dispatch Statuses</option>
               <option value="Dispatched">Dispatched</option>
-              <option value="InTransit">In Transit</option>
+              <option value="In Transit">In Transit</option>
               <option value="Delivered">Delivered</option>
             </select>
           </div>

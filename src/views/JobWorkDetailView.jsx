@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, FileText, Printer, GitBranch, Plus, CheckCircle2,
   AlertCircle, Truck, Package, Layers, DollarSign, Clock, Download
@@ -10,32 +11,12 @@ import { printJobWorkChallan, printGRN } from '../utils/printDocument';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
+  const navigate = useNavigate();
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const { simulatedJobWorks, rmList } = useWorkflow();
 
   const simMatch = simulatedJobWorks.find(s => s.jwNo === jwId || s.id === jwId) || (simulatedJobWorks.length > 0 ? simulatedJobWorks[0] : null);
   const matchingRm = rmList.find(r => r.id === simMatch?.rawMaterialId || r.code === simMatch?.rawMaterialId || r.name === simMatch?.rawMat);
-
-  const handleSaveReceiveModal = async (grnData) => {
-    try {
-      const recKg = Number(grnData.receivedQty || grnData.acceptedQty || 0);
-      const scrapKg = Number(grnData.scrapQty || 0);
-      await receiveJobWork({
-        jwId: simMatch?.id || jwId,
-        rawMaterialId: simMatch?.rawMaterialId || null,
-        recQtyKg: recKg,
-        scrapQtyKg: scrapKg,
-        currentRecKg: simMatch?.recQtyKg || 0,
-        currentScrapKg: simMatch?.scrapQtyKg || 0,
-        totalSentKg: simMatch?.sentQtyKg || 1000,
-        itemLabel: simMatch?.rawMat || 'PP Granules',
-        remarks: grnData.notes || `Receipt of ${recKg} KG processed material (${scrapKg} KG scrap)`
-      });
-      setShowReceiveModal(false);
-    } catch (err) {
-      console.error('Error receiving job work:', err);
-    }
-  };
 
   const sentNum = Number(simMatch?.sentQtyKg) || (simMatch?.sentQty ? parseFloat(String(simMatch.sentQty).replace(/[^0-9.]/g, '')) : 0) || (simMatch?.inputQty ? Number(simMatch.inputQty) : 0);
   const recNum = simMatch?.recQtyKg !== undefined ? Number(simMatch.recQtyKg) : (simMatch?.receivedQty ? parseFloat(String(simMatch.receivedQty).replace(/[^0-9.]/g, '')) : 0);
@@ -61,12 +42,12 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
   const currentChallan = simMatch?.chNo || simMatch?.challan || `CH-${simMatch?.jwNo || jwId}`;
   const batchNo = simMatch?.batch || simMatch?.batchNo || '';
   const vehicle = simMatch?.vehicleNo || simMatch?.vehicle || '';
+  const isCompleted = balNum <= 0 || simMatch?.status === 'COMPLETED' || simMatch?.status === 'FULLY RECEIVED';
 
   const detailData = {
     id: simMatch?.jwNo || simMatch?.id || jwId,
-    status: simMatch
-      ? (simMatch.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : simMatch.status === 'COMPLETED' ? 'FULLY RECEIVED' : simMatch.status || 'SENT')
-      : 'SENT',
+    status: isCompleted ? 'FULLY RECEIVED' : (recNum > 0 ? 'PARTIALLY RECEIVED' : (simMatch?.status || 'SENT')),
+    statusClass: isCompleted ? 'pill-completed' : (recNum > 0 ? 'pill-partial' : 'pill-blue'),
     party: simMatch?.vendor || simMatch?.party || '',
     challan: currentChallan,
     inputMaterialCode: rmCode,
@@ -121,6 +102,31 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
     ]
   };
 
+  const handleSaveReceiveModal = async (grnData) => {
+    try {
+      const recKg = Number(grnData.receivedQty || grnData.acceptedQty || 0);
+      const scrapKg = Number(grnData.scrapQty || 0);
+      await receiveJobWork({
+        jwId: simMatch?.id || jwId,
+        rawMaterialId: simMatch?.rawMaterialId || null,
+        recQtyKg: recKg,
+        scrapQtyKg: scrapKg,
+        currentRecKg: recNum,
+        currentScrapKg: scrapNum,
+        totalSentKg: sentNum || 1000,
+        itemLabel: detailData.inputMaterialName || 'Processed Material',
+        remarks: grnData.notes || `GRN Receipt of ${recKg} KG (${grnData.qualityStatus || 'Approved'})`
+      });
+      setShowReceiveModal(false);
+    } catch (err) {
+      console.error('Error in detail receive GRN:', err);
+    }
+  };
+
+  const handleTraceLifecycle = () => {
+    navigate('/inventory', { state: { tab: 'traceability', search: detailData.id } });
+  };
+
   return (
     <div className="jw-detail-container">
       {/* ── Top Navigation Bar ── */}
@@ -141,15 +147,22 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
         </div>
 
         <div className="jwd-header-right">
-          <button className="jwd-btn-orange" onClick={() => setShowReceiveModal(true)}>
-            <FileText size={15} />
-            Receive Material (GRN)
-          </button>
+          {isCompleted ? (
+            <button className="jwd-btn-orange" disabled style={{ opacity: 0.6, cursor: 'not-allowed', background: '#f1f5f9', color: '#64748b', borderColor: '#cbd5e1' }} title="Material fully received (0 KG pending)">
+              <CheckCircle2 size={15} />
+              Fully Received
+            </button>
+          ) : (
+            <button className="jwd-btn-orange" onClick={() => setShowReceiveModal(true)}>
+              <FileText size={15} />
+              Receive Material (GRN)
+            </button>
+          )}
           <button className="jwd-btn-dark" title="Print Job Work Challan" onClick={() => printJobWorkChallan(detailData)}>
             <Printer size={15} />
             Print Job Work Challan
           </button>
-          <button className="jwd-btn-ghost" onClick={() => alert(`Tracing Lifecycle for ${detailData.id}...`)}>
+          <button className="jwd-btn-ghost" onClick={handleTraceLifecycle} title="Explore Material Genealogy">
             <GitBranch size={15} />
             Trace Lifecycle
           </button>

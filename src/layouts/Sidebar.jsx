@@ -111,18 +111,16 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
             <span className="sidebar-brand-sub">INDUSTRIAL ERP</span>
           </div>
         )}
-        {!collapsed && (
-          <button
-            className="sidebar-collapse-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              setCollapsed(c => !c);
-            }}
-            title="Collapse"
-          >
-            <ChevronLeft size={14} />
-          </button>
-        )}
+        <button
+          className="sidebar-collapse-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            setCollapsed(c => !c);
+          }}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
       </div>
 
       {/* Nav Sections */}

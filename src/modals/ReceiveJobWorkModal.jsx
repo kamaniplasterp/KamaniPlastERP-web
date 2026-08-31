@@ -15,11 +15,15 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
     notes: ''
   });
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleChange = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const maxPending = Number(row?.balQtyKg !== undefined ? row.balQtyKg : row?.pendingQty || 0);
+    if (isSubmitting) return;
+
+    const maxPending = Number(row?.balQtyKg !== undefined ? row.balQtyKg : (row?.pendingQty ? parseFloat(String(row.pendingQty).replace(/[^0-9.]/g, '')) : 0));
     const recKg = Number(form.receivedQty || 0);
     const scrapKg = Number(form.scrapQty || 0);
     const totalAccounted = recKg + scrapKg;
@@ -34,9 +38,18 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
       return;
     }
 
-    if (onSave) onSave({ jwId, party, ...form });
-    alert(`GRN Receipt recorded for ${jwId} (${party})!\nAccepted Qty: ${form.acceptedQty} KG\nQuality: ${form.qualityStatus}`);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      if (onSave) {
+        await onSave({ jwId, party, ...form });
+      }
+      onClose();
+    } catch (err) {
+      console.error('Error in GRN submit:', err);
+      alert('Failed to record GRN receipt. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

@@ -183,6 +183,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   }, 0);
   const invoicedDispatchesLakhs = (invoicedDispatchesValInr / 100000).toFixed(2);
 
+  const uniqueJwParties = Array.from(new Set(allJobWorkData.map(j => j.party).filter(Boolean)));
+  const uniqueJwMaterials = Array.from(new Set(allJobWorkData.map(j => j.material).filter(Boolean)));
+
   const filteredData = allJobWorkData.filter(item => {
     const matchesSearch =
       item.id.toLowerCase().includes(activeSearch.toLowerCase()) ||
@@ -190,7 +193,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       item.party.toLowerCase().includes(activeSearch.toLowerCase()) ||
       item.material.toLowerCase().includes(activeSearch.toLowerCase());
 
-    const matchesStatus = statusFilter === 'All' || item.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'All' ||
+      item.status === statusFilter ||
+      (statusFilter === 'SENT' && item.status === 'SENT') ||
+      (statusFilter === 'PARTIALLY RECEIVED' && (item.status === 'PARTIAL' || item.status === 'PARTIALLY RECEIVED')) ||
+      (statusFilter === 'FULLY RECEIVED' && (item.status === 'COMPLETED' || item.status === 'FULLY RECEIVED'));
+
     const matchesParty = partyFilter === 'All' || item.party === partyFilter;
     const matchesMaterial = materialFilter === 'All' || item.material === materialFilter;
 
@@ -506,10 +515,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               onChange={e => setPartyFilter(e.target.value)}
             >
               <option value="All">All Job Work Parties</option>
-              <option value="Shree Plastic Works">Shree Plastic Works</option>
-              <option value="Patel Rope Processing">Patel Rope Processing</option>
-              <option value="Krishna Extrusion Works">Krishna Extrusion Works</option>
-              <option value="Mahavir Twisters & Winders">Mahavir Twisters &amp; Winders</option>
+              {uniqueJwParties.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
             </select>
 
             <select
@@ -518,10 +526,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               onChange={e => setMaterialFilter(e.target.value)}
             >
               <option value="All">All Raw Materials</option>
-              <option value="PP Granules (Raffia Grade)">PP Granules (Raffia Grade)</option>
-              <option value="PP Fibrillated Tape (1000 Denier)">PP Fibrillated Tape (1000 Denier)</option>
-              <option value="HDPE Granules (Monofilament Grade)">HDPE Granules (Monofilament Grade)</option>
-              <option value="HDPE High Tenacity Yarn (380D)">HDPE High Tenacity Yarn (380D)</option>
+              {uniqueJwMaterials.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
             </select>
           </div>
 
@@ -579,13 +586,24 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     <td className="td-status">{getStatusBadge(row.status)}</td>
                     <td className="td-actions" onClick={e => e.stopPropagation()}>
                       <div className="jw-action-group">
-                        <button
-                          className="jw-receive-btn"
-                          title="Record Goods Receipt Note (GRN)"
-                          onClick={() => setReceivingRow(row)}
-                        >
-                          Receive
-                        </button>
+                        {row.status === 'COMPLETED' || row.status === 'FULLY RECEIVED' || Number(row.pendingQty) <= 0 ? (
+                          <button
+                            className="jw-receive-btn"
+                            disabled
+                            style={{ opacity: 0.5, cursor: 'not-allowed', background: '#f1f5f9', color: '#94a3b8', borderColor: '#cbd5e1' }}
+                            title="Fully received (0 KG pending)"
+                          >
+                            Received
+                          </button>
+                        ) : (
+                          <button
+                            className="jw-receive-btn"
+                            title="Record Goods Receipt Note (GRN)"
+                            onClick={() => setReceivingRow(row)}
+                          >
+                            Receive
+                          </button>
+                        )}
                         <button
                           className="jw-icon-action"
                           title="View Job Work Details"

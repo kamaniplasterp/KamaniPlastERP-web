@@ -8,27 +8,36 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
   const [selectedOrder, setSelectedOrder] = useState(defaultOrderId || '');
   const [quantities, setQuantities] = useState({});
 
+  const parseBal = (so) => {
+    if (!so) return 0;
+    if (typeof so.balanceCoils === 'number') return so.balanceCoils;
+    const n = parseFloat(String(so.balance || '').replace(/[^0-9.]/g, ''));
+    return isNaN(n) ? (Number(so.orderedQtyCoils || 300) - Number(so.dispatchedCoils || 0)) : n;
+  };
+
   useEffect(() => {
     const unsubSo = subscribeSalesOrders((list) => {
       setLiveSalesOrders(list);
-      if (list.length > 0 && !selectedOrder) {
-        const first = list[0];
+      const openOnly = list.filter(o => parseBal(o) > 0 || (o.status !== 'COMPLETED' && o.status !== 'DELIVERED'));
+      if (openOnly.length > 0 && !selectedOrder) {
+        const first = openOnly[0];
         const selId = first.orderNo || first.id;
         setSelectedOrder(selId);
-        const bal = first.balanceCoils || Number(String(first.balance || '').replace(/[^0-9.]/g, '')) || 300;
+        const bal = parseBal(first);
         setQuantities({ [first.id || first.orderNo || 'item1']: bal });
       }
     });
     return () => unsubSo();
   }, []);
 
-  const currentOrderObj = liveSalesOrders.find(o => (o.orderNo || o.id) === selectedOrder) || liveSalesOrders[0];
+  const openSalesOrders = liveSalesOrders.filter(o => parseBal(o) > 0 || (o.status !== 'COMPLETED' && o.status !== 'DELIVERED'));
+  const currentOrderObj = liveSalesOrders.find(o => (o.orderNo || o.id) === selectedOrder) || openSalesOrders[0] || liveSalesOrders[0];
 
   const handleOrderChange = (orderId) => {
     setSelectedOrder(orderId);
     const obj = liveSalesOrders.find(o => (o.orderNo || o.id) === orderId);
     if (obj) {
-      const bal = obj.balanceCoils || Number(String(obj.balance || '').replace(/[^0-9.]/g, '')) || 300;
+      const bal = parseBal(obj);
       setQuantities({ [obj.id || obj.orderNo || 'item1']: bal });
     }
   };
@@ -38,7 +47,7 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
   };
 
   const [form, setForm] = useState({
-    transporter: '',
+    transporter: 'Shree Saurashtra Roadlines',
     vehicleNo: '',
     driverName: '',
     driverMobile: '',
@@ -63,10 +72,16 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
 
     const targetOrder = currentOrderObj || {};
     const itemId = targetOrder.id || targetOrder.orderNo || 'item1';
-    const enteredQty = Number(quantities[itemId] !== undefined ? quantities[itemId] : (targetOrder.balanceCoils || 300));
+    const remainingBalance = parseBal(targetOrder);
+    const enteredQty = Number(quantities[itemId] !== undefined ? quantities[itemId] : remainingBalance);
 
     if (enteredQty <= 0) {
       alert('Please enter a valid dispatch quantity greater than 0 Coils.');
+      return;
+    }
+
+    if (remainingBalance > 0 && enteredQty > remainingBalance) {
+      alert(`Cannot dispatch ${enteredQty} Coils! Remaining balance on order is only ${remainingBalance} Coils.`);
       return;
     }
 
@@ -76,31 +91,34 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
       } else {
         await createDispatch({
           soId: targetOrder.id,
-          customer: targetOrder.customer || 'ABC Marine Traders',
+          customer: targetOrder.customer || 'Customer',
           orderRef: targetOrder.orderNo || `Ref: ${selectedOrder}`,
           dispatchedQtyCoils: enteredQty,
-          totalOrderedCoils: targetOrder.orderedQtyCoils || 300,
+          totalOrderedCoils: targetOrder.orderedQtyCoils || enteredQty,
           currentDispatchedCoils: targetOrder.dispatchedCoils || 0,
-          fgSkuId: targetOrder.fgSkuId || (liveSalesOrders.find(o => o.fgSkuId)?.fgSkuId) || null,
-          vehicle: form.vehicleNo || 'GJ-03-BW-7821',
+          fgSkuId: targetOrder.fgSkuId || null,
+          vehicle: form.vehicleNo || 'GJ-03-BW-5544',
+          vehicleNo: form.vehicleNo || 'GJ-03-BW-5544',
           transporter: form.transporter || 'Shree Saurashtra Roadlines'
         });
       }
-      alert(`Outward Dispatch Challan for ${targetOrder.customer || 'Customer'} generated successfully!\nChallan DC-2026-0183 & E-Way bill created.`);
+      alert(`Outward Dispatch Challan for ${targetOrder.customer || 'Customer'} generated successfully!`);
     } catch (err) {
       console.error('Error creating dispatch:', err);
     }
     onClose();
   };
 
-  const activeItems = currentOrderObj?.items || (currentOrderObj ? [{
+  const remainingCoils = parseBal(currentOrderObj);
+  const activeItems = currentOrderObj ? [{
     id: currentOrderObj.id || currentOrderObj.orderNo || 'item1',
-    name: currentOrderObj.itemSummary || 'PP Danline Rope 6mm (Yellow)',
-    total: currentOrderObj.orderedQty || '300 Coils',
-    dispatched: currentOrderObj.dispatched || '0 Coils',
-    balance: currentOrderObj.balance || '300 Coils',
+    name: currentOrderObj.itemSummary || 'HDPE / PP Danline Rope',
+    total: currentOrderObj.orderedQty || `${currentOrderObj.orderedQtyCoils || 0} Coils`,
+    dispatched: currentOrderObj.dispatched || `${currentOrderObj.dispatchedCoils || 0} Coils`,
+    balance: `${remainingCoils} Coils`,
+    balanceNum: remainingCoils,
     unit: 'Coils'
-  }] : []);
+  }] : [];
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -133,11 +151,19 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
               required
             >
               <option value="">-- Select Sales Order --</option>
-              {liveSalesOrders.map(so => (
-                <option key={so.id} value={so.orderNo || so.id}>
-                  {so.orderNo || so.id} – {so.customer} (Bal: {so.balance || 0} Coils)
-                </option>
-              ))}
+              {openSalesOrders.length > 0 ? (
+                openSalesOrders.map(so => (
+                  <option key={so.id} value={so.orderNo || so.id}>
+                    {so.orderNo || so.id} – {so.customer} (Bal: {parseBal(so)} Coils)
+                  </option>
+                ))
+              ) : (
+                liveSalesOrders.map(so => (
+                  <option key={so.id} value={so.orderNo || so.id}>
+                    {so.orderNo || so.id} – {so.customer} (Bal: {parseBal(so)} Coils)
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -157,7 +183,9 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
                   <input
                     type="number"
                     className="dispatch-qty-input"
-                    value={quantities[item.id] !== undefined ? quantities[item.id] : 300}
+                    max={item.balanceNum > 0 ? item.balanceNum : undefined}
+                    min="1"
+                    value={quantities[item.id] !== undefined ? quantities[item.id] : item.balanceNum}
                     onChange={e => handleQtyChange(item.id, e.target.value)}
                     required
                   />

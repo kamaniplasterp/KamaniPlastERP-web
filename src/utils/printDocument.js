@@ -928,12 +928,12 @@ export function printSalesOrderAck(data = {}) {
   const address = data.address || data.deliveryAddress || data.destination || 'Plot 45, Commercial Dock, Veraval, Gujarat';
   const paymentTerms = data.paymentTerms || '30 Days Post Dispatch';
 
-  const qtyNum = parseVal(data.ordered || data.orderedQtyCoils || data.orderedQty || 300);
+  const qtyNum = parseVal(data.ordered || data.orderedQtyCoils || data.orderedQty || 1);
   const rateNum = parseVal(data.rate || (data.items && data.items[0]?.rate) || 2450);
-  const taxableSubtotal = parseVal(data.taxableSubtotal || data.subtotal) || (qtyNum * rateNum);
-  const gstAmt = parseVal(data.gstNum || data.gst) || Math.round(taxableSubtotal * 0.18);
+  const taxableSubtotal = (qtyNum > 0 && rateNum > 0) ? (qtyNum * rateNum) : (parseVal(data.taxableSubtotal || data.subtotal) || (qtyNum * 2450));
+  const gstAmt = Math.round(taxableSubtotal * 0.18);
   const freightAmt = parseVal(data.freightNum || data.freight) || 0;
-  const totalNum = parseVal(data.grandTotalNum || data.grandTotal) || (taxableSubtotal + gstAmt + freightAmt);
+  const totalNum = taxableSubtotal + gstAmt + freightAmt;
 
   const items = (data.items && data.items.length > 0) ? data.items : [
     {

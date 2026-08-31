@@ -140,23 +140,33 @@ export async function reserveSalesOrderStock(soId, fgSkuId, reserveCoils = 500) 
 export async function createDispatch(data) {
   if (!db) throw new Error('Firestore not initialized');
 
-  const dispatchQtyCoils = Number(data.dispatchedQtyCoils || data.qty || 300);
-  const dispatchNo = data.dispatchNo || `DSP-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+  const dispatchQtyCoils = Number(data.dispatchedQtyCoils || data.qty || 0);
+  const uniqueSuffix = `${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
+  const dispatchNo = data.dispatchNo || `DSP-2026-${uniqueSuffix}`;
+  const invNo = data.taxInvoice || data.invoiceNo || `INV-2026-${uniqueSuffix}`;
+  const chNo = data.challanNo || `DC-2026-${uniqueSuffix}`;
+
+  const numVal = typeof data.totalValue === 'number' && data.totalValue > 0
+    ? data.totalValue
+    : (typeof data.value === 'number' ? data.value : (parseFloat(String(data.value || '').replace(/[^0-9.]/g, '')) || 0));
 
   const dispatchDoc = {
     dispatchNo: dispatchNo,
     date: data.date || new Date().toISOString().split('T')[0],
-    customer: data.customer || 'ABC Marine Traders',
-    orderRef: data.orderRef || 'Ref: SO-2026-00999',
+    customer: data.customer || '',
+    orderRef: data.orderRef || '',
     soId: data.soId || null,
-    challanNo: data.challanNo || `DC-2026-${Math.floor(100 + Math.random() * 900)}`,
-    taxInvoice: data.taxInvoice || `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
+    challanNo: chNo,
+    taxInvoice: invNo,
+    invoiceNo: invNo,
     ewayBill: data.ewayBill || `E-way: ${Math.floor(100000000000 + Math.random() * 900000000000)}`,
     dispatchedQty: `${dispatchQtyCoils} Coils`,
     dispatchedQtyCoils: dispatchQtyCoils,
-    value: data.value || `₹${(dispatchQtyCoils * 2450).toLocaleString()}`,
-    vehicle: data.vehicle || 'GJ-03-BW-9999',
-    transporter: data.transporter || 'Shree Saurashtra Roadlines',
+    value: data.value || `₹${numVal.toLocaleString('en-IN')}`,
+    totalValue: numVal,
+    vehicle: data.vehicle || '',
+    vehicleNo: data.vehicle || data.vehicleNo || '',
+    transporter: data.transporter || '',
     status: 'DISPATCHED',
     createdAt: serverTimestamp()
   };

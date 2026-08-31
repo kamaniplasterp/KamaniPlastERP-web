@@ -14,15 +14,27 @@ export default function AddProductSkuModal({ onClose, onSave }) {
     reorderLevel: '10'
   });
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleChange = (field, val) => {
     setFormData(prev => ({ ...prev, [field]: val }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (onSave) onSave(formData);
-    alert(`Finished Goods Product SKU "${formData.name || formData.code}" successfully saved!`);
-    onClose();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      if (onSave) {
+        await onSave(formData);
+      }
+      onClose();
+    } catch (err) {
+      console.error('Error saving SKU:', err);
+      alert('Failed to save product SKU. Please check fields.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
