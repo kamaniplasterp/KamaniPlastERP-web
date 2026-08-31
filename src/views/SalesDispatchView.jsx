@@ -9,6 +9,7 @@ import DispatchChallanModal from '../modals/DispatchChallanModal';
 import SalesOrderDetailView from '../drawers/SalesOrderDetailView';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
+import { printTaxInvoice, printDeliveryChallan } from '../utils/printDocument';
 import { subscribeSalesOrders, subscribeDispatches, createSalesOrder, createDispatch } from '../api/sales.api';
 import { seedInitialData } from '../api/seed';
 import '../styles/SalesDispatch.css';
@@ -79,12 +80,19 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     }
   };
 
+  const handleBack = () => {
+    setSelectedOrderId(null);
+    if (window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  };
+
   if (selectedOrderId) {
     return (
       <div className="sd-hub-container">
         <SalesOrderDetailView
           orderId={selectedOrderId}
-          onBack={() => setSelectedOrderId(null)}
+          onBack={handleBack}
           onCreateDispatch={openDispatchChallan}
         />
         {showDispatchChallanModal && (
@@ -388,7 +396,11 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                         <button className="sd-btn-dispatch" onClick={openDispatchChallan}>
                           Dispatch
                         </button>
-                        <button className="sd-icon-action" title="View Details">
+                        <button
+                          className="sd-icon-action"
+                          title="View Sales Order Details"
+                          onClick={() => setSelectedOrderId(row.orderNo || row.id)}
+                        >
                           <ChevronRight size={14} />
                         </button>
                       </div>
@@ -506,13 +518,13 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                     </td>
                     <td className="td-code">{row.challanNo}</td>
                     <td>
-                      <div className="inv-item-name">{row.taxInvoice}</div>
+                      <div className="inv-item-name">{row.invoiceNo || row.taxInvoice || 'INV-2026-549'}</div>
                       <div className="sd-po-sub">{row.ewayBill}</div>
                     </td>
                     <td className="td-qty-green">{row.dispatchedQty}</td>
-                    <td className="td-order-val">{row.value}</td>
+                    <td className="td-order-val">{row.totalValue || row.value}</td>
                     <td>
-                      <div className="sd-item-main">{row.vehicle}</div>
+                      <div className="sd-item-main">{row.vehicleNo || row.vehicle}</div>
                       <div className="sd-po-sub">{row.transporter}</div>
                     </td>
                     <td>
@@ -522,10 +534,10 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                     </td>
                     <td>
                       <div className="sd-action-group">
-                        <button className="sd-btn-doc-dark" onClick={() => alert(`Print Challan ${row.challanNo}`)}>
+                        <button className="sd-btn-doc-dark" title="Print Delivery Challan" onClick={() => printDeliveryChallan(row)}>
                           Challan
                         </button>
-                        <button className="sd-btn-doc" onClick={() => alert(`Print Invoice ${row.taxInvoice}`)}>
+                        <button className="sd-btn-doc" title="Print GST Tax Invoice" onClick={() => printTaxInvoice(row)}>
                           Invoice
                         </button>
                       </div>

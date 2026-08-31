@@ -6,13 +6,15 @@ import {
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
 import { useWorkflow } from '../context/WorkflowContext';
 import { receiveJobWork } from '../api/jobwork.api';
+import { printJobWorkChallan, printGRN } from '../utils/printDocument';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
-  const { simulatedJobWorks } = useWorkflow();
+  const { simulatedJobWorks, rmList } = useWorkflow();
 
   const simMatch = simulatedJobWorks.find(s => s.jwNo === jwId || s.id === jwId) || (simulatedJobWorks.length > 0 ? simulatedJobWorks[0] : null);
+  const matchingRm = rmList.find(r => r.id === simMatch?.rawMaterialId || r.code === simMatch?.rawMaterialId || r.name === simMatch?.rawMat);
 
   const handleSaveReceiveModal = async (grnData) => {
     try {
@@ -25,7 +27,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
         scrapQtyKg: scrapKg,
         currentRecKg: simMatch?.recQtyKg || 0,
         currentScrapKg: simMatch?.scrapQtyKg || 0,
-        totalSentKg: simMatch?.sentQtyKg || 2000,
+        totalSentKg: simMatch?.sentQtyKg || 1000,
         itemLabel: simMatch?.rawMat || 'PP Granules',
         remarks: grnData.notes || `Receipt of ${recKg} KG processed material (${scrapKg} KG scrap)`
       });
@@ -35,61 +37,75 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
     }
   };
 
+  const sentNum = Number(simMatch?.sentQtyKg) || (simMatch?.sentQty ? parseFloat(String(simMatch.sentQty).replace(/[^0-9.]/g, '')) : 0) || (simMatch?.inputQty ? Number(simMatch.inputQty) : 1000);
+  const recNum = simMatch?.recQtyKg !== undefined ? Number(simMatch.recQtyKg) : (simMatch?.receivedQty ? parseFloat(String(simMatch.receivedQty).replace(/[^0-9.]/g, '')) : 0);
+  const scrapNum = simMatch?.scrapQtyKg !== undefined ? Number(simMatch.scrapQtyKg) : (simMatch?.scrapQty ? parseFloat(String(simMatch.scrapQty).replace(/[^0-9.]/g, '')) : 0);
+  const balNum = simMatch?.balQtyKg !== undefined ? Number(simMatch.balQtyKg) : Math.max(0, sentNum - recNum - scrapNum);
+  const chargeRate = Number(simMatch?.charges) || Number(simMatch?.ratePerKg) || 8.5;
+  const totalCost = Math.round(sentNum * chargeRate);
+  const rmCode = matchingRm?.code || (simMatch?.rawMaterialCode || (simMatch?.rawMaterialId && simMatch.rawMaterialId.length < 15 ? simMatch.rawMaterialId : 'RM-PP-REPOL'));
+  const issueDate = simMatch?.date || '2026-08-18';
+  const returnDate = simMatch?.expectedReturn || '2026-08-28';
+  const processName = simMatch?.process || 'Extrusion / Yarn Making';
+  const currentChallan = simMatch?.chNo || `CH-${jwId}`;
+
   const detailData = {
     id: simMatch ? (simMatch.jwNo || simMatch.id || jwId) : jwId,
     status: simMatch
       ? (simMatch.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : simMatch.status === 'COMPLETED' ? 'FULLY RECEIVED' : simMatch.status || 'SENT')
-      : 'NO DATA',
-    party: simMatch ? (simMatch.vendor || 'Job Worker') : 'N/A',
-    challan: simMatch ? (simMatch.chNo || `CH-${jwId}`) : 'N/A',
-    inputMaterialCode: simMatch ? (simMatch.rawMaterialId || 'RM-SKU') : 'N/A',
-    inputMaterialName: simMatch ? (simMatch.rawMat || 'Raw Material') : 'N/A',
-    process: simMatch ? (simMatch.process || 'Processing') : 'N/A',
-    dispatchedQty: simMatch ? `${simMatch.sentQtyKg || simMatch.sentQty || 0} KG` : '0 KG',
-    batch: simMatch ? (simMatch.batch || 'WIP-LOT') : 'N/A',
+      : 'FULLY RECEIVED',
+    party: simMatch ? (simMatch.vendor || 'Shree Plastic Works') : 'Shree Plastic Works',
+    challan: currentChallan,
+    inputMaterialCode: rmCode,
+    inputMaterialName: simMatch ? (simMatch.rawMat || 'Reliance Repol') : 'Reliance Repol',
+    process: processName,
+    dispatchedQty: `${sentNum.toLocaleString('en-IN')} KG`,
+    batch: simMatch ? (simMatch.batch || 'WIP-LOT') : 'WIP-LOT',
     stockSource: 'Factory Silo / Bay',
-    vehicleNo: 'GJ-03-AX-4820',
-    expectedOutput: simMatch ? `${simMatch.sentQtyKg || 0} KG` : '0 KG',
-    receivedQty: simMatch ? `${simMatch.recQtyKg !== undefined ? simMatch.recQtyKg : 0} KG` : '0 KG',
-    pendingQty: simMatch ? `${simMatch.balQtyKg !== undefined ? simMatch.balQtyKg : (simMatch.balQty || 0)} KG` : '0 KG',
-    scrapQty: simMatch ? `${simMatch.scrapQtyKg || 0} KG` : '0 KG',
+    vehicleNo: simMatch?.vehicleNo || 'GJ-03-AX-4820',
+    date: issueDate,
+    expectedReturn: returnDate,
+    expectedOutput: `${sentNum.toLocaleString('en-IN')} KG`,
+    receivedQty: `${recNum.toLocaleString('en-IN')} KG`,
+    pendingQty: `${balNum.toLocaleString('en-IN')} KG`,
+    scrapQty: `${scrapNum.toLocaleString('en-IN')} KG`,
     expectedScrapLimit: '3.0%',
-    ratePerKg: simMatch ? `₹${simMatch.charges || 8.5} / KG` : '₹0 / KG',
-    processingCost: simMatch ? `₹${((Number(simMatch.sentQtyKg) || 0) * (Number(simMatch.charges) || 8.5)).toLocaleString()}` : '₹0',
+    ratePerKg: `₹${chargeRate} / KG`,
+    processingCost: `₹${totalCost.toLocaleString('en-IN')}`,
     freightCost: '₹0',
     gstAmount: '₹0',
-    totalCharges: simMatch ? `₹${((Number(simMatch.sentQtyKg) || 0) * (Number(simMatch.charges) || 8.5)).toLocaleString()}` : '₹0',
+    totalCharges: `₹${totalCost.toLocaleString('en-IN')}`,
     paymentTerms: '30 Days Post Receipt',
-    grnHistory: simMatch && (simMatch.recQtyKg > 0 || simMatch.scrapQtyKg > 0) ? [
+    grnHistory: (recNum > 0 || scrapNum > 0) ? [
       {
-        grnNo: `GRN-${simMatch.jwNo || jwId}`,
-        date: simMatch.date || '2026-08-26',
-        receivedQty: `${simMatch.recQtyKg || 0} KG`,
-        wastage: `${simMatch.scrapQtyKg || 0} KG`,
-        acceptedQty: `${simMatch.recQtyKg || 0} KG`,
+        grnNo: `GRN-${simMatch?.jwNo || jwId}`,
+        date: '2026-08-26',
+        receivedQty: `${recNum.toLocaleString('en-IN')} KG`,
+        wastage: `${scrapNum.toLocaleString('en-IN')} KG`,
+        acceptedQty: `${recNum.toLocaleString('en-IN')} KG`,
         status: 'Approved',
         location: 'WIP Storage Floor 1',
         notes: 'Process return logged in system.'
       }
     ] : [],
-    auditTrail: simMatch ? [
+    auditTrail: [
       {
         id: jwId,
         type: 'Job Work Issue',
-        date: simMatch.date || '2026-08-25',
-        qtyChange: `-${simMatch.sentQtyKg || 0} KG`,
+        date: issueDate,
+        qtyChange: `-${sentNum.toLocaleString('en-IN')} KG`,
         colorClass: 'text-red',
-        notes: `Dispatched 2,000 KG for processing via Challan ${simMatch ? simMatch.chNo : 'CH-JW-2026-0089'}.`
+        notes: `Dispatched ${sentNum.toLocaleString('en-IN')} KG for processing via Challan ${currentChallan}.`
       },
-      ...(simMatch && simMatch.recQty !== '0 KG' ? [{
-        id: 'GRN-JW-2026-099',
+      ...(recNum > 0 ? [{
+        id: `GRN-${simMatch?.jwNo || jwId}`,
         type: 'Job Work Return',
-        date: '2026-08-25',
-        qtyChange: `+${simMatch.recQty}`,
+        date: '2026-08-26',
+        qtyChange: `+${recNum.toLocaleString('en-IN')} KG`,
         colorClass: 'text-green',
-        notes: `Received ${simMatch.recQty} processed material back into inventory.`
+        notes: `Received ${recNum.toLocaleString('en-IN')} KG processed material back into inventory.`
       }] : [])
-    ] : []
+    ]
   };
 
   return (
@@ -116,7 +132,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
             <FileText size={15} />
             Receive Material (GRN)
           </button>
-          <button className="jwd-btn-dark" onClick={() => alert(`Printing Job Work Challan ${detailData.challan}...`)}>
+          <button className="jwd-btn-dark" title="Print Job Work Challan" onClick={() => printJobWorkChallan(detailData)}>
             <Printer size={15} />
             Print Job Work Challan
           </button>
@@ -135,7 +151,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
           <div className="pipeline-step step-done">
             <div className="step-circle">1</div>
             <div className="step-label">Material Sent</div>
-            <div className="step-sub">2026-08-18</div>
+            <div className="step-sub">{detailData.date}</div>
           </div>
           <div className="pipeline-line line-done" />
 
@@ -143,7 +159,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
           <div className="pipeline-step step-done">
             <div className="step-circle">2</div>
             <div className="step-label">Processing</div>
-            <div className="step-sub">Extrusion / Yarn Making</div>
+            <div className="step-sub">{detailData.process}</div>
           </div>
           <div className="pipeline-line line-done" />
 
@@ -235,7 +251,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
 
           <div className="jwd-charges-list">
             <div className="charge-line">
-              <span>Job Work Processing (2000 KG @ ₹8.5):</span>
+              <span>Job Work Processing ({detailData.dispatchedQty} @ {detailData.ratePerKg}):</span>
               <span>{detailData.processingCost}</span>
             </div>
             <div className="charge-line">
@@ -329,7 +345,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
                   <td>{grn.location}</td>
                   <td className="text-sub font-normal">{grn.notes}</td>
                   <td>
-                    <button className="jwd-btn-ghost-xs" onClick={() => alert(`Printing GRN ${grn.grnNo}`)}>
+                    <button className="jwd-btn-ghost-xs" title="Print Goods Receipt Note" onClick={() => printGRN(grn, detailData)}>
                       Print GRN
                     </button>
                   </td>

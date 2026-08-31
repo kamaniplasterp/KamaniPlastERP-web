@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft, Truck, Printer } from 'lucide-react';
 import { useWorkflow } from '../context/WorkflowContext';
+import { printSalesOrderAck } from '../utils/printDocument';
 import '../styles/SalesOrderDetail.css';
 
 export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch }) {
@@ -14,75 +15,61 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
     return isNaN(n) ? 0 : n;
   };
 
-  const orderedQtyNum = simMatch ? (simMatch.orderedQtyCoils || parseVal(simMatch.orderedQty) || simMatch.totalQtyCoils || 300) : 0;
-  const reservedQtyNum = simMatch ? (simMatch.reservedCoils || parseVal(simMatch.reserved) || simMatch.reservedQtyCoils || 300) : 0;
-  const dispatchedQtyNum = simMatch ? (simMatch.dispatchedCoils || parseVal(simMatch.dispatched) || simMatch.dispatchedQtyCoils || 0) : 0;
-  const grandTotalNum = simMatch ? (simMatch.totalValue || simMatch.grandTotal || parseVal(simMatch.orderValue) || 868800) : 0;
+  const orderedQtyNum = simMatch ? (Number(simMatch.orderedQtyCoils) || parseVal(simMatch.orderedQty) || 0) : 0;
+  const reservedQtyNum = simMatch ? (Number(simMatch.reservedCoils) || parseVal(simMatch.reserved) || 0) : 0;
+  const dispatchedQtyNum = simMatch ? (Number(simMatch.dispatchedCoils) || parseVal(simMatch.dispatched) || 0) : 0;
+  const balanceQtyNum = Math.max(0, orderedQtyNum - dispatchedQtyNum);
 
-  const defaultItems = simMatch ? (
-    (simMatch.items && simMatch.items.length > 0) ? simMatch.items : [
-      {
-        product: simMatch.itemSummary || simMatch.productName || 'PP Danline Rope 6mm (Yellow)',
-        diaColor: '6 mm • Bright Yellow',
-        orderedQty: `${orderedQtyNum} Coils`,
-        reserved: `${reservedQtyNum} Coils`,
-        dispatched: `${dispatchedQtyNum} Coils`,
-        balance: `${Math.max(0, orderedQtyNum - dispatchedQtyNum)} Coils`,
-        rate: `₹${(simMatch.rate || 2896).toLocaleString()}`,
-        amount: `₹${grandTotalNum.toLocaleString()}`
-      }
-    ]
-  ) : [];
+  // Rate per unit (taxable rate)
+  const rateNum = Number(simMatch?.rate) || Number(simMatch?.pricePerUnit) || 2450;
+  // Subtotal (Taxable)
+  const taxableSubtotalNum = simMatch?.taxableSubtotal || (orderedQtyNum > 0 ? orderedQtyNum * rateNum : parseVal(simMatch?.orderValue) || 735000);
+  // GST (18%)
+  const gstNum = Math.round(taxableSubtotalNum * 0.18);
+  // Freight
+  const freightNum = Number(simMatch?.freight) || 0;
+  // Grand Total
+  const grandTotalNum = simMatch?.grandTotal || simMatch?.totalValue || (taxableSubtotalNum + gstNum + freightNum);
 
-  const orderDetails = simMatch ? {
-    id: simMatch.orderNo || simMatch.id,
-    status: simMatch.status || 'CONFIRMED',
-    statusClass: simMatch.status === 'COMPLETED' ? 'pill-completed' : 'pill-confirmed',
-    customer: simMatch.customer || 'ABC Marine Traders',
-    poRef: simMatch.poRef || 'PO-2026-6111',
-    address: simMatch.deliveryAddress || 'Plot 45, Commercial Dock, Veraval, Gujarat',
-    orderDate: simMatch.date || '2026-08-26',
-    targetDispatch: simMatch.deliveryDate || '2026-08-30',
-    paymentTerms: '30 Days Post Dispatch',
+  const defaultItems = (simMatch?.items && simMatch.items.length > 0) ? simMatch.items : [
+    {
+      id: 1,
+      desc: simMatch?.itemSummary || simMatch?.productName || 'PP Danline Rope 6mm (Yellow)',
+      code: simMatch?.fgSkuId || 'FG-PPD-06-YL',
+      product: simMatch?.itemSummary || simMatch?.productName || 'PP Danline Rope 6mm (Yellow)',
+      diaColor: simMatch?.spec || '6 mm • Bright Yellow',
+      orderedQty: `${orderedQtyNum} Coils`,
+      reserved: `${reservedQtyNum} Coils`,
+      dispatched: `${dispatchedQtyNum} Coils`,
+      balance: `${balanceQtyNum} Coils`,
+      rate: `₹${rateNum.toLocaleString('en-IN')}`,
+      amount: `₹${taxableSubtotalNum.toLocaleString('en-IN')}`
+    }
+  ];
+
+  const orderDetails = {
+    id: simMatch?.orderNo || simMatch?.id || orderId || 'SO-2026-4150',
+    status: simMatch?.status || 'STOCK RESERVED',
+    statusClass: simMatch?.status === 'COMPLETED' ? 'pill-completed' : (simMatch?.status === 'DISPATCHED' ? 'pill-dispatched' : 'pill-confirmed'),
+    customer: simMatch?.customer || 'ABC Marine Traders',
+    poRef: simMatch?.poRef || 'PO-2026-6111',
+    address: simMatch?.deliveryAddress || simMatch?.destination || 'Plot 45, Commercial Dock, Veraval, Gujarat',
+    orderDate: simMatch?.orderDate || simMatch?.date || '2026-08-26',
+    targetDispatch: simMatch?.targetDispatch || simMatch?.deliveryDate || '2026-08-30',
+    paymentTerms: simMatch?.paymentTerms || '30 Days Post Dispatch',
     ordered: orderedQtyNum,
     reserved: reservedQtyNum,
     dispatched: dispatchedQtyNum,
-    remaining: `${Math.max(0, orderedQtyNum - dispatchedQtyNum)} Coils`,
-    subtotal: `₹${grandTotalNum.toLocaleString()}`,
-    gst: '₹0',
-    freight: '₹0',
-    grandTotal: `₹${grandTotalNum.toLocaleString()}`,
+    remaining: `${balanceQtyNum} Coils`,
+    taxableSubtotal: taxableSubtotalNum,
+    subtotal: `₹${taxableSubtotalNum.toLocaleString('en-IN')}`,
+    gstNum,
+    gst: `₹${gstNum.toLocaleString('en-IN')}`,
+    freightNum,
+    freight: `₹${freightNum.toLocaleString('en-IN')}`,
+    grandTotalNum,
+    grandTotal: `₹${grandTotalNum.toLocaleString('en-IN')}`,
     items: defaultItems
-  } : {
-    id: orderId || 'SO-2026-4150',
-    status: 'STOCK RESERVED',
-    statusClass: 'pill-confirmed',
-    customer: 'ABC Marine Traders',
-    poRef: 'PO-2026-6111',
-    address: 'Plot 45, Commercial Dock, Veraval, Gujarat',
-    orderDate: '2026-08-26',
-    targetDispatch: '2026-08-30',
-    paymentTerms: '30 Days Post Dispatch',
-    ordered: 300,
-    reserved: 300,
-    dispatched: 0,
-    remaining: '300 Coils',
-    subtotal: '₹8,68,800',
-    gst: '₹0',
-    freight: '₹0',
-    grandTotal: '₹8,68,800',
-    items: [
-      {
-        product: 'PP Danline Rope 6mm (Yellow)',
-        diaColor: '6 mm • Bright Yellow',
-        orderedQty: '300 Coils',
-        reserved: '300 Coils',
-        dispatched: '0 Coils',
-        balance: '300 Coils',
-        rate: '₹2,896',
-        amount: '₹8,68,800'
-      }
-    ]
   };
 
   return (
@@ -110,7 +97,7 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
           <button className="so-btn-create-dispatch" onClick={onCreateDispatch}>
             <Truck size={15} /> Create Dispatch Challan
           </button>
-          <button className="so-btn-print" onClick={() => window.print()}>
+          <button className="so-btn-print" onClick={() => printSalesOrderAck(orderDetails)}>
             <Printer size={15} /> Print Order Ack
           </button>
         </div>

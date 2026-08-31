@@ -6,9 +6,11 @@ import {
   Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
+import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
 import JobWorkDetailView from '../views/JobWorkDetailView';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
+import { printJobWorkChallan } from '../utils/printDocument';
 import { subscribeJobWorks, receiveJobWork, createJobWork } from '../api/jobwork.api';
 import { subscribeVendors } from '../api/directory.api';
 import { seedInitialData } from '../api/seed';
@@ -42,37 +44,28 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     return () => unsub();
   }, []);
 
-  const handleReceiveSubmit = async (e) => {
-    e.preventDefault();
+  const handleSaveReceiveModal = async (grnData) => {
     if (!receivingRow) return;
 
-    const recKg = Number(receiveQtyInput) || 0;
-    const scrapKg = Number(scrapQtyInput) || 0;
-
-    if (recKg <= 0 && scrapKg <= 0) {
-      alert('Please enter a valid received quantity or scrap quantity.');
-      return;
-    }
+    const recKg = Number(grnData.receivedQty || grnData.acceptedQty || 0);
+    const scrapKg = Number(grnData.scrapQty || 0);
 
     try {
       await receiveJobWork({
         jwId: receivingRow.firestoreId || receivingRow.id,
-        currentRecKg: receivingRow.receivedQty,
+        currentRecKg: receivingRow.receivedQty || 0,
         currentScrapKg: receivingRow.scrapQtyKg || 0,
-        totalSentKg: receivingRow.inputQty,
+        totalSentKg: receivingRow.inputQty || 1000,
         recQtyKg: recKg,
         scrapQtyKg: scrapKg,
         rawMaterialId: receivingRow.rawMaterialId,
-        itemLabel: receivingRow.material
+        itemLabel: receivingRow.material,
+        remarks: grnData.notes || `GRN Receipt of ${recKg} KG (${grnData.qualityStatus || 'Approved'})`
       });
 
-      alert(`GRN Receipt recorded for ${receivingRow.id}!\nReceived: ${recKg} KG\nScrap/Wastage: ${scrapKg} KG`);
       setReceivingRow(null);
-      setReceiveQtyInput('');
-      setScrapQtyInput('');
     } catch (err) {
       console.error('Error submitting GRN receipt:', err);
-      alert('Failed to record receipt: ' + err.message);
     }
   };
 
@@ -96,17 +89,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   };
 
   const allJobWorkData = liveJobWorks.map(jw => {
-    const inputQty = jw.sentQtyKg || Number(String(jw.sentQty || '').replace(/[^0-9]/g, '')) || 2000;
-    const receivedQty = jw.recQtyKg || Number(String(jw.recQty || '').replace(/[^0-9]/g, '')) || 0;
-    const pendingQty = jw.balQtyKg !== undefined ? jw.balQtyKg : Number(String(jw.balQty || '').replace(/[^0-9]/g, '')) || 0;
-    const scrapKg = jw.scrapQtyKg !== undefined ? jw.scrapQtyKg : Math.max(0, inputQty - receivedQty - pendingQty);
-    const wastage = scrapKg > 0 ? `${scrapKg.toLocaleString()} KG` : (jw.wastage && jw.wastage !== '-' ? jw.wastage : '-');
+    const inputQty = jw.sentQtyKg !== undefined
+      ? Number(jw.sentQtyKg)
+      : (jw.sentQty ? Number(String(jw.sentQty).replace(/[^0-9.]/g, '')) : 1000) || 1000;
+    const receivedQty = jw.recQtyKg !== undefined
+      ? Number(jw.recQtyKg)
+      : (jw.recQty ? Number(String(jw.recQty).replace(/[^0-9.]/g, '')) : 0);
+    const pendingQty = jw.balQtyKg !== undefined
+      ? Number(jw.balQtyKg)
+      : (jw.balQty ? Number(String(jw.balQty).replace(/[^0-9.]/g, '')) : Math.max(0, inputQty - receivedQty - (Number(jw.scrapQtyKg) || 0)));
+    const scrapKg = jw.scrapQtyKg !== undefined
+      ? Number(jw.scrapQtyKg)
+      : Math.max(0, inputQty - receivedQty - pendingQty);
+    const wastage = scrapKg > 0 ? `${scrapKg.toLocaleString('en-IN')} KG` : (jw.wastage && jw.wastage !== '-' ? jw.wastage : '-');
+
+    // Calculate processing rate per KG and total payable charges dynamically
+    const ratePerKg = Number(jw.ratePerKg || jw.processingRate || (typeof jw.charges === 'number' && jw.charges < 100 ? jw.charges : 8.5)) || 8.5;
+    const totalCharges = typeof jw.totalCharges === 'number' ? jw.totalCharges : Math.round(inputQty * ratePerKg);
 
     return {
       id: jw.jwNo || jw.id,
       firestoreId: jw.id,
       rawMaterialId: jw.rawMaterialId,
-      challan: jw.chNo || `CH-${jw.jwNo}`,
+      challan: jw.chNo || `CH-${jw.jwNo || jw.id}`,
       date: jw.date || '2026-08-25',
       party: jw.vendor || 'Job Worker',
       material: jw.rawMat || 'PP Granules',
@@ -117,7 +122,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       pendingQty,
       scrapQtyKg: scrapKg,
       wastage,
-      charges: jw.charges || 17500,
+      ratePerKg,
+      charges: totalCharges,
       expectedReturn: jw.expectedReturn || '2026-08-30',
       status: jw.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : jw.status === 'COMPLETED' ? 'FULLY RECEIVED' : jw.status || 'SENT'
     };
@@ -553,16 +559,26 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     <td className="td-status">{getStatusBadge(row.status)}</td>
                     <td className="td-actions" onClick={e => e.stopPropagation()}>
                       <div className="jw-action-group">
-                        {row.pendingQty > 0 && (
-                          <button className="jw-receive-btn" onClick={() => setReceivingRow(row)}>
-                            Receive
-                          </button>
-                        )}
-                        <button className="jw-icon-action" title="Print Challan" onClick={() => alert(`Printing Challan ${row.challan}`)}>
-                          <Printer size={14} />
+                        <button
+                          className="jw-receive-btn"
+                          title="Record Goods Receipt Note (GRN)"
+                          onClick={() => setReceivingRow(row)}
+                        >
+                          Receive
                         </button>
-                        <button className="jw-icon-action" title="View Details" onClick={() => setSelectedJwId(row.id)}>
-                          <ChevronRight size={14} />
+                        <button
+                          className="jw-icon-action"
+                          title="View Job Work Details"
+                          onClick={() => setSelectedJwId(row.id)}
+                        >
+                          <ChevronRight size={15} />
+                        </button>
+                        <button
+                          className="jw-icon-action"
+                          title="Print Job Work Challan"
+                          onClick={() => printJobWorkChallan(row)}
+                        >
+                          <Printer size={14} />
                         </button>
                       </div>
                     </td>
@@ -708,11 +724,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                             <td className="td-status">{getStatusBadge(ord.status)}</td>
                             <td className="td-actions">
                               <div className="jw-action-group">
-                                <button className="jw-receive-btn" onClick={() => alert(`Receive material for ${ord.id}`)}>
+                                <button
+                                  className="jw-receive-btn"
+                                  title="Record Goods Receipt Note (GRN)"
+                                  onClick={() => {
+                                    const match = allJobWorkData.find(x => x.id === ord.id);
+                                    setReceivingRow(match || {
+                                      id: ord.id,
+                                      party: vg.vendor,
+                                      material: ord.material,
+                                      inputQty: ord.sentQty,
+                                      receivedQty: ord.recdQty,
+                                      pendingQty: ord.pendingQty
+                                    });
+                                  }}
+                                >
                                   Receive
                                 </button>
-                                <button className="jw-icon-action" title="View Details">
-                                  <ChevronRight size={14} />
+                                <button
+                                  className="jw-icon-action"
+                                  title="View Job Work Details"
+                                  onClick={() => setSelectedJwId(ord.id)}
+                                >
+                                  <ChevronRight size={15} />
                                 </button>
                               </div>
                             </td>
@@ -899,92 +933,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         <NewJobWorkModal onClose={() => setShowIssueModal(false)} />
       )}
 
-      {/* ── Receive Material Dialog ── */}
+      {/* ── Receive Material Dialog (GRN Modal) ── */}
       {receivingRow && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setReceivingRow(null)}>
-          <div className="modal-dialog modal-md">
-            <div className="modal-header-dark">
-              <div>
-                <h2 className="modal-title">Receive Material – {receivingRow.id}</h2>
-                <p className="modal-subtitle">
-                  Record processed goods received back from {receivingRow.party}
-                </p>
-              </div>
-              <button className="modal-close-btn" onClick={() => setReceivingRow(null)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <form className="modal-body" onSubmit={handleReceiveSubmit}>
-              <div className="mform-row mform-col-2">
-                <div className="mform-field">
-                  <label className="mform-label">Vendor Name</label>
-                  <input type="text" className="mform-input" value={receivingRow.party} disabled />
-                </div>
-                <div className="mform-field">
-                  <label className="mform-label">Material Issued</label>
-                  <input type="text" className="mform-input" value={receivingRow.material} disabled />
-                </div>
-              </div>
-
-              <div className="mform-row mform-col-3">
-                <div className="mform-field">
-                  <label className="mform-label">Input Qty Issued</label>
-                  <input type="text" className="mform-input" value={`${receivingRow.inputQty} KG`} disabled />
-                </div>
-                <div className="mform-field">
-                  <label className="mform-label">Already Received</label>
-                  <input type="text" className="mform-input" value={`${receivingRow.receivedQty} KG`} disabled />
-                </div>
-                <div className="mform-field">
-                  <label className="mform-label">Current Pending</label>
-                  <input type="text" className="mform-input" value={`${receivingRow.pendingQty} KG`} disabled />
-                </div>
-              </div>
-
-              <div className="mform-section">
-                <div className="mform-section-title">
-                  <Package size={14} /> RECEIPT &amp; WASTAGE ENTRY
-                </div>
-                <div className="mform-row mform-col-2">
-                  <div className="mform-field">
-                    <label className="mform-label">Receiving Qty (KG) <span className="req">*</span></label>
-                    <input
-                      type="number"
-                      className="mform-input"
-                      placeholder="e.g. 1000"
-                      value={receiveQtyInput}
-                      onChange={e => setReceiveQtyInput(e.target.value)}
-                      max={receivingRow.pendingQty}
-                      min="1"
-                      required
-                    />
-                  </div>
-                  <div className="mform-field">
-                    <label className="mform-label">Scrap / Wastage (KG)</label>
-                    <input
-                      type="number"
-                      className="mform-input"
-                      placeholder="e.g. 20"
-                      value={scrapQtyInput}
-                      onChange={e => setScrapQtyInput(e.target.value)}
-                      min="0"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" className="mfooter-btn cancel" onClick={() => setReceivingRow(null)}>
-                  Cancel
-                </button>
-                <button type="submit" className="mfooter-btn confirm">
-                  Confirm Receipt
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ReceiveJobWorkModal
+          row={receivingRow}
+          onClose={() => setReceivingRow(null)}
+          onSave={handleSaveReceiveModal}
+        />
       )}
     </div>
   );
