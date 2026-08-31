@@ -305,38 +305,71 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
     simulatedDispatches
   } = useWorkflow();
 
-  const rawValuationLakhs = ((rmList || []).reduce((sum, rm) => {
-    return sum + ((Number(rm.availFactory) || 0) * (Number(rm.rate) || 115));
-  }, 0) / 100000).toFixed(2);
+  const rawSum = (rmList || []).reduce((sum, rm) => {
+    return sum + ((Number(rm.availFactory) || 0) * (Number(rm.rate) || 112));
+  }, 0);
+  const rawValuation = rawSum > 0 ? rawSum : (rmStock * 112);
+  const rawValuationLakhs = (rawValuation / 100000).toFixed(2);
 
-  const jwValuationLakhs = ((rmList || []).reduce((sum, rm) => {
-    return sum + ((Number(rm.atJobWork) || 0) * (Number(rm.rate) || 115));
-  }, 0) / 100000).toFixed(2);
+  const jwSum = (rmList || []).reduce((sum, rm) => {
+    return sum + ((Number(rm.atJobWork) || 0) * (Number(rm.rate) || 112));
+  }, 0);
+  const jwValuation = jwSum > 0 ? jwSum : (jobWorkStock * 112);
+  const jwValuationLakhs = (jwValuation / 100000).toFixed(2);
 
-  const fgValuationLakhs = ((fgList || []).reduce((sum, fg) => {
+  const fgSum = (fgList || []).reduce((sum, fg) => {
     return sum + ((Number(fg.stockQty) || 0) * (Number(fg.rate) || 2450));
-  }, 0) / 100000).toFixed(2);
+  }, 0);
+  const fgValuation = fgSum > 0 ? fgSum : (fgStock * 2450);
+  const fgValuationLakhs = (fgValuation / 100000).toFixed(2);
 
-  const salesValuationLakhs = (((simulatedSalesOrders || []).reduce((sum, so) => {
-    return sum + (Number(so.totalValue) || Number(so.orderValue) || 868800);
-  }, 0)) / 100000).toFixed(2);
-
+  const salesSum = (simulatedSalesOrders || []).reduce((sum, so) => {
+    const val = typeof so.totalValue === 'number'
+      ? so.totalValue
+      : (parseFloat(String(so.orderValue || '').replace(/[^0-9.]/g, '')) || (Number(so.orderedQtyCoils || 300) * 2450));
+    return sum + val;
+  }, 0);
   const totalReadyCoils = (simulatedSalesOrders || []).reduce((sum, so) => {
     return sum + (Number(so.reservedCoils) || Number(so.orderedQtyCoils) || 300);
   }, 0);
+  const salesValuation = salesSum > 0 ? salesSum : ((totalReadyCoils || 300) * 2450);
+  const salesValuationLakhs = (salesValuation / 100000).toFixed(2);
 
-  const openOrdersCount = (simulatedSalesOrders || []).length;
+  const openOrdersCount = (simulatedSalesOrders || []).length || (totalReadyCoils > 0 ? 1 : 0);
+  const lowStockFgCount = (fgList || []).filter(fg => (Number(fg.stockQty) || 0) < (Number(fg.reorderLevel) || 50)).length;
 
   const dynamicKpiData = kpiData.map(kpi => {
-    if (kpi.id === 'raw') return { ...kpi, value: rmStock.toLocaleString(), subValue: `₹${rawValuationLakhs}L` };
-    if (kpi.id === 'jw') return { ...kpi, value: jobWorkStock.toLocaleString(), subValue: `₹${jwValuationLakhs}L` };
-    if (kpi.id === 'fg') return { ...kpi, value: fgStock.toLocaleString(), subValue: `₹${fgValuationLakhs}L` };
-    if (kpi.id === 'dispatch') return {
-      ...kpi,
-      value: (totalReadyCoils || 300).toLocaleString(),
-      subValue: `Valued at ₹${salesValuationLakhs}L`,
-      subLabel: `${openOrdersCount} Orders`
-    };
+    if (kpi.id === 'raw') {
+      return { 
+        ...kpi, 
+        value: rmStock.toLocaleString(), 
+        sub: `₹${rawValuationLakhs}L` 
+      };
+    }
+    if (kpi.id === 'jw') {
+      return { 
+        ...kpi, 
+        value: jobWorkStock.toLocaleString(), 
+        sub: 'Processing Vendors',
+        sub2: `₹${jwValuationLakhs}L` 
+      };
+    }
+    if (kpi.id === 'fg') {
+      return { 
+        ...kpi, 
+        value: fgStock.toLocaleString(), 
+        sub: `${lowStockFgCount} items below reorder`,
+        sub2: `₹${fgValuationLakhs}L` 
+      };
+    }
+    if (kpi.id === 'dispatch') {
+      return {
+        ...kpi,
+        value: (totalReadyCoils || 300).toLocaleString(),
+        sub: `Valued at ₹${salesValuationLakhs}L`,
+        sub2: `${openOrdersCount} Orders`
+      };
+    }
     return kpi;
   });
 
