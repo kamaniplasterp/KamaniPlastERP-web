@@ -690,18 +690,18 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
           {/* Table */}
           <div className="inv-table-container">
-            <table className="inv-table">
+            <table className="inv-table inv-movements-table">
               <thead>
                 <tr>
-                  <th>DATE &amp; TIME</th>
-                  <th>TRANSACTION TYPE</th>
-                  <th>REFERENCE DOCUMENT</th>
-                  <th>ITEM DESCRIPTION</th>
-                  <th>BATCH / LOT</th>
-                  <th>INWARD (+)</th>
-                  <th>OUTWARD (-)</th>
-                  <th>LOCATION</th>
-                  <th>AUDIT REMARKS</th>
+                  <th style={{ minWidth: '95px' }}>DATE &amp; TIME</th>
+                  <th style={{ minWidth: '130px' }}>TRANSACTION TYPE</th>
+                  <th style={{ minWidth: '160px' }}>REFERENCE DOCUMENT</th>
+                  <th style={{ minWidth: '190px' }}>ITEM DESCRIPTION</th>
+                  <th style={{ minWidth: '140px' }}>BATCH / LOT</th>
+                  <th style={{ minWidth: '90px' }}>INWARD (+)</th>
+                  <th style={{ minWidth: '90px' }}>OUTWARD (-)</th>
+                  <th style={{ minWidth: '220px' }}>LOCATION</th>
+                  <th style={{ minWidth: '280px' }}>AUDIT REMARKS</th>
                 </tr>
               </thead>
               <tbody>
@@ -720,8 +720,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     <td><span className="jw-batch-text">{m.batch}</span></td>
                     <td className="td-qty-green">{m.inward}</td>
                     <td className="td-qty-orange">{m.outward}</td>
-                    <td className="td-material">{m.location}</td>
-                    <td className="inv-item-sub">{m.remarks}</td>
+                    <td className="td-location-cell">{m.location}</td>
+                    <td className="td-remarks-cell">{m.remarks}</td>
                   </tr>
                 ))}
               </tbody>

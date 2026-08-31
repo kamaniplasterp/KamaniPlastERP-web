@@ -391,16 +391,20 @@
 }
 .inv-table {
   width: 100%;
+  min-width: 1050px;
   border-collapse: collapse;
   font-size: 0.73rem;
   background: #ffffff;
+}
+.inv-movements-table {
+  min-width: 1280px;
 }
 .inv-table thead tr {
   background: #0f172a;
   color: #f8fafc;
 }
 .inv-table thead th {
-  padding: 10px 12px;
+  padding: 10px 14px;
   text-align: left;
   font-size: 0.62rem;
   font-weight: 800;
@@ -416,7 +420,7 @@
 }
 .inv-table tbody tr:hover { background: #fafafa; }
 .inv-table tbody td {
-  padding: 11px 12px;
+  padding: 11px 14px;
   color: #334155;
   vertical-align: middle;
   white-space: nowrap;
@@ -429,6 +433,25 @@
 .inv-item-sub { color: #64748b; font-size: 0.65rem; margin-top: 1px; }
 .inv-brand-name { font-weight: 600; color: #1e293b; font-size: 0.73rem; }
 .inv-brand-sub { color: #94a3b8; font-size: 0.65rem; margin-top: 1px; }
+
+.td-location-cell {
+  font-size: 0.73rem;
+  color: #334155;
+  font-weight: 500;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.td-remarks-cell {
+  color: #64748b;
+  font-size: 0.72rem;
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+  line-height: 1.35;
+}
 
 .td-qty-green { color: #16a34a; font-weight: 700; }
 .td-qty-orange { color: #f97316; font-weight: 700; }

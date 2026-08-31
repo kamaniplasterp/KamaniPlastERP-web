@@ -77,14 +77,7 @@ export function WorkflowProvider({ children }) {
     return !isCompleted;
   }).length;
 
-  const activeOrdersInList = salesOrderList.filter(so => {
-    const ordered = Number(so.orderedQtyCoils || so.orderedQty || 0);
-    const dispatched = Number(so.dispatchedQtyCoils || so.dispatchedCoils || 0);
-    const pending = typeof so.balanceCoils === 'number' ? so.balanceCoils : Math.max(0, ordered - dispatched);
-    return pending > 0 || (so.status !== 'COMPLETED' && so.status !== 'DELIVERED');
-  }).length;
-
-  const openOrdersCount = Math.max(1, activeOrdersInList);
+  const openOrdersCount = salesOrderList.length;
 
   const lowStockRmCount = rmList.filter(rm => {
     const total = (Number(rm.availFactory) || 0) + (Number(rm.atJobWork) || 0);
