@@ -74,6 +74,15 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     return () => document.removeEventListener('keydown', handle);
   }, [onClose]);
 
+  const handlePartySelect = (partyId) => {
+    const p = displayVendors.find(v => v.id === partyId);
+    setForm(f => ({
+      ...f,
+      jwParty: partyId,
+      processingRate: p && p.rate !== undefined ? String(p.rate) : f.processingRate
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (dispatchQty <= 0) {
@@ -86,20 +95,29 @@ export default function NewJobWorkModal({ onClose, onSave }) {
       return;
     }
 
-    const vendorLabel = selParty ? (selParty.name || selParty.label || 'Shree Plastic Works') : 'Shree Plastic Works';
-    const matLabel = selMaterial ? (selMaterial.name || selMaterial.label || 'PP Granules') : 'PP Granules (Raffia Grade)';
+    const vendorLabel = selParty ? (selParty.name || selParty.label || 'Job Worker') : 'Job Worker';
+    const matLabel = selMaterial ? (selMaterial.name || selMaterial.label || 'Raw Material') : 'Raw Material';
+    const finalRate = Number(form.processingRate) || (selParty?.rate ? Number(selParty.rate) : 0);
+
     try {
       const payload = {
+        jwNo: `JW-2026-${Math.floor(100 + Math.random() * 900)}`,
         vendor: vendorLabel,
         vendorId: form.jwParty || null,
         rawMat: matLabel,
         rawMaterialId: form.rawMaterial || null,
         sentQtyKg: dispatchQty,
         expectedFg: `${targetOutput.toFixed(0)} KG`,
-        batch: form.batchNo,
-        remarks: form.remarks,
-        process: form.processType,
-        charges: parseFloat(form.processingRate) || 8.5
+        batch: form.batchNo || '',
+        vehicleNo: form.vehicleNo || '',
+        stockSource: form.stockSource || 'Factory Silo',
+        date: form.challanDate || today(),
+        expectedReturn: form.expectedReturn || '',
+        remarks: form.remarks || '',
+        process: form.processType || '',
+        charges: finalRate,
+        ratePerKg: finalRate,
+        wastage: form.wastage ? `${form.wastage}%` : '0%'
       };
       if (onSave) {
         await onSave(payload);
@@ -147,7 +165,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             </div>
             <div className="mform-field">
               <label className="mform-label">Job Work Party (Vendor) <span className="req">*</span></label>
-              <select className="mform-select" value={form.jwParty} onChange={e => set('jwParty', e.target.value)} required>
+              <select className="mform-select" value={form.jwParty} onChange={e => handlePartySelect(e.target.value)} required>
                 <option value="">-- Select Vendor --</option>
                 {displayVendors.map(p => (
                   <option key={p.id} value={p.id}>

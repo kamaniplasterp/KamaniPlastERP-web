@@ -29,6 +29,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [receiveQtyInput, setReceiveQtyInput] = useState('');
   const [scrapQtyInput, setScrapQtyInput] = useState('');
   const [liveJobWorks, setLiveJobWorks] = useState([]);
+  const [liveVendors, setLiveVendors] = useState([]);
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -40,8 +41,12 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   }, [location.state]);
 
   useEffect(() => {
-    const unsub = subscribeJobWorks(setLiveJobWorks);
-    return () => unsub();
+    const unsubJw = subscribeJobWorks(setLiveJobWorks);
+    const unsubVe = subscribeVendors(setLiveVendors);
+    return () => {
+      unsubJw();
+      unsubVe();
+    };
   }, []);
 
   const handleSaveReceiveModal = async (grnData) => {
@@ -103,9 +108,24 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       : Math.max(0, inputQty - receivedQty - pendingQty);
     const wastage = scrapKg > 0 ? `${scrapKg.toLocaleString('en-IN')} KG` : (jw.wastage && jw.wastage !== '-' ? jw.wastage : '-');
 
-    // Calculate processing rate per KG and total payable charges dynamically
-    const ratePerKg = Number(jw.ratePerKg || jw.processingRate || (typeof jw.charges === 'number' && jw.charges < 100 ? jw.charges : 8.5)) || 8.5;
-    const totalCharges = typeof jw.totalCharges === 'number' ? jw.totalCharges : Math.round(inputQty * ratePerKg);
+    // Calculate processing rate per KG and total payable charges dynamically from database/vendor directory
+    const vendorMatch = liveVendors.find(v => v.id === jw.vendorId || v.name === jw.vendor);
+    const vendorDefaultRate = vendorMatch && vendorMatch.rate ? Number(vendorMatch.rate) : 12;
+
+    let ratePerKg = 0;
+    if (typeof jw.ratePerKg === 'number' && jw.ratePerKg > 0) {
+      ratePerKg = jw.ratePerKg;
+    } else if (typeof jw.processingRate === 'number' && jw.processingRate > 0) {
+      ratePerKg = jw.processingRate;
+    } else if (typeof jw.charges === 'number' && jw.charges > 0) {
+      ratePerKg = jw.charges < 100 ? jw.charges : Math.round(jw.charges / (inputQty || 1));
+    } else {
+      ratePerKg = vendorDefaultRate;
+    }
+
+    const totalCharges = typeof jw.totalCharges === 'number' && jw.totalCharges > 0
+      ? jw.totalCharges
+      : Math.round(inputQty * ratePerKg);
 
     return {
       id: jw.jwNo || jw.id,

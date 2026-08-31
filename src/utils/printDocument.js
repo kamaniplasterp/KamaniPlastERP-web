@@ -782,18 +782,22 @@ export function printDeliveryChallan(data = {}) {
  * 3. Print Job Work Challan
  */
 export function printJobWorkChallan(data = {}) {
-  const jwNo = data.id || data.jwNo || 'JW-2026-311';
+  const jwNo = data.id || data.jwNo || '';
   const challanNo = data.challan || data.chNo || `CH-${jwNo}`;
-  const party = data.party || data.vendor || 'Shree Plastic Works';
-  const process = data.process || 'Extrusion / Yarn Making';
-  const rawMat = data.inputMaterialName || data.rawMat || 'Reliance Repol';
-  const rawMatCode = data.inputMaterialCode || data.rawMaterialCode || (data.rawMaterialId && data.rawMaterialId.length < 15 ? data.rawMaterialId : 'RM-PP-REPOL');
-  const sentQty = data.dispatchedQty || (data.sentQtyKg ? `${Number(data.sentQtyKg).toLocaleString('en-IN')} KG` : '1,000 KG');
-  const charges = data.ratePerKg || (data.charges ? `₹${data.charges} / KG` : '₹8.5 / KG');
-  const vehicle = data.vehicleNo || data.vehicle || 'GJ-03-AX-4820';
-  const date = data.date || '2026-08-18';
-  const expectedReturn = data.expectedReturn || '2026-08-28';
-  const batch = data.batch || 'WIP-LOT';
+  const party = data.party || data.vendor || '';
+  const process = data.process || data.processType || '';
+  const rawMat = data.inputMaterialName || data.rawMat || data.material || '';
+  const rawMatCode = data.inputMaterialCode || data.rawMaterialCode || (data.rawMaterialId && data.rawMaterialId.length < 15 ? data.rawMaterialId : '');
+  const sentQty = typeof data.dispatchedQty === 'string'
+    ? data.dispatchedQty
+    : (data.sentQtyKg || data.inputQty ? `${Number(data.sentQtyKg || data.inputQty).toLocaleString('en-IN')} KG` : '0 KG');
+  const charges = typeof data.ratePerKg === 'string'
+    ? data.ratePerKg
+    : (data.charges || data.ratePerKg || data.processingRate ? `₹${data.charges || data.ratePerKg || data.processingRate} / KG` : '₹0 / KG');
+  const vehicle = data.vehicleNo || data.vehicle || '-';
+  const date = data.date || data.challanDate || new Date().toISOString().split('T')[0];
+  const expectedReturn = data.expectedReturn || '-';
+  const batch = data.batch || data.batchNo || '-';
   const expOutput = data.expectedOutput || sentQty;
 
   const html = `

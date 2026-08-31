@@ -37,39 +37,52 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
     }
   };
 
-  const sentNum = Number(simMatch?.sentQtyKg) || (simMatch?.sentQty ? parseFloat(String(simMatch.sentQty).replace(/[^0-9.]/g, '')) : 0) || (simMatch?.inputQty ? Number(simMatch.inputQty) : 1000);
+  const sentNum = Number(simMatch?.sentQtyKg) || (simMatch?.sentQty ? parseFloat(String(simMatch.sentQty).replace(/[^0-9.]/g, '')) : 0) || (simMatch?.inputQty ? Number(simMatch.inputQty) : 0);
   const recNum = simMatch?.recQtyKg !== undefined ? Number(simMatch.recQtyKg) : (simMatch?.receivedQty ? parseFloat(String(simMatch.receivedQty).replace(/[^0-9.]/g, '')) : 0);
   const scrapNum = simMatch?.scrapQtyKg !== undefined ? Number(simMatch.scrapQtyKg) : (simMatch?.scrapQty ? parseFloat(String(simMatch.scrapQty).replace(/[^0-9.]/g, '')) : 0);
   const balNum = simMatch?.balQtyKg !== undefined ? Number(simMatch.balQtyKg) : Math.max(0, sentNum - recNum - scrapNum);
-  const chargeRate = Number(simMatch?.charges) || Number(simMatch?.ratePerKg) || 8.5;
+
+  let chargeRate = 0;
+  if (typeof simMatch?.ratePerKg === 'number' && simMatch.ratePerKg > 0) {
+    chargeRate = simMatch.ratePerKg;
+  } else if (typeof simMatch?.processingRate === 'number' && simMatch.processingRate > 0) {
+    chargeRate = simMatch.processingRate;
+  } else if (typeof simMatch?.charges === 'number' && simMatch.charges > 0) {
+    chargeRate = simMatch.charges < 100 ? simMatch.charges : Math.round(simMatch.charges / (sentNum || 1));
+  } else {
+    chargeRate = 12;
+  }
+
   const totalCost = Math.round(sentNum * chargeRate);
-  const rmCode = matchingRm?.code || (simMatch?.rawMaterialCode || (simMatch?.rawMaterialId && simMatch.rawMaterialId.length < 15 ? simMatch.rawMaterialId : 'RM-PP-REPOL'));
-  const issueDate = simMatch?.date || '2026-08-18';
-  const returnDate = simMatch?.expectedReturn || '2026-08-28';
-  const processName = simMatch?.process || 'Extrusion / Yarn Making';
-  const currentChallan = simMatch?.chNo || `CH-${jwId}`;
+  const rmCode = matchingRm?.code || simMatch?.rawMaterialCode || simMatch?.rawMaterialId || '';
+  const issueDate = simMatch?.date || simMatch?.challanDate || '';
+  const returnDate = simMatch?.expectedReturn || '';
+  const processName = simMatch?.process || simMatch?.processType || '';
+  const currentChallan = simMatch?.chNo || simMatch?.challan || `CH-${simMatch?.jwNo || jwId}`;
+  const batchNo = simMatch?.batch || simMatch?.batchNo || '';
+  const vehicle = simMatch?.vehicleNo || simMatch?.vehicle || '';
 
   const detailData = {
-    id: simMatch ? (simMatch.jwNo || simMatch.id || jwId) : jwId,
+    id: simMatch?.jwNo || simMatch?.id || jwId,
     status: simMatch
       ? (simMatch.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : simMatch.status === 'COMPLETED' ? 'FULLY RECEIVED' : simMatch.status || 'SENT')
-      : 'FULLY RECEIVED',
-    party: simMatch ? (simMatch.vendor || 'Shree Plastic Works') : 'Shree Plastic Works',
+      : 'SENT',
+    party: simMatch?.vendor || simMatch?.party || '',
     challan: currentChallan,
     inputMaterialCode: rmCode,
-    inputMaterialName: simMatch ? (simMatch.rawMat || 'Reliance Repol') : 'Reliance Repol',
+    inputMaterialName: simMatch?.rawMat || matchingRm?.name || '',
     process: processName,
     dispatchedQty: `${sentNum.toLocaleString('en-IN')} KG`,
-    batch: simMatch ? (simMatch.batch || 'WIP-LOT') : 'WIP-LOT',
-    stockSource: 'Factory Silo / Bay',
-    vehicleNo: simMatch?.vehicleNo || 'GJ-03-AX-4820',
+    batch: batchNo,
+    stockSource: simMatch?.stockSource || 'Factory Silo',
+    vehicleNo: vehicle,
     date: issueDate,
     expectedReturn: returnDate,
-    expectedOutput: `${sentNum.toLocaleString('en-IN')} KG`,
+    expectedOutput: simMatch?.expectedFg || `${sentNum.toLocaleString('en-IN')} KG`,
     receivedQty: `${recNum.toLocaleString('en-IN')} KG`,
     pendingQty: `${balNum.toLocaleString('en-IN')} KG`,
     scrapQty: `${scrapNum.toLocaleString('en-IN')} KG`,
-    expectedScrapLimit: '3.0%',
+    expectedScrapLimit: simMatch?.wastage || '0%',
     ratePerKg: `₹${chargeRate} / KG`,
     processingCost: `₹${totalCost.toLocaleString('en-IN')}`,
     freightCost: '₹0',

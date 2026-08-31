@@ -17,7 +17,7 @@ function genPO() {
 }
 
 function createLine() {
-  return { id: `line_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, productId: '', qty: '300', rate: '2450' };
+  return { id: `line_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, productId: '', qty: '200', rate: '' };
 }
 
 export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
@@ -50,6 +50,18 @@ export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
   const setLine = (id, key, val) =>
     setLines(ls => ls.map(l => l.id === id ? { ...l, [key]: val } : l));
 
+  const handleProductChange = (lineId, productId) => {
+    const prod = liveProducts.find(p => p.id === productId);
+    setLines(ls => ls.map(l => {
+      if (l.id !== lineId) return l;
+      return {
+        ...l,
+        productId,
+        rate: prod && prod.rate !== undefined ? String(prod.rate) : l.rate
+      };
+    }));
+  };
+
   const addLine = () => setLines(ls => [...ls, createLine()]);
   const removeLine = (id) => setLines(ls => ls.filter(l => l.id !== id));
 
@@ -68,18 +80,38 @@ export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const selBuyer = liveBuyers.find(c => c.id === form.customer);
-    const custLabel = selBuyer ? selBuyer.name : 'ABC Marine Traders';
+    const custLabel = selBuyer ? selBuyer.name : (form.customer || 'Customer');
     const firstLine = lines[0];
-    const qtyVal = Number(firstLine?.qty || 300);
-    const selProduct = liveProducts.find(p => p.id === firstLine?.productId) || liveProducts[0];
+    const qtyVal = Number(firstLine?.qty || 0);
+    const rateVal = Number(firstLine?.rate || 0);
+    const selProduct = liveProducts.find(p => p.id === firstLine?.productId) || null;
+
     try {
       const payload = {
+        orderNo: `SO-2026-${Math.floor(1000 + Math.random() * 9000)}`,
         customer: custLabel,
+        customerId: form.customer || null,
         poRef: form.poNumber,
         orderedQtyCoils: qtyVal,
+        orderedQty: `${qtyVal} Coils`,
+        rate: rateVal,
+        pricePerUnit: rateVal,
+        taxableSubtotal: taxable,
+        gst: gst,
+        freight: freight,
         orderValue: `₹${orderTotal.toLocaleString('en-IN')}`,
-        fgSkuId: selProduct ? selProduct.id : null,
-        itemSummary: selProduct ? (selProduct.name || 'PP Danline Rope 6mm (Yellow)') : 'PP Danline Rope 6mm (Yellow)'
+        grandTotal: orderTotal,
+        totalValue: orderTotal,
+        fgSkuId: selProduct ? (selProduct.code || selProduct.id) : '',
+        itemSummary: selProduct ? selProduct.name : '',
+        status: 'STOCK RESERVED',
+        reservedCoils: qtyVal,
+        dispatchedCoils: 0,
+        balanceCoils: qtyVal,
+        date: today(),
+        deliveryDate: form.dispatchDate,
+        paymentTerms: form.paymentTerms,
+        remarks: form.remarks
       };
       if (onSave) {
         await onSave(payload);
@@ -151,7 +183,7 @@ export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
 
           <div className="mform-lines">
             {lines.map((line, idx) => {
-              const prod = liveProducts.find(p => p.id === line.productId) || {};
+              const prod = liveProducts.find(p => p.id === line.productId || p.code === line.productId) || {};
               const amount = (parseFloat(line.qty) || 0) * (parseFloat(line.rate) || 0);
               return (
                 <div key={line.id} className="mform-line-item">
@@ -161,7 +193,7 @@ export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
                       <select
                         className="mform-select mform-select-sm"
                         value={line.productId}
-                        onChange={e => setLine(line.id, 'productId', e.target.value)}
+                        onChange={e => handleProductChange(line.id, e.target.value)}
                       >
                         <option value="">-- Select Product --</option>
                         {liveProducts.map(p => (

@@ -3,14 +3,14 @@ import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download
 } from 'lucide-react';
 import { subscribeVendors, subscribeBuyers, addVendor, addBuyer } from '../api/directory.api';
+import { subscribeJobWorks } from '../api/jobwork.api';
+import { subscribeSalesOrders } from '../api/sales.api';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
 import AddVendorModal from '../modals/AddVendorModal';
 import AddCustomerModal from '../modals/AddCustomerModal';
 import { seedInitialData } from '../api/seed';
 import '../styles/DirectorySettings.css';
-
-
 
 export default function DirectorySettingsView() {
   const [activeTab, setActiveTab] = useState('vendors');
@@ -19,15 +19,21 @@ export default function DirectorySettingsView() {
 
   const [liveVendors, setLiveVendors] = useState([]);
   const [liveBuyers, setLiveBuyers] = useState([]);
+  const [liveJobWorks, setLiveJobWorks] = useState([]);
+  const [liveSalesOrders, setLiveSalesOrders] = useState([]);
   const [showAddVendorModal, setShowAddVendorModal] = useState(false);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
 
   useEffect(() => {
     const unsubV = subscribeVendors(setLiveVendors);
     const unsubB = subscribeBuyers(setLiveBuyers);
+    const unsubJ = subscribeJobWorks(setLiveJobWorks);
+    const unsubS = subscribeSalesOrders(setLiveSalesOrders);
     return () => {
       unsubV();
       unsubB();
+      unsubJ();
+      unsubS();
     };
   }, []);
 
@@ -84,28 +90,63 @@ export default function DirectorySettingsView() {
     }
   };
 
-  const displayVendors = liveVendors.map(v => ({
-    avatar: (v.name || 'VE').slice(0, 2).toUpperCase(),
-    name: v.name || 'Vendor',
-    processBadge: v.processBadge || 'Job Work Processor',
-    phone: v.phone || '',
-    location: v.location || 'Gujarat',
-    gst: `GST: ${v.gst || '24AAAAA0000A1Z5'}`,
-    rate: typeof v.rate === 'number' ? `₹${v.rate}/KG` : v.rate || '₹18/KG',
-    pending: typeof v.pendingKg === 'number' ? `${v.pendingKg.toLocaleString()} KG` : v.pendingKg || '0 KG',
-    pendingOrange: (Number(v.pendingKg) || 0) > 0
-  }));
+  const displayVendors = liveVendors.map(v => {
+    const matchingJw = liveJobWorks.filter(j => 
+      j.vendorId === v.id || 
+      j.vendor === v.name || 
+      (j.vendor && v.name && j.vendor.toLowerCase().includes(v.name.toLowerCase()))
+    );
+    const pendingTotal = matchingJw.reduce((sum, j) => {
+      const p = j.balQtyKg !== undefined ? Number(j.balQtyKg) : (j.balQty ? parseFloat(String(j.balQty).replace(/[^0-9.]/g, '')) : 0);
+      return sum + (p || 0);
+    }, 0);
 
-  const displayBuyers = liveBuyers.map(b => ({
-    avatar: (b.name || 'CU').slice(0, 2).toUpperCase(),
-    name: b.name || 'Buyer',
-    termsBadge: `Category: ${b.category || 'Trading'}`,
-    phone: b.phone || '',
-    location: b.location || 'Gujarat',
-    gst: `GST: ${b.gst || '24AAAAA0000A1Z5'}`,
-    orders: `${b.totalOrders || 0} Orders`,
-    booked: b.outstandingAmount || '₹0.00L'
-  }));
+    return {
+      avatar: (v.name || 'VE').slice(0, 2).toUpperCase(),
+      name: v.name || 'Vendor',
+      processBadge: v.processBadge || 'Job Work Processor',
+      phone: v.phone || '',
+      location: v.location || 'Gujarat',
+      gst: `GST: ${v.gst || '24AAAAA0000A1Z5'}`,
+      rate: typeof v.rate === 'number' ? `₹${v.rate}/KG` : v.rate || '₹12/KG',
+      pending: `${pendingTotal.toLocaleString('en-IN')} KG`,
+      pendingOrange: pendingTotal > 0
+    };
+  });
+
+  const displayBuyers = liveBuyers.map(b => {
+    const matchingOrders = liveSalesOrders.filter(so => 
+      so.customerId === b.id || 
+      so.customer === b.name || 
+      (so.customer && b.name && so.customer.toLowerCase().includes(b.name.toLowerCase())) ||
+      (b.name && so.customer && b.name.toLowerCase().includes(so.customer.toLowerCase()))
+    );
+
+    const totalOrdersCount = matchingOrders.length;
+    const totalBookedValue = matchingOrders.reduce((sum, so) => {
+      const val = typeof so.grandTotal === 'number' && so.grandTotal > 0
+        ? so.grandTotal
+        : (typeof so.totalValue === 'number' && so.totalValue > 0
+            ? so.totalValue
+            : (typeof so.orderValue === 'string'
+                ? parseFloat(so.orderValue.replace(/[^0-9.]/g, '')) || 0
+                : (typeof so.orderValue === 'number' ? so.orderValue : 0)));
+      return sum + (val || 0);
+    }, 0);
+
+    const bookedLakhs = (totalBookedValue / 100000).toFixed(2);
+
+    return {
+      avatar: (b.name || 'CU').slice(0, 2).toUpperCase(),
+      name: b.name || 'Buyer',
+      termsBadge: `Category: ${b.category || 'Trading'}`,
+      phone: b.phone || '',
+      location: b.location || 'Gujarat',
+      gst: `GST: ${b.gst || '24AAAAA0000A1Z5'}`,
+      orders: `${totalOrdersCount} Orders`,
+      booked: `₹${bookedLakhs}L`
+    };
+  });
 
   const { globalSearch } = useWorkflow();
   const activeVendorQuery = vendorSearch || globalSearch || '';
