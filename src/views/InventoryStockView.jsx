@@ -16,7 +16,6 @@ import { subscribeRawMaterials, subscribeFinishedGoods, subscribeStockMovements,
 import { subscribeJobWorks } from '../api/jobwork.api';
 import { subscribeDispatches } from '../api/sales.api';
 import { exportToCsv } from '../utils/exportCsv';
-import { seedInitialData } from '../api/seed';
 import '../styles/InventoryStock.css';
 
 

@@ -779,104 +779,132 @@ export function printDeliveryChallan(data = {}) {
 }
 
 /**
- * 3. Print Job Work Challan
+ * 3. Print Job Work Challan (Rule 55 CGST Format matching Excel Delivery Challan & Outward Slip)
  */
 export function printJobWorkChallan(data = {}) {
-  const jwNo = data.id || data.jwNo || '';
-  const challanNo = data.challan || data.chNo || `CH-${jwNo}`;
-  const party = data.party || data.vendor || '';
-  const process = data.process || data.processType || '';
-  const rawMat = data.inputMaterialName || data.rawMat || data.material || '';
-  const rawMatCode = data.inputMaterialCode || data.rawMaterialCode || (data.rawMaterialId && data.rawMaterialId.length < 15 ? data.rawMaterialId : '');
-  const sentQty = typeof data.dispatchedQty === 'string'
-    ? data.dispatchedQty
-    : (data.sentQtyKg || data.inputQty ? `${Number(data.sentQtyKg || data.inputQty).toLocaleString('en-IN')} KG` : '0 KG');
+  const jwNo = data.id || data.jwNo || 'JW-2026-3316';
+  const challanNo = data.challan || data.chNo || '3316';
+  const subChal = data.subChalNo || '1';
+  const workOrder = data.workOrder || 'WO-1001';
+  const department = data.department || 'Job Work Extrusion';
+  const party = data.party || data.vendor || 'Job Worker';
+  const process = data.process || data.processType || 'GRANUAL - FISHING YARN';
+  const rawMat = data.inputMaterialName || data.rawMat || data.material || 'GRANUALS-HDPE ^ HD';
+  const grade = data.grade || 'HD';
+  
+  const grossWght = parseVal(data.grossWeight || data.grossWght || data.dispatchedQty || data.sentQtyKg || data.inputQty || 5000);
+  const boraCount = parseVal(data.boraCount || data.noOfBora || 200);
+  const articleWeight = parseVal(data.articleWeight) || (boraCount * 0.2);
+  const sentQty = parseVal(data.sentQtyKg || data.inputQty || data.dispatchedQty) || (grossWght > 0 ? Math.max(0, grossWght - articleWeight) : 0);
+  const bLossPct = parseVal(data.bLossPct !== undefined ? data.bLossPct : (data.wastage || 0));
+  const bLossKg = parseVal(data.bLossKg) || (sentQty * (bLossPct / 100));
+  const netOutward = parseVal(data.netOutwardKg || data.netOutwardExpected || data.expectedOutput || data.expectedFg) || Math.max(0, sentQty - bLossKg);
+  
   const charges = typeof data.ratePerKg === 'string'
     ? data.ratePerKg
-    : (data.charges || data.ratePerKg || data.processingRate ? `₹${data.charges || data.ratePerKg || data.processingRate} / KG` : '₹0 / KG');
-  const vehicle = data.vehicleNo || data.vehicle || '-';
+    : (data.charges || data.ratePerKg || data.processingRate ? `₹${data.charges || data.ratePerKg || data.processingRate} / KG` : '₹17.50 / KG');
+  const vehicle = data.vehicleNo || data.vehicle || 'GJ-03-XX-1234';
   const date = data.date || data.challanDate || new Date().toISOString().split('T')[0];
-  const expectedReturn = data.expectedReturn || '-';
-  const batch = data.batch || data.batchNo || '-';
-  const expOutput = data.expectedOutput || sentQty;
+  const expectedReturn = data.expectedReturn || '2025-04-30';
+  const batch = data.batch || data.batchNo || 'BATCH-2026-904';
+  const issuedBy = data.issuedBy || 'SURESHBHAI';
+  const samplePcs = parseVal(data.samplePcs) || 10;
+  const sampleWeight = parseVal(data.sampleWeight) || 0.5;
+
 
   const html = `
     <!-- Header -->
-    <div class="doc-header">
+    <div class="doc-header" style="border-bottom: 2px solid #0f172a; padding-bottom: 12px;">
       <div>
-        <div class="company-title">${COMPANY_INFO.name}</div>
+        <div class="company-title" style="font-size: 18px; font-weight: 800;">${COMPANY_INFO.name}</div>
         <div class="company-sub">${COMPANY_INFO.tagline}</div>
-        <div class="company-contact">
+        <div class="company-contact" style="font-size: 11px;">
           ${COMPANY_INFO.address}<br/>
           <strong>GSTIN:</strong> ${COMPANY_INFO.gstin} | <strong>State:</strong> Gujarat (Code: 24)
         </div>
       </div>
-      <div class="doc-badge-col">
-        <div class="doc-badge-main" style="background: #ea580c;">JOB WORK CHALLAN</div>
-        <div class="doc-badge-copy">SEC 143 CGST ACT • RULE 45</div>
+      <div class="doc-badge-col" style="text-align: right;">
+        <div class="doc-badge-main" style="background: #0f172a; color: #fff; font-size: 13px; font-weight: bold; padding: 4px 10px; border-radius: 4px;">
+          DELIVERY CHALLAN
+        </div>
+        <div style="font-size: 9px; font-weight: bold; margin-top: 4px; color: #475569;">
+          [ ] ORIGINAL &nbsp; [ ] DUPLICATE &nbsp; [ ] TRIPLICATE
+        </div>
+        <div style="font-size: 9px; color: #64748b; margin-top: 2px;">
+          Rule 55 CGST Rules, 2017
+        </div>
       </div>
+    </div>
+
+    <!-- Statutory Sub-Heading -->
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 10px; margin: 10px 0; font-size: 9.5px; color: #334155; line-height: 1.35; text-align: center;">
+      <em>Movement of inputs or partially processed goods for job-work under <strong>Rule 55 of The Central Goods And Service Tax Rules, 2017</strong> from one factory to another factory for further processing / operation.</em>
     </div>
 
     <!-- Metadata Grid -->
-    <div class="meta-grid">
+    <div class="meta-grid" style="margin-bottom: 12px;">
       <div class="meta-card">
-        <div class="meta-card-title">JOB WORK ORDER &amp; VEHICLE DATA</div>
-        <div class="meta-row">
-          <span class="meta-label">Job Work Order No:</span>
-          <span class="meta-val">${jwNo}</span>
+        <div class="meta-card-title">NAME &amp; ADDRESS OF SUPPLIER / MANUFACTURER</div>
+        <div class="party-name" style="font-size: 12px;">${COMPANY_INFO.name}</div>
+        <div class="party-address" style="font-size: 10.5px;">${COMPANY_INFO.address}</div>
+        <div class="meta-row" style="margin-top: 4px;">
+          <span class="meta-label">GSTIN:</span>
+          <span class="meta-val">${COMPANY_INFO.gstin}</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Challan Reference:</span>
-          <span class="meta-val">${challanNo}</span>
+          <span class="meta-label">Work Order / Dept:</span>
+          <span class="meta-val">${workOrder} • ${department}</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Issue Date:</span>
-          <span class="meta-val">${date}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Target Return Date:</span>
-          <span class="meta-val">${expectedReturn}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Manufacturing Stage:</span>
-          <span class="meta-val" style="color: #ea580c;">${process}</span>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Vehicle No:</span>
-          <span class="meta-val">${vehicle}</span>
+          <span class="meta-label">Transport Vehicle No:</span>
+          <span class="meta-val" style="font-weight: bold;">${vehicle}</span>
         </div>
       </div>
 
       <div class="meta-card">
-        <div class="meta-card-title">JOB WORK PROCESSOR (CONSIGNEE)</div>
-        <div class="party-name">${party}</div>
-        <div class="party-address">Shed No. 8, Shapar Industrial Area, Rajkot, Gujarat</div>
-        <div class="meta-row" style="margin-top: 8px;">
-          <span class="meta-label">GSTIN / UIN:</span>
-          <span class="meta-val">24AALSP8921N1ZY</span>
+        <div class="meta-card-title">TO BE FILLED BY PROCESSING UNIT / JOB WORKER</div>
+        <div class="meta-row">
+          <span class="meta-label">Serial / Challan No:</span>
+          <span class="meta-val" style="font-weight: 800; font-size: 13px; color: #0284c7;">${challanNo} (Sub: ${subChal})</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Processing Rate:</span>
-          <span class="meta-val">${charges}</span>
+          <span class="meta-label">Challan Date:</span>
+          <span class="meta-val">${date}</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Payment Terms:</span>
-          <span class="meta-val">30 Days Post Receipt</span>
+          <span class="meta-label">Job Worker Name:</span>
+          <span class="meta-val" style="font-weight: bold;">${party}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Process Stage:</span>
+          <span class="meta-val" style="color: #ea580c; font-weight: bold;">${process}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Expected Return Date:</span>
+          <span class="meta-val">${expectedReturn}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Issued By Supervisor:</span>
+          <span class="meta-val">${issuedBy}</span>
         </div>
       </div>
     </div>
 
-    <!-- Items Table -->
+    <!-- 1. Description of Goods Dispatched Table -->
+    <div style="font-weight: 700; font-size: 11px; margin-bottom: 4px; color: #0f172a;">
+      1. DESCRIPTION OF GOODS &amp; PACKAGING TARE MATRIX
+    </div>
     <table class="doc-table">
       <thead>
         <tr>
           <th style="width: 30px;">#</th>
-          <th>RAW MATERIAL ISSUED</th>
-          <th class="text-center" style="width: 90px;">MATERIAL CODE</th>
-          <th class="text-center" style="width: 100px;">BATCH / LOT</th>
-          <th class="text-right" style="width: 110px;">ISSUED QTY (KG)</th>
-          <th class="text-right" style="width: 100px;">SCRAP LIMIT %</th>
-          <th class="text-right" style="width: 110px;">EST. OUTPUT (KG)</th>
+          <th>ITEM DESCRIPTION &amp; GRADE</th>
+          <th class="text-center" style="width: 80px;">LOT / BATCH</th>
+          <th class="text-right" style="width: 90px;">GROSS (KG)</th>
+          <th class="text-center" style="width: 90px;">BORA / TARE</th>
+          <th class="text-right" style="width: 100px;">NET DISPATCH</th>
+          <th class="text-right" style="width: 80px;">B.LOSS %</th>
+          <th class="text-right" style="width: 110px;">NET RETURNABLE</th>
         </tr>
       </thead>
       <tbody>
@@ -884,36 +912,70 @@ export function printJobWorkChallan(data = {}) {
           <td class="text-center">1</td>
           <td>
             <strong>${rawMat}</strong>
-            <div style="font-size: 10px; color: #64748b;">Process: ${process} • Clean virgin polymer bags</div>
+            <div style="font-size: 10px; color: #64748b;">Grade: ${grade} • Nature: Polymer Raw Material for Job Work</div>
           </td>
-          <td class="text-center">${rawMatCode}</td>
           <td class="text-center">${batch}</td>
-          <td class="text-right"><strong>${sentQty}</strong></td>
-          <td class="text-right">3.0% Max</td>
-          <td class="text-right"><strong>${expOutput}</strong></td>
+          <td class="text-right">${grossWght.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+          <td class="text-center">${boraCount} Bora (${articleWeight.toFixed(1)}k)</td>
+          <td class="text-right" style="font-weight: bold; color: #0284c7;">${sentQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+          <td class="text-right">${bLossPct}%</td>
+          <td class="text-right" style="font-weight: bold; color: #15803d;">${netOutward.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="display: flex; justify-content: space-between; font-size: 10px; color: #475569; margin: 4px 0 12px 0;">
+      <span><strong>QA Sample Count:</strong> ${samplePcs} PCs (${sampleWeight} KG)</span>
+      <span><strong>Agreed Rate:</strong> ${charges}</span>
+      <span><strong>Burning Loss Weight (B.Loss):</strong> ${bLossKg.toFixed(1)} KG</span>
+    </div>
+
+    <!-- 2. Details to be filled on return to parent factory -->
+    <div style="font-weight: 700; font-size: 11px; margin-bottom: 4px; color: #0f172a; margin-top: 10px;">
+      2. DETAILS OF TYPE, QTY &amp; DATE OF PROCESSING DONE &amp; RETURN TO PARENT FACTORY
+    </div>
+    <table class="doc-table" style="margin-bottom: 12px;">
+      <thead>
+        <tr>
+          <th>RETURNED FINISHED ITEM DESCRIPTION</th>
+          <th class="text-center" style="width: 100px;">SIZE / TYPE</th>
+          <th class="text-right" style="width: 110px;">QUANTITY (KGS)</th>
+          <th class="text-right" style="width: 100px;">BORA COUNT</th>
+          <th class="text-center" style="width: 100px;">RETURN DATE</th>
+          <th class="text-center" style="width: 120px;">SUPERVISOR SIGN</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="height: 32px;">
+          <td>ANCHOR YARN / FISHING YARN</td>
+          <td class="text-center">YARN HANK</td>
+          <td class="text-right" style="color: #64748b;">[ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]</td>
+          <td class="text-right" style="color: #64748b;">[ &nbsp; &nbsp; &nbsp; &nbsp; ]</td>
+          <td class="text-center" style="color: #64748b;">____ / ____ / 2025</td>
+          <td class="text-center"></td>
         </tr>
       </tbody>
     </table>
 
     <!-- Statutory Box -->
-    <div class="words-box" style="background: #fff7ed; border-color: #ffedd5; color: #9a3412;">
-      <strong>Statutory Job Work Declaration:</strong> The above goods are sent for job work process under Section 143 of CGST Act, 2017. These materials remain the sole property of ${COMPANY_INFO.name} and must be returned after processing along with scrap within the prescribed time limit. Not for sale.
+    <div class="words-box" style="background: #fff7ed; border-color: #fed7aa; color: #9a3412; font-size: 10px; line-height: 1.35;">
+      <strong>Statutory Job Work Declaration:</strong> The goods described above are delivered solely for job work processing in accordance with Rule 55 and Section 143 of CGST Act, 2017. These materials remain the absolute property of ${COMPANY_INFO.name} and must be returned within the prescribed statutory period. Not meant for resale.
     </div>
 
     <!-- Signatures -->
-    <div class="signatures-grid">
+    <div class="signatures-grid" style="margin-top: 16px;">
       <div class="sig-box">
-        <div style="height: 48px;"></div>
-        <div class="sig-designation">Job Worker Acceptance Stamp &amp; Sign</div>
+        <div style="height: 38px;"></div>
+        <div class="sig-designation">Job Worker Acceptance Signature &amp; Stamp</div>
       </div>
       <div class="sig-box right">
         <div class="sig-for">For ${COMPANY_INFO.name}</div>
-        <div class="sig-designation">Production &amp; Job Work Manager</div>
+        <div class="sig-designation">Authorized Signatory / Issued By (${issuedBy})</div>
       </div>
     </div>
   `;
 
-  openPrintWindow(`JobWork_Challan_${challanNo}`, html);
+  openPrintWindow(`Rule55_JobWork_Challan_${challanNo}`, html);
 }
 
 /**

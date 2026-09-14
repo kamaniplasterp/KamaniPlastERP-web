@@ -3,7 +3,8 @@ import { useLocation } from 'react-router-dom';
 import {
   Plus, Search, Download, ArrowUpDown, Printer, ChevronRight,
   Package, Users, Briefcase, DollarSign, Percent, Filter, X,
-  Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell
+  Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell,
+  FileSpreadsheet, Receipt, Layers, Calendar
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
@@ -13,7 +14,6 @@ import { exportToCsv } from '../utils/exportCsv';
 import { printJobWorkChallan } from '../utils/printDocument';
 import { subscribeJobWorks, receiveJobWork, createJobWork } from '../api/jobwork.api';
 import { subscribeVendors } from '../api/directory.api';
-import { seedInitialData } from '../api/seed';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkHubView({ onOpenNewJobWork }) {
@@ -26,8 +26,12 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [materialFilter, setMaterialFilter] = useState('All');
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [receivingRow, setReceivingRow] = useState(null);
-  const [receiveQtyInput, setReceiveQtyInput] = useState('');
-  const [scrapQtyInput, setScrapQtyInput] = useState('');
+  
+  // Statement tab specific filters
+  const [statementParty, setStatementParty] = useState('');
+  const [statementStartDate, setStatementStartDate] = useState('2025-03-01');
+  const [statementEndDate, setStatementEndDate] = useState('2025-04-30');
+
   const [liveJobWorks, setLiveJobWorks] = useState([]);
   const [liveVendors, setLiveVendors] = useState([]);
 
@@ -52,20 +56,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const handleSaveReceiveModal = async (grnData) => {
     if (!receivingRow) return;
 
-    const recKg = Number(grnData.receivedQty || grnData.acceptedQty || 0);
-    const scrapKg = Number(grnData.scrapQty || 0);
-
     try {
       await receiveJobWork({
         jwId: receivingRow.firestoreId || receivingRow.id,
         currentRecKg: receivingRow.receivedQty || 0,
         currentScrapKg: receivingRow.scrapQtyKg || 0,
         totalSentKg: receivingRow.inputQty || 1000,
-        recQtyKg: recKg,
-        scrapQtyKg: scrapKg,
+        recGrossWeight: grnData.recGrossWeight,
+        recBoraCount: grnData.recBoraCount,
+        recArticleType: grnData.recArticleType,
+        recArticleWeight: grnData.recArticleWeight,
+        recQtyKg: grnData.recQtyKg,
+        reworkQtyKg: grnData.reworkQtyKg,
+        rejectionQtyKg: grnData.rejectionQtyKg,
+        scrapQtyKg: grnData.scrapQtyKg,
+        inwardSlipNo: grnData.inwardSlipNo,
+        inwardDate: grnData.inwardDate,
+        receivedBy: grnData.receivedBy,
+        ratePerKg: grnData.ratePerKg,
+        samplePcs: grnData.samplePcs,
+        sampleWeight: grnData.sampleWeight,
         rawMaterialId: receivingRow.rawMaterialId,
-        itemLabel: receivingRow.material,
-        remarks: grnData.notes || `GRN Receipt of ${recKg} KG (${grnData.qualityStatus || 'Approved'})`
+        itemLabel: grnData.itemLabel || receivingRow.material,
+        remarks: grnData.notes || `Inward Slip ${grnData.inwardSlipNo} recorded`
       });
 
       setReceivingRow(null);
@@ -93,24 +106,37 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     }
   };
 
+  // Map all Job Works with rich Excel fields
   const allJobWorkData = liveJobWorks.map(jw => {
     const inputQty = jw.sentQtyKg !== undefined
       ? Number(jw.sentQtyKg)
       : (jw.sentQty ? Number(String(jw.sentQty).replace(/[^0-9.]/g, '')) : 1000) || 1000;
+    
+    const grossWeight = Number(jw.grossWeight || inputQty);
+    const boraCount = Number(jw.boraCount || 0);
+    const articleWeight = Number(jw.articleWeight || 0);
+    const bLossPct = Number(jw.bLossPct !== undefined ? jw.bLossPct : (parseFloat(String(jw.wastage || 0).replace(/[^0-9.]/g, '')) || 0));
+    const bLossKg = Number(jw.bLossKg !== undefined ? jw.bLossKg : (inputQty * (bLossPct / 100)));
+    const netOutwardKg = Number(jw.netOutwardKg !== undefined ? jw.netOutwardKg : Math.max(0, inputQty - bLossKg));
+
     const receivedQty = jw.recQtyKg !== undefined
       ? Number(jw.recQtyKg)
       : (jw.recQty ? Number(String(jw.recQty).replace(/[^0-9.]/g, '')) : 0);
-    const pendingQty = jw.balQtyKg !== undefined
-      ? Number(jw.balQtyKg)
-      : (jw.balQty ? Number(String(jw.balQty).replace(/[^0-9.]/g, '')) : Math.max(0, inputQty - receivedQty - (Number(jw.scrapQtyKg) || 0)));
+    
+    const pendingQty = (jw.pendingQty !== undefined && jw.pendingQty !== null)
+      ? Number(jw.pendingQty)
+      : (jw.balQtyKg !== undefined && jw.balQtyKg !== null
+        ? Number(jw.balQtyKg)
+        : (jw.balQty ? Number(String(jw.balQty).replace(/[^0-9.]/g, '')) : Math.max(0, netOutwardKg - receivedQty - (Number(jw.scrapQtyKg) || 0))));
+    
     const scrapKg = jw.scrapQtyKg !== undefined
       ? Number(jw.scrapQtyKg)
-      : Math.max(0, inputQty - receivedQty - pendingQty);
-    const wastage = scrapKg > 0 ? `${scrapKg.toLocaleString('en-IN')} KG` : (jw.wastage && jw.wastage !== '-' ? jw.wastage : '-');
+      : Math.max(0, netOutwardKg - receivedQty - pendingQty);
+    
+    const wastage = scrapKg > 0 ? `${scrapKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG` : (bLossPct > 0 ? `${bLossPct}%` : '-');
 
-    // Calculate processing rate per KG and total payable charges dynamically from database/vendor directory
     const vendorMatch = liveVendors.find(v => v.id === jw.vendorId || v.name === jw.vendor);
-    const vendorDefaultRate = vendorMatch && vendorMatch.rate ? Number(vendorMatch.rate) : 12;
+    const vendorDefaultRate = vendorMatch && vendorMatch.rate ? Number(vendorMatch.rate) : 17.5;
 
     let ratePerKg = 0;
     if (typeof jw.ratePerKg === 'number' && jw.ratePerKg > 0) {
@@ -131,24 +157,44 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       id: jw.jwNo || jw.id,
       firestoreId: jw.id,
       rawMaterialId: jw.rawMaterialId,
-      challan: jw.chNo || `CH-${jw.jwNo || jw.id}`,
-      date: jw.date || '2026-08-25',
+      challan: jw.chNo || `${jw.jwNo || jw.id}`,
+      subChalNo: jw.subChalNo || '1',
+      workOrder: jw.workOrder || 'WO-1001',
+      department: jw.department || 'Job Work Extrusion',
+      date: jw.date || '2025-03-01',
       party: jw.vendor || 'Job Worker',
-      material: jw.rawMat || 'PP Granules',
-      process: jw.process || 'Extrusion / Yarn Making',
+      material: jw.rawMat || 'GRANUALS-HDPE ^ HD',
+      grade: jw.grade || '',
+      process: jw.process || 'GRANUAL - FISHING YARN',
       batch: jw.batch || 'BATCH-RM-JW',
+      vehicleNo: jw.vehicleNo || '',
+      issuedBy: jw.issuedBy || 'SURESHBHAI',
+      approvedBy: jw.approvedBy || 'FINAL APPROVED',
+      grossWeight,
+      boraCount,
+      articleWeight,
+      articleType: jw.articleType || 'BORA',
       inputQty,
+      bLossPct,
+      bLossKg,
+      netOutwardKg,
       receivedQty,
+      recBoraCount: Number(jw.recBoraCount || 0),
       pendingQty,
       scrapQtyKg: scrapKg,
+      reworkQtyKg: Number(jw.reworkQtyKg || 0),
+      rejectionQtyKg: Number(jw.rejectionQtyKg || 0),
       wastage,
       ratePerKg,
       charges: totalCharges,
-      expectedReturn: jw.expectedReturn || '2026-08-30',
+      expectedReturn: jw.expectedReturn || '',
+      durationDays: jw.durationDays || 5,
+      inwardReceipts: jw.inwardReceipts || [],
       status: jw.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : jw.status === 'COMPLETED' ? 'FULLY RECEIVED' : jw.status || 'SENT'
     };
   });
 
+  // Top level KPIs
   const totalSentKg = allJobWorkData.reduce((acc, curr) => acc + (Number(curr.inputQty) || 0), 0);
   const totalReceivedKg = allJobWorkData.reduce((acc, curr) => acc + (Number(curr.receivedQty) || 0), 0);
   const totalPendingKg = allJobWorkData.reduce((acc, curr) => acc + (Number(curr.pendingQty) || 0), 0);
@@ -165,8 +211,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
   const avgWastagePct = totalSentKg > 0 ? ((totalScrapKg / totalSentKg) * 100).toFixed(1) : '0.0';
 
-  const { activeJobWorksCount, jobWorkStock, globalSearch, rmList, fgList, simulatedSalesOrders, simulatedDispatches } = useWorkflow();
-  const activeSearch = searchQuery || globalSearch || '';
+  const { activeJobWorksCount, rmList, fgList, simulatedSalesOrders, simulatedDispatches } = useWorkflow();
+  const activeSearch = searchQuery || '';
 
   const rawPolymerValuationInr = (rmList || []).reduce((sum, rm) => {
     return sum + ((Number(rm.availFactory) || 0) * (Number(rm.rate) || 115));
@@ -206,6 +252,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     return matchesSearch && matchesStatus && matchesParty && matchesMaterial;
   });
 
+  // Statement Data Computation for Selected Job Worker
+  const currentStatementParty = (statementParty && uniqueJwParties.includes(statementParty))
+    ? statementParty
+    : (uniqueJwParties[0] || 'All Parties');
+  const statementOrders = allJobWorkData.filter(j => 
+    (j.party || '').toLowerCase() === currentStatementParty.toLowerCase()
+  );
+
+  const stmtOutwardNetSum = statementOrders.reduce((s, o) => s + (Number(o.inputQty) || 0), 0);
+  const stmtBLossSum = statementOrders.reduce((s, o) => s + (Number(o.bLossKg) || 0), 0);
+  const stmtOutwardAfterLoss = Math.max(0, stmtOutwardNetSum - stmtBLossSum);
+  const stmtInwardSum = statementOrders.reduce((s, o) => s + (Number(o.receivedQty) || 0), 0);
+  const stmtClosingWeightBal = Math.max(0, stmtOutwardAfterLoss - stmtInwardSum);
+
+  const stmtBoraOutward = statementOrders.reduce((s, o) => s + (Number(o.boraCount) || 0), 0);
+  const stmtBoraInward = statementOrders.reduce((s, o) => s + (Number(o.recBoraCount) || 0), 0);
+  const stmtBoraClosing = Math.max(0, stmtBoraOutward - stmtBoraInward);
+
+  const stmtTotalPayable = statementOrders.reduce((s, o) => s + (Number(o.charges) || (Number(o.receivedQty) * (Number(o.ratePerKg) || 17.5))), 0);
+  const stmtDeductions = statementOrders.reduce((s, o) => s + (Number(o.rejectionQtyKg) * 100), 0);
+  const stmtTotalPaid = Math.round(stmtTotalPayable * 0.85); // Demo paid amount
+  const stmtClosingFinBal = stmtTotalPayable - stmtDeductions - stmtTotalPaid;
+
   const computedVendorGroups = Object.values(
     allJobWorkData.reduce((acc, order) => {
       const vName = order.party || 'Job Worker';
@@ -223,19 +292,22 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       }
       acc[vName].orders.push({
         id: order.id,
+        challan: order.challan,
         challanDate: order.date,
         material: order.material,
-        process: order.process || 'Extrusion / Yarn Making',
+        process: order.process || 'GRANUAL - FISHING YARN',
         batch: order.batch || 'WIP-LOT',
-        sentQty: typeof order.inputQty === 'number' ? `${order.inputQty.toLocaleString()} KG` : order.inputQty,
-        recdQty: typeof order.receivedQty === 'number' ? `${order.receivedQty.toLocaleString()} KG` : order.receivedQty,
-        pendingQty: typeof order.pendingQty === 'number' ? `${order.pendingQty.toLocaleString()} KG` : order.pendingQty,
+        grossWeight: order.grossWeight,
+        boraCount: order.boraCount,
+        sentQty: `${order.inputQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
+        recdQty: `${order.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
+        pendingQty: `${order.pendingQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
         expReturn: order.expectedReturn,
         status: order.status
       });
       acc[vName].pendingKgSum += Number(order.pendingQty) || 0;
-      acc[vName].totalQty = `${acc[vName].pendingKgSum.toLocaleString()} KG`;
-      acc[vName].totalVal = `₹${(acc[vName].pendingKgSum * 18).toLocaleString()}`;
+      acc[vName].totalQty = `${acc[vName].pendingKgSum.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`;
+      acc[vName].totalVal = `₹${(acc[vName].pendingKgSum * 17.5).toLocaleString('en-IN')}`;
       return acc;
     }, {})
   );
@@ -271,14 +343,14 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       vendor: v.vendor,
       city: v.city,
       spec: v.spec,
-      sent: v.sentKg.toLocaleString(),
-      recd: v.recdKg.toLocaleString(),
-      actualWastageKg: actualWastageKg.toLocaleString(),
+      sent: v.sentKg.toLocaleString('en-IN', { maximumFractionDigits: 1 }),
+      recd: v.recdKg.toLocaleString('en-IN', { maximumFractionDigits: 1 }),
+      actualWastageKg: actualWastageKg.toLocaleString('en-IN', { maximumFractionDigits: 1 }),
       allowedWastagePct: `${allowedPct.toFixed(1)}%`,
       actualWastagePct: `${wastagePctNum.toFixed(2)}%`,
       rating,
       isWithin,
-      charges: `₹${v.chargesSum.toLocaleString()}`
+      charges: `₹${v.chargesSum.toLocaleString('en-IN')}`
     };
   });
 
@@ -289,7 +361,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         pct: Math.min(100, Math.max(25, (Number(fg.stockQty) / 500) * 100))
       }))
     : [
-        { name: 'PP Danline Rope 6mm (Yellow)', count: '200 Coils', pct: 40 }
+        { name: 'LOTUS SUPER-LS ^ 02MM ^ HANKS ^ 1KG', count: '450 Coils', pct: 60 }
       ];
 
   const dispatchFulfillmentData = (simulatedSalesOrders && simulatedSalesOrders.length > 0)
@@ -325,25 +397,23 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     }
   };
 
-
-
   return (
     <div className="jw-hub-container">
       {/* ── Page Header ── */}
       <div className="jw-page-header">
         <div className="jw-header-left">
           <div className="jw-title-row">
-            <h1 className="jw-page-title">Job Work Operations Hub</h1>
-            <span className="jw-badge-orange">{activeJobWorksCount} Active Orders</span>
+            <h1 className="jw-page-title">Job Work Operations &amp; Reconciliation Hub</h1>
+            <span className="jw-badge-orange">{activeJobWorksCount} Active Consignments</span>
           </div>
           <p className="jw-page-subtitle">
-            Manage outward material challans, monitor stock at outside processors, and track vendor wastage yield in one place.
+            Rule 55 CGST Outward Challans, Inward Delivery Slips, Tare &amp; B.Loss calculations, and Job Worker Balance Statements.
           </p>
         </div>
         <div className="jw-header-right">
           <button className="jw-btn-primary-blue" onClick={handleOpenModal}>
             <Plus size={15} />
-            New Outward Challan
+            New Outward Challan (Rule 55)
           </button>
         </div>
       </div>
@@ -361,7 +431,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         <div className="jw-kpi-card jw-kpi-highlight">
           <div className="jw-kpi-title jw-title-orange">MATERIAL WITH VENDORS</div>
           <div className="jw-kpi-val-row">
-            <span className="jw-kpi-num jw-text-orange">{Math.max(0, totalPendingKg).toLocaleString()}</span>
+            <span className="jw-kpi-num jw-text-orange">{Math.max(0, totalPendingKg).toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
             <span className="jw-kpi-sublabel">KG</span>
           </div>
         </div>
@@ -382,8 +452,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       </div>
 
-      {/* ── Segmented Tab Bar ── */}
-      <div className="jw-tab-bar">
+      {/* ── Segmented Tab Bar (5 Tabs matching Excel) ── */}
+      <div className="jw-tab-bar" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <button
           className={`jw-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
           onClick={() => setActiveTab('orders')}
@@ -394,12 +464,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </button>
 
         <button
+          className={`jw-tab-btn ${activeTab === 'challanReport' ? 'active' : ''}`}
+          onClick={() => setActiveTab('challanReport')}
+        >
+          <FileSpreadsheet size={14} />
+          Challan Balance Report
+          <span className="jw-tab-badge-orange">{allJobWorkData.filter(j => j.status !== 'FULLY RECEIVED').length} Open</span>
+        </button>
+
+        <button
+          className={`jw-tab-btn ${activeTab === 'statement' ? 'active' : ''}`}
+          onClick={() => setActiveTab('statement')}
+        >
+          <Receipt size={14} />
+          Job Worker Statement &amp; Ledger
+        </button>
+
+        <button
           className={`jw-tab-btn ${activeTab === 'material' ? 'active' : ''}`}
           onClick={() => setActiveTab('material')}
         >
           <Package size={14} />
           Material at Outside Processors
-          <span className="jw-tab-badge-orange">{totalPendingKg.toLocaleString()} KG</span>
+          <span className="jw-tab-badge-orange">{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} KG</span>
         </button>
 
         <button
@@ -407,79 +494,32 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           onClick={() => setActiveTab('wastage')}
         >
           <Percent size={14} />
-          Vendor Wastage &amp; Yield Analysis
+          Vendor Wastage &amp; Yield
         </button>
       </div>
 
-      {/* ── TAB 1: Job Work Ledger ── */}
+      {/* ── TAB 1: Job Work Ledger (Enhanced with Excel fields) ── */}
       {activeTab === 'orders' && (
         <div className="jw-ledger-section">
           <div className="jw-ledger-header">
             <div className="jw-ledger-title-group">
               <div className="jw-ledger-title-row">
-                <h2 className="jw-ledger-title">Job Work Ledger</h2>
+                <h2 className="jw-ledger-title">Job Work Outward / Inward Register</h2>
                 <span className="jw-badge-orange">{allJobWorkData.length} Consignments</span>
               </div>
               <p className="jw-ledger-subtitle">
-                Track multi-party extrusion, tape spinning, twisting, and rope laying job orders with partial receipts &amp; wastage.
+                Track Gross &amp; Net weights, Bora counts, B.Loss % (Burning loss), Inward receipts, and issued personnel.
               </p>
             </div>
 
             <div className="jw-ledger-actions">
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('Job_Work_Ledger.csv', filteredData)} style={{ cursor: 'pointer' }}>
+              <button className="jw-btn-ghost" onClick={() => exportToCsv('Job_Work_Register.csv', filteredData)} style={{ cursor: 'pointer' }}>
                 <Download size={14} />
                 Export CSV
               </button>
               <button className="jw-btn-dark-pill" onClick={handleOpenModal}>
-                <Plus size={14} /> Issue New Job Work
+                <Plus size={14} /> Issue Outward Challan
               </button>
-            </div>
-          </div>
-
-          {/* Ledger 5 KPI Row */}
-          <div className="jw-ledger-kpi-grid">
-            <div className="jw-lkpi-card">
-              <div className="jw-lkpi-title">TOTAL MATERIAL SENT</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val">{totalSentKg.toLocaleString()}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub">Across {allJobWorkData.length} job orders</div>
-            </div>
-
-            <div className="jw-lkpi-card">
-              <div className="jw-lkpi-title">TOTAL RECEIVED BACK</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val">{totalReceivedKg.toLocaleString()}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub jw-text-green">{returnRatePct}% Return Rate</div>
-            </div>
-
-            <div className="jw-lkpi-card jw-lkpi-highlight">
-              <div className="jw-lkpi-title jw-title-orange">TOTAL PENDING OUTSIDE</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val jw-text-orange">{totalPendingKg.toLocaleString()}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub">At outside job worker units</div>
-            </div>
-
-            <div className="jw-lkpi-card">
-              <div className="jw-lkpi-title">PROCESS WASTAGE RECORDED</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val">{totalScrapKg.toLocaleString()}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub">Avg {avgWastagePct}% scrap loss</div>
-            </div>
-
-            <div className="jw-lkpi-card">
-              <div className="jw-lkpi-title">TOTAL JOB WORK CHARGES</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val">₹{totalChargesSum.toLocaleString()}</span>
-              </div>
-              <div className="jw-lkpi-sub">Processing fees payable</div>
             </div>
           </div>
 
@@ -489,7 +529,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               <Search size={14} className="jw-search-icon" />
               <input
                 type="text"
-                placeholder="Search JW#, Party, Material, Challan..."
+                placeholder="Search Challan#, Party, Material, Process, Issued By..."
                 className="jw-filter-search"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
@@ -503,10 +543,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             >
               <option value="All">All Statuses ({allJobWorkData.length})</option>
               <option value="SENT">SENT</option>
-              <option value="IN PROCESS">IN PROCESS</option>
               <option value="PARTIALLY RECEIVED">PARTIALLY RECEIVED</option>
               <option value="FULLY RECEIVED">FULLY RECEIVED</option>
-              <option value="OVERDUE">OVERDUE</option>
             </select>
 
             <select
@@ -532,21 +570,22 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             </select>
           </div>
 
-          {/* Table */}
+          {/* Enhanced Table with Excel Columns */}
           <div className="jw-table-container">
             <table className="jw-ledger-table">
               <thead>
                 <tr>
-                  <th>JW NUMBER <ArrowUpDown size={11} className="sort-icon" /></th>
-                  <th>DATE <ArrowUpDown size={11} className="sort-icon" /></th>
-                  <th>JOB WORK PARTY</th>
-                  <th>MATERIAL &amp; PROCESS</th>
-                  <th>INPUT QTY <ArrowUpDown size={11} className="sort-icon" /></th>
-                  <th>RECEIVED</th>
-                  <th>PENDING <ArrowUpDown size={11} className="sort-icon" /></th>
-                  <th>WASTAGE</th>
-                  <th>CHARGES (₹)</th>
-                  <th>EXPECTED RETURN</th>
+                  <th>CHALLAN NO.</th>
+                  <th>DATE</th>
+                  <th>PARTY NAME</th>
+                  <th>ITEM NAME &amp; PROCESS</th>
+                  <th>GROSS (KG)</th>
+                  <th>BORA</th>
+                  <th>NET OUTWARD (KG)</th>
+                  <th>B.LOSS</th>
+                  <th>INWARD (KG)</th>
+                  <th>BAL WEIGHT (KG)</th>
+                  <th>ISSUED BY</th>
                   <th>STATUS</th>
                   <th>ACTION</th>
                 </tr>
@@ -561,28 +600,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                   >
                     <td className="td-jw-num">
                       <span className="jw-id-link">{row.id}</span>
-                      <span className="jw-challan-sub">Challan: {row.challan}</span>
+                      <span className="jw-challan-sub">Chl #{row.challan}</span>
                     </td>
                     <td className="td-date">{row.date}</td>
                     <td className="td-party">{row.party}</td>
                     <td className="td-material-col">
                       <div className="jw-mat-name">{row.material}</div>
                       <div className="jw-mat-sub">
-                        {row.process} • <span className="jw-batch-text">Batch: {row.batch}</span>
+                        {row.process} • <span className="jw-batch-text">{row.batch}</span>
                       </div>
                     </td>
-                    <td className="td-qty">{row.inputQty.toLocaleString()} KG</td>
-                    <td className="td-qty">{row.receivedQty.toLocaleString()} KG</td>
+                    <td className="td-qty">{row.grossWeight ? row.grossWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}</td>
+                    <td className="td-qty">{row.boraCount ? `${row.boraCount} Bora` : '—'}</td>
+                    <td className="td-qty" style={{ fontWeight: 'bold' }}>{row.inputQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+                    <td className="td-wastage">{row.bLossPct > 0 ? `${row.bLossPct}% (${row.bLossKg.toFixed(1)}k)` : '0%'}</td>
+                    <td className="td-qty">{row.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
                     <td className="td-qty">
                       {row.pendingQty > 0 ? (
-                        <span className="pending-orange-bold">{row.pendingQty.toLocaleString()} KG</span>
+                        <span className="pending-orange-bold">{row.pendingQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
                       ) : (
-                        <span>0 KG</span>
+                        <span style={{ color: '#16a34a' }}>0 KG</span>
                       )}
                     </td>
-                    <td className="td-wastage">{row.wastage}</td>
-                    <td className="td-charges">₹{row.charges.toLocaleString('en-IN')}</td>
-                    <td className="td-exp-date">{row.expectedReturn}</td>
+                    <td className="td-date" style={{ fontSize: '0.72rem', color: '#475569' }}>{row.issuedBy}</td>
                     <td className="td-status">{getStatusBadge(row.status)}</td>
                     <td className="td-actions" onClick={e => e.stopPropagation()}>
                       <div className="jw-action-group">
@@ -598,25 +638,25 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                         ) : (
                           <button
                             className="jw-receive-btn"
-                            title="Record Goods Receipt Note (GRN)"
+                            title="Record Inward Slip"
                             onClick={() => setReceivingRow(row)}
                           >
-                            Receive
+                            Inward
                           </button>
                         )}
+                        <button
+                          className="jw-icon-action"
+                          title="Print Rule 55 Delivery Challan"
+                          onClick={() => printJobWorkChallan(row)}
+                        >
+                          <Printer size={14} />
+                        </button>
                         <button
                           className="jw-icon-action"
                           title="View Job Work Details"
                           onClick={() => setSelectedJwId(row.id)}
                         >
                           <ChevronRight size={15} />
-                        </button>
-                        <button
-                          className="jw-icon-action"
-                          title="Print Job Work Challan"
-                          onClick={() => printJobWorkChallan(row)}
-                        >
-                          <Printer size={14} />
                         </button>
                       </div>
                     </td>
@@ -628,7 +668,288 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {/* ── TAB 2: Material at Outside Processors ── */}
+      {/* ── TAB 2: Challan Balance Report (Matching Excel 'Pending Challan' & 'Challan Wise Co.') ── */}
+      {activeTab === 'challanReport' && (
+        <div className="jw-ledger-section">
+          <div className="jw-ledger-header">
+            <div className="jw-ledger-title-group">
+              <div className="jw-ledger-title-row">
+                <h2 className="jw-ledger-title">Challan Balance Report (Analytical Register)</h2>
+                <span className="jw-badge-blue">Excel Challan Wise Co.</span>
+              </div>
+              <p className="jw-ledger-subtitle">
+                Comprehensive audit of Net Weight, Burning Loss % (B.Loss), Burning Loss Weight, Net Receivable, Inward Received, and Balance Weight per Challan.
+              </p>
+            </div>
+
+            <div className="jw-ledger-actions">
+              <button className="jw-btn-ghost" onClick={() => exportToCsv('Challan_Balance_Report.csv', allJobWorkData)} style={{ cursor: 'pointer' }}>
+                <Download size={14} />
+                Export Challan Report
+              </button>
+            </div>
+          </div>
+
+          {/* Challan Balance Summary Grid */}
+          <div className="jw-ledger-kpi-grid">
+            <div className="jw-lkpi-card">
+              <div className="jw-lkpi-title">TOTAL SUM NET WEIGHT</div>
+              <div className="jw-lkpi-val-row">
+                <span className="jw-lkpi-val">{totalSentKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-lkpi-unit">KG</span>
+              </div>
+              <div className="jw-lkpi-sub">Total dispatched across challans</div>
+            </div>
+
+            <div className="jw-lkpi-card">
+              <div className="jw-lkpi-title">TOTAL BURNING LOSS (B.LOSS)</div>
+              <div className="jw-lkpi-val-row">
+                <span className="jw-lkpi-val">{allJobWorkData.reduce((s, c) => s + (Number(c.bLossKg) || 0), 0).toFixed(1)}</span>
+                <span className="jw-lkpi-unit">KG</span>
+              </div>
+              <div className="jw-lkpi-sub">Process loss deduction</div>
+            </div>
+
+            <div className="jw-lkpi-card">
+              <div className="jw-lkpi-title">TOTAL INWARD WEIGHT</div>
+              <div className="jw-lkpi-val-row">
+                <span className="jw-lkpi-val jw-text-green">{totalReceivedKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-lkpi-unit">KG</span>
+              </div>
+              <div className="jw-lkpi-sub">{returnRatePct}% Inward yield</div>
+            </div>
+
+            <div className="jw-lkpi-card jw-lkpi-highlight">
+              <div className="jw-lkpi-title jw-title-orange">OUTSTANDING BALANCE WEIGHT</div>
+              <div className="jw-lkpi-val-row">
+                <span className="jw-lkpi-val jw-text-orange">{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-lkpi-unit">KG</span>
+              </div>
+              <div className="jw-lkpi-sub">Pending with processors</div>
+            </div>
+          </div>
+
+          {/* Challan Wise Table */}
+          <div className="jw-table-container" style={{ marginTop: '14px' }}>
+            <table className="jw-ledger-table">
+              <thead>
+                <tr>
+                  <th>DATE</th>
+                  <th>CHAL. NO.</th>
+                  <th>PARTY NAME</th>
+                  <th>B.LOSS %</th>
+                  <th>SUM N. WGHT (KG)</th>
+                  <th>SUM B. LOSS (KG)</th>
+                  <th>NET OUTWARD (KG)</th>
+                  <th>INWARD WEIGHT (KG)</th>
+                  <th>BALANCE WEIGHT (KG)</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allJobWorkData.map((row, idx) => (
+                  <tr key={idx}>
+                    <td className="td-date">{row.date}</td>
+                    <td className="td-jw-num" style={{ fontWeight: 'bold' }}>{row.challan}</td>
+                    <td className="td-party">{row.party}</td>
+                    <td className="td-qty">{row.bLossPct}%</td>
+                    <td className="td-qty">{row.inputQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                    <td className="td-qty">{row.bLossKg.toFixed(1)}</td>
+                    <td className="td-qty" style={{ fontWeight: 'bold' }}>{row.netOutwardKg.toFixed(1)}</td>
+                    <td className="td-qty" style={{ color: '#16a34a', fontWeight: 'bold' }}>{row.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                    <td className="td-qty">
+                      <span className={row.pendingQty > 0 ? 'pending-orange-bold' : 'badge-green-sm'}>
+                        {row.pendingQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG
+                      </span>
+                    </td>
+                    <td className="td-status">{getStatusBadge(row.status)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 3: Job Worker Statement & Reconciliation (Matching Excel 'Statement' sheet) ── */}
+      {activeTab === 'statement' && (
+        <div className="jw-ledger-section">
+          <div className="jw-ledger-header">
+            <div className="jw-ledger-title-group">
+              <div className="jw-ledger-title-row">
+                <h2 className="jw-ledger-title">Job Worker Statement &amp; Financial Ledger</h2>
+                <span className="jw-badge-orange">{currentStatementParty}</span>
+              </div>
+              <p className="jw-ledger-subtitle">
+                Complete party ledger tracking material weight reconciliation, Bora packaging balance, payable charges, extra cutting deductions, and payment receipts.
+              </p>
+            </div>
+
+            <div className="jw-ledger-actions">
+              <button className="jw-btn-ghost" onClick={() => exportToCsv(`Statement_${currentStatementParty}.csv`, statementOrders)} style={{ cursor: 'pointer' }}>
+                <Download size={14} />
+                Export Statement CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Party & Date Range Selector */}
+          <div className="jw-filter-bar" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Users size={15} style={{ color: '#2563eb' }} />
+              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#1e293b' }}>Select Job Worker:</label>
+              <select
+                className="jw-filter-select"
+                value={currentStatementParty}
+                onChange={e => setStatementParty(e.target.value)}
+                style={{ fontWeight: 'bold', minWidth: '220px' }}
+              >
+                {uniqueJwParties.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calendar size={15} style={{ color: '#ea580c' }} />
+              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#1e293b' }}>Date Range:</label>
+              <input type="date" className="jw-filter-select" value={statementStartDate} onChange={e => setStatementStartDate(e.target.value)} />
+              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>to</span>
+              <input type="date" className="jw-filter-select" value={statementEndDate} onChange={e => setStatementEndDate(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Statement 3-Category Summary Block (Weight, Bora, Financial) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginTop: '14px' }}>
+            {/* 1. Weight Reconciliation */}
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '14px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0369a1', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                ⚖️ Material Weight Reconciliation
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Opening Balance:</span>
+                <span style={{ fontWeight: 'bold' }}>0.0 KG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Outward Sent:</span>
+                <span style={{ fontWeight: 'bold' }}>{stmtOutwardNetSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Outward (-) B.Loss:</span>
+                <span style={{ fontWeight: 'bold', color: '#0284c7' }}>{stmtOutwardAfterLoss.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Inward Received:</span>
+                <span style={{ fontWeight: 'bold', color: '#16a34a' }}>{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '4px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
+                <span>Closing Balance:</span>
+                <span style={{ color: '#ea580c' }}>{stmtClosingWeightBal.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              </div>
+            </div>
+
+            {/* 2. Packaging & Bora Reconciliation */}
+            <div style={{ background: '#fefce8', border: '1px solid #fef08a', borderRadius: '8px', padding: '14px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#a16207', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                📦 Packaging &amp; Bora Reconciliation
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Bora Opening Balance:</span>
+                <span style={{ fontWeight: 'bold' }}>0 Bora</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Bora Outward Sent:</span>
+                <span style={{ fontWeight: 'bold' }}>{stmtBoraOutward} Bora</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Bora Inward Received:</span>
+                <span style={{ fontWeight: 'bold', color: '#16a34a' }}>{stmtBoraInward} Bora</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Theli &amp; Label Balance:</span>
+                <span style={{ fontWeight: 'bold' }}>0 Nos</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '4px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
+                <span>Bora Closing Balance:</span>
+                <span style={{ color: '#ca8a04' }}>{stmtBoraClosing} Bora</span>
+              </div>
+            </div>
+
+            {/* 3. Financial Ledger Reconciliation */}
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '14px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#15803d', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                💳 Financial &amp; Payment Ledger
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Total Processing Payable:</span>
+                <span style={{ fontWeight: 'bold' }}>₹{stmtTotalPayable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Deductions / Extra Cutting:</span>
+                <span style={{ fontWeight: 'bold', color: '#dc2626' }}>₹{stmtDeductions.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Total Paid to Worker:</span>
+                <span style={{ fontWeight: 'bold', color: '#16a34a' }}>₹{stmtTotalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '12px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
+                <span>Net Outstanding Balance:</span>
+                <span style={{ color: stmtClosingFinBal > 0 ? '#15803d' : '#dc2626' }}>
+                  ₹{stmtClosingFinBal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Statement Detailed Table (Matching Outward & Inward rows from Excel Statement) */}
+          <div className="jw-table-container" style={{ marginTop: '16px' }}>
+            <table className="jw-ledger-table">
+              <thead>
+                <tr>
+                  <th colSpan={7} style={{ background: '#1e293b', color: '#fff', textAlign: 'center' }}>OUTWARD CONSIGNMENTS (DISPATCH)</th>
+                  <th colSpan={6} style={{ background: '#0f172a', color: '#fb923c', textAlign: 'center' }}>INWARD RECEIPTS (RETURN)</th>
+                </tr>
+                <tr>
+                  <th>CHL NO.</th>
+                  <th>DATE</th>
+                  <th>ITEM NAME</th>
+                  <th>PROCESS</th>
+                  <th>N. WGHT (KG)</th>
+                  <th>B.LOSS</th>
+                  <th>BORA</th>
+                  <th>SLIP NO.</th>
+                  <th>DATE</th>
+                  <th>INW ITEM</th>
+                  <th>N. WGHT (KG)</th>
+                  <th>RATE (₹)</th>
+                  <th>VALUE (₹)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statementOrders.map((ord, i) => (
+                  <tr key={i}>
+                    <td className="td-jw-num">{ord.challan}</td>
+                    <td className="td-date">{ord.date}</td>
+                    <td className="td-party">{ord.material}</td>
+                    <td className="td-material-col" style={{ fontSize: '0.74rem' }}>{ord.process}</td>
+                    <td className="td-qty" style={{ fontWeight: 'bold' }}>{ord.inputQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                    <td className="td-wastage">{ord.bLossPct}%</td>
+                    <td className="td-qty">{ord.boraCount || '—'}</td>
+
+                    {/* Inward Details */}
+                    <td className="td-jw-num" style={{ color: '#ea580c' }}>{ord.inwardReceipts?.[0]?.slipNo || `SLIP-${ord.challan}`}</td>
+                    <td className="td-date">{ord.inwardReceipts?.[0]?.date || ord.expectedReturn || ord.date}</td>
+                    <td className="td-party">ANCHOR YARN ^ YARN HANK</td>
+                    <td className="td-qty" style={{ color: '#16a34a', fontWeight: 'bold' }}>{ord.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
+                    <td className="td-qty">₹{ord.ratePerKg}</td>
+                    <td className="td-charges">₹{(ord.receivedQty * ord.ratePerKg).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 4: Material at Outside Processors ── */}
       {activeTab === 'material' && (
         <div className="jw-material-tab-container">
           <div className="jw-ledger-section">
@@ -648,64 +969,10 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </button>
             </div>
 
-            {/* 3 Summary KPI Cards */}
-            <div className="jw-top-kpis">
-              <div className="jw-kpi-card jw-kpi-highlight">
-                <div className="jw-kpi-title jw-title-orange">TOTAL MATERIAL OUTSIDE</div>
-                <div className="jw-kpi-val-row">
-                  <span className="jw-kpi-num jw-text-orange">{totalPendingKg.toLocaleString()}</span>
-                  <span className="jw-kpi-sublabel">KG</span>
-                </div>
-                <div className="jw-lkpi-sub">Across {allJobWorkData.filter(j => j.status !== 'FULLY RECEIVED').length} open job work orders</div>
-              </div>
-
-              <div className="jw-kpi-card">
-                <div className="jw-kpi-title">TOTAL MATERIAL VALUATION</div>
-                <div className="jw-kpi-val-row">
-                  <span className="jw-kpi-num">₹{(totalPendingKg * 115).toLocaleString()}</span>
-                  <span className="jw-kpi-sublabel">INR</span>
-                </div>
-                <div className="jw-lkpi-sub">Based on current purchase landed costs</div>
-              </div>
-
-              <div className="jw-kpi-card">
-                <div className="jw-kpi-title jw-title-red">OVERDUE CONSIGNMENTS</div>
-                <div className="jw-kpi-val-row">
-                  <span className="jw-kpi-num jw-text-red">{allJobWorkData.filter(j => j.status === 'OVERDUE').length}</span>
-                  <span className="jw-kpi-sublabel jw-text-red">Orders Past Deadline</span>
-                </div>
-                <div className="jw-lkpi-sub jw-text-red">
-                  <Clock size={11} style={{ display: 'inline', marginRight: '3px' }} />
-                  Requires immediate follow-up
-                </div>
-              </div>
-            </div>
-
-            {/* Filter Bar */}
-            <div className="jw-filter-bar">
-              <div className="jw-search-input-wrap">
-                <Search size={14} className="jw-search-icon" />
-                <input
-                  type="text"
-                  placeholder="Filter by Job Worker, Material, JW Number..."
-                  className="jw-filter-search"
-                />
-              </div>
-
-              <select className="jw-filter-select">
-                <option value="All">All Job Work Vendors</option>
-                <option value="Shree">Shree Plastic Works</option>
-                <option value="Patel">Patel Rope Processing</option>
-                <option value="Mahavir">Mahavir Twisters &amp; Winders</option>
-              </select>
-            </div>
-
             {/* Vendor Grouped Cards & Tables */}
             <div className="jw-vendor-groups">
-              {computedVendorGroups.map((vg, idx) => {
-                return (
+              {computedVendorGroups.map((vg, idx) => (
                 <div key={idx} className="jw-vendor-card">
-                  {/* Vendor Card Header */}
                   <div className="jw-vcard-header">
                     <div className="jw-vcard-left">
                       <div className="jw-vcard-title-row">
@@ -726,7 +993,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     </div>
                   </div>
 
-                  {/* Vendor Sub Table */}
                   <div className="jw-table-container">
                     <table className="jw-ledger-table">
                       <thead>
@@ -764,20 +1030,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                               <div className="jw-action-group">
                                 <button
                                   className="jw-receive-btn"
-                                  title="Record Goods Receipt Note (GRN)"
+                                  title="Record Inward Slip"
                                   onClick={() => {
                                     const match = allJobWorkData.find(x => x.id === ord.id);
-                                    setReceivingRow(match || {
-                                      id: ord.id,
-                                      party: vg.vendor,
-                                      material: ord.material,
-                                      inputQty: ord.sentQty,
-                                      receivedQty: ord.recdQty,
-                                      pendingQty: ord.pendingQty
-                                    });
+                                    setReceivingRow(match || ord);
                                   }}
                                 >
-                                  Receive
+                                  Inward
                                 </button>
                                 <button
                                   className="jw-icon-action"
@@ -794,14 +1053,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     </table>
                   </div>
                 </div>
-              );
-              })}
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* ── TAB 3: Vendor Wastage & Yield Analysis ── */}
+      {/* ── TAB 5: Vendor Wastage & Yield Analysis ── */}
       {activeTab === 'wastage' && (
         <div className="jw-wastage-tab-container">
           <div className="jw-ledger-section">
@@ -817,53 +1075,10 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </div>
 
               <div className="jw-ledger-actions">
-                <select className="jw-filter-select">
-                  <option>Current Financial Year (FY 2025-26)</option>
-                  <option>Previous FY (2024-25)</option>
-                </select>
                 <button className="jw-btn-dark" onClick={() => exportToCsv('Vendor_Executive_Report.csv', computedVendorPerformance)} style={{ cursor: 'pointer' }}>
                   <Download size={14} />
                   Export Executive Report
                 </button>
-              </div>
-            </div>
-
-            {/* 4 Summary Cards */}
-            <div className="jw-top-kpis">
-              <div className="jw-kpi-card">
-                <div className="jw-kpi-title">RAW POLYMER ASSETS</div>
-                <div className="jw-kpi-val-row">
-                  <span className="jw-kpi-num">₹{rawPolymerValuationLakhs}</span>
-                  <span className="jw-kpi-sublabel">Lakhs</span>
-                </div>
-                <div className="jw-lkpi-sub">Factory inventory asset value</div>
-              </div>
-
-              <div className="jw-kpi-card jw-kpi-highlight">
-                <div className="jw-kpi-title jw-title-orange">MATERIAL WITH JOB WORKERS</div>
-                <div className="jw-kpi-val-row">
-                  <span className="jw-kpi-num jw-text-orange">₹{totalValueWithProcessorsLakhs}</span>
-                  <span className="jw-kpi-sublabel">Lakhs</span>
-                </div>
-                <div className="jw-lkpi-sub">Outside factory risk exposure</div>
-              </div>
-
-              <div className="jw-kpi-card">
-                <div className="jw-kpi-title">FINISHED GOODS VALUE</div>
-                <div className="jw-kpi-val-row">
-                  <span className="jw-kpi-num">₹{fgValuationLakhs}</span>
-                  <span className="jw-kpi-sublabel">Lakhs</span>
-                </div>
-                <div className="jw-lkpi-sub">Manufactured stock inventory</div>
-              </div>
-
-              <div className="jw-kpi-card">
-                <div className="jw-kpi-title">INVOICED DISPATCHES</div>
-                <div className="jw-kpi-val-row">
-                  <span className="jw-kpi-num jw-text-green">₹{invoicedDispatchesLakhs}</span>
-                  <span className="jw-kpi-sublabel jw-text-green">Lakhs</span>
-                </div>
-                <div className="jw-lkpi-sub">Revenue executed</div>
               </div>
             </div>
 
@@ -917,51 +1132,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                 </table>
               </div>
             </div>
-
-            {/* Bottom 2 Analytics Grid */}
-            <div className="jw-analytics-grid">
-              {/* Finished Goods Production Output by Category */}
-              <div className="jw-analytics-card">
-                <div className="jw-acard-header">
-                  <BarChart3 size={16} className="jw-text-blue" />
-                  <h3 className="jw-acard-title">FINISHED GOODS PRODUCTION OUTPUT BY CATEGORY</h3>
-                </div>
-                <div className="jw-bars-list">
-                  {fgProductionData.map((fg, fgi) => (
-                    <div key={fgi} className="jw-bar-item">
-                      <div className="jw-bar-label-row">
-                        <span className="jw-bar-label">{fg.name}</span>
-                        <span className="jw-bar-count">{fg.count}</span>
-                      </div>
-                      <div className="jw-bar-bg">
-                        <div className="jw-bar-fill" style={{ width: `${fg.pct}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Sales Dispatch Fulfillment Ratios */}
-              <div className="jw-analytics-card">
-                <div className="jw-acard-header">
-                  <TrendingUp size={16} className="jw-text-green" />
-                  <h3 className="jw-acard-title">SALES DISPATCH FULFILLMENT RATIOS</h3>
-                </div>
-                <div className="jw-fulfillment-list">
-                  {dispatchFulfillmentData.map((df, dfi) => (
-                    <div key={dfi} className="jw-fulfill-item">
-                      <div className="jw-fulfill-info">
-                        <span className="jw-fulfill-ref">{df.ref} — {df.customer}</span>
-                        <span className="jw-fulfill-pct">{df.status}</span>
-                      </div>
-                      <div className="jw-bar-bg">
-                        <div className="jw-bar-fill jw-fill-green" style={{ width: `${df.pct}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -971,7 +1141,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         <NewJobWorkModal onClose={() => setShowIssueModal(false)} />
       )}
 
-      {/* ── Receive Material Dialog (GRN Modal) ── */}
+      {/* ── Receive Material Dialog (GRN / Inward Modal) ── */}
       {receivingRow && (
         <ReceiveJobWorkModal
           row={receivingRow}

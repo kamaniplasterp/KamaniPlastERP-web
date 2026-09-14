@@ -94,3 +94,50 @@ export async function updateBuyer(id, buyerData) {
   });
 }
 
+/**
+ * Subscribe to real-time Job Work Rate Master collection
+ */
+export function subscribeJobWorkRates(callback, limitCount = 100) {
+  if (!db) return () => {};
+  const q = query(collection(db, 'jobWorkRates'), limit(limitCount));
+  return onSnapshot(q, (snapshot) => {
+    const list = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+    callback(list);
+  }, (error) => {
+    console.error('Error fetching job work rates:', error);
+    callback([]);
+  });
+}
+
+/**
+ * Add a new Job Work Rate record (Party + Process + Item -> Rate)
+ */
+export async function addJobWorkRate(rateData) {
+  if (!db) throw new Error('Firestore not initialized');
+  const ref = await addDoc(collection(db, 'jobWorkRates'), {
+    ...rateData,
+    rate: Number(rateData.rate || 0),
+    uom: rateData.uom || 'Kgs',
+    date: rateData.date || new Date().toISOString().split('T')[0],
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+/**
+ * Update Job Work Rate record
+ */
+export async function updateJobWorkRate(id, rateData) {
+  if (!db) throw new Error('Firestore not initialized');
+  const rateRef = doc(db, 'jobWorkRates', id);
+  await updateDoc(rateRef, {
+    ...rateData,
+    rate: Number(rateData.rate || 0),
+    updatedAt: serverTimestamp()
+  });
+}
+
+

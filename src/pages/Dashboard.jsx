@@ -172,37 +172,60 @@ function DonutChart({ rmStock = 0, fgStock = 0, jobWorkStock = 0 }) {
   );
 }
 
-function BarChart({ fgStock = 0 }) {
+function BarChart({ fgStock = 0, fgList = [] }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
 
-  const bars = fgStock > 0 ? [
-    { label: 'PPD 6mm\n(Yellow)', fullLabel: 'PPD 6mm (Yellow)', free: Math.round(fgStock * 0.7), reserved: Math.round(fgStock * 0.3) }
-  ] : [];
-  const max = Math.max(100, fgStock || 100);
-  const chartH = 125, paddingL = 34, paddingB = 58, paddingTop = 8, paddingR = 10;
-  const svgW = 360, svgH = chartH + paddingB + paddingTop;
+  // Limit to top 5 Finished Goods
+  const displayFgItems = (fgList && fgList.length > 0) ? fgList.slice(0, 5) : [];
+  const bars = displayFgItems.length > 0
+    ? displayFgItems.map(fg => {
+        const stock = Number(fg.stockQty) || 0;
+        const reserved = Number(fg.reservedQty) || 0;
+        const free = Math.max(0, stock - reserved);
+        const name = fg.name || fg.code || 'Finished Good';
+        return {
+          label: name,
+          fullLabel: `${name} (${fg.code || 'FG'})`,
+          free,
+          reserved,
+          total: stock
+        };
+      })
+    : [];
+
+  const maxVal = bars.length > 0
+    ? Math.max(100, ...bars.map(b => Math.max(b.free, b.reserved, b.total || 0)))
+    : Math.max(100, fgStock || 100);
+  const max = Math.ceil(maxVal / 100) * 100 || 100;
+
+  const chartH = 125, paddingL = 36, paddingB = 64, paddingTop = 10, paddingR = 12;
+  const svgW = Math.max(360, bars.length * 85);
+  const svgH = chartH + paddingB + paddingTop;
   const barGroupW = bars.length > 0 ? (svgW - paddingL - paddingR) / bars.length : 60;
-  const barW = 14;
+  const barW = Math.min(16, Math.max(8, barGroupW * 0.22));
   const gridLines = [0, Math.round(max * 0.5), max];
 
   const activeBar = hoveredIdx !== null ? bars[hoveredIdx] : null;
 
   return (
-    <div className="bar-chart-wrap" style={{ position: 'relative' }} onMouseLeave={() => setHoveredIdx(null)}>
+    <div className="bar-chart-wrap" style={{ position: 'relative', overflowX: bars.length > 4 ? 'auto' : 'visible' }} onMouseLeave={() => setHoveredIdx(null)}>
       {/* Floating Bar Tooltip Card */}
       {activeBar && (
         <div className="bar-tooltip-card">
           <div className="bar-tooltip-title">{activeBar.fullLabel}</div>
           <div className="bar-tooltip-line text-green">
-            Free Stock : {activeBar.free}
+            Free Stock : {activeBar.free.toLocaleString()} Coils
           </div>
           <div className="bar-tooltip-line text-blue">
-            Reserved : {activeBar.reserved}
+            Reserved : {activeBar.reserved.toLocaleString()} Coils
+          </div>
+          <div className="bar-tooltip-line" style={{ color: '#64748b', fontSize: '0.78rem' }}>
+            Total Stock : {activeBar.total.toLocaleString()} Coils
           </div>
         </div>
       )}
 
-      <svg width="100%" viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: 'block' }}>
+      <svg width="100%" viewBox={`0 0 ${svgW} ${svgH}`} style={{ minWidth: bars.length > 4 ? `${svgW}px` : '100%', display: 'block' }}>
         {/* Grid lines + Y labels */}
         {gridLines.map(v => {
           const y = paddingTop + chartH - (v / max) * chartH;
@@ -221,7 +244,6 @@ function BarChart({ fgStock = 0 }) {
           const fh = (b.free / max) * chartH;
           const rh = (b.reserved / max) * chartH;
           const bx = cx - barW;
-          const labelLines = b.label.split('\n');
           return (
             <g
               key={i}
@@ -235,7 +257,7 @@ function BarChart({ fgStock = 0 }) {
                   x={cx - barGroupW / 2 + 2}
                   y={paddingTop}
                   width={barGroupW - 4}
-                  height={chartH}
+                  height={chartH + 2}
                   fill="#cbd5e1"
                   opacity="0.45"
                   rx="3"
@@ -243,22 +265,22 @@ function BarChart({ fgStock = 0 }) {
               )}
 
               {/* Free Stock bar */}
-              <rect x={bx} y={paddingTop + chartH - fh} width={barW} height={fh}
+              <rect x={bx} y={paddingTop + chartH - fh} width={barW - 1} height={Math.max(fh, 0)}
                 fill="#22c55e" rx="2" />
               {/* Reserved bar */}
-              <rect x={bx + barW} y={paddingTop + chartH - rh} width={barW} height={Math.max(rh, 0)}
+              <rect x={bx + barW} y={paddingTop + chartH - rh} width={barW - 1} height={Math.max(rh, 0)}
                 fill="#3b82f6" rx="2" />
               {/* X-axis label (rotated) */}
               <text
                 x={cx}
                 y={paddingTop + chartH + 12}
                 textAnchor="end"
-                fontSize="8.5"
-                fontWeight="500"
+                fontSize={bars.length > 3 ? "8" : "8.5"}
+                fontWeight="600"
                 fill={hoveredIdx === i ? '#2563eb' : '#64748b'}
                 transform={`rotate(-35, ${cx}, ${paddingTop + chartH + 12})`}
               >
-                {labelLines[0]} {labelLines[1]}
+                {b.label.length > 20 ? `${b.label.slice(0, 18)}…` : b.label}
               </text>
             </g>
           );
@@ -326,16 +348,18 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
   const salesSum = (simulatedSalesOrders || []).reduce((sum, so) => {
     const val = typeof so.totalValue === 'number'
       ? so.totalValue
-      : (parseFloat(String(so.orderValue || '').replace(/[^0-9.]/g, '')) || (Number(so.orderedQtyCoils || 300) * 2450));
-    return sum + val;
+      : (parseFloat(String(so.orderValue || '').replace(/[^0-9.]/g, '')) || ((Number(so.orderedQtyCoils) || 0) * 2450));
+    return sum + (Number(val) || 0);
   }, 0);
+  
   const totalReadyCoils = (simulatedSalesOrders || []).reduce((sum, so) => {
-    return sum + (Number(so.reservedCoils) || Number(so.orderedQtyCoils) || 300);
+    return sum + (Number(so.reservedQtyCoils) || Number(so.reservedCoils) || Number(so.orderedQtyCoils) || 0);
   }, 0);
-  const salesValuation = salesSum > 0 ? salesSum : ((totalReadyCoils || 300) * 2450);
+  
+  const salesValuation = salesSum > 0 ? salesSum : (totalReadyCoils * 2450);
   const salesValuationLakhs = (salesValuation / 100000).toFixed(2);
 
-  const openOrdersCount = (simulatedSalesOrders || []).length || (totalReadyCoils > 0 ? 1 : 0);
+  const openOrdersCount = (simulatedSalesOrders || []).length;
   const lowStockFgCount = (fgList || []).filter(fg => (Number(fg.stockQty) || 0) < (Number(fg.reorderLevel) || 50)).length;
 
   const dynamicKpiData = kpiData.map(kpi => {
@@ -365,7 +389,7 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
     if (kpi.id === 'dispatch') {
       return {
         ...kpi,
-        value: (totalReadyCoils || 300).toLocaleString(),
+        value: totalReadyCoils.toLocaleString(),
         sub: `Valued at ₹${salesValuationLakhs}L`,
         sub2: `${openOrdersCount} Orders`
       };
@@ -373,9 +397,19 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
     return kpi;
   });
 
+  const inProcessStock = (simulatedJobWorks || []).reduce((acc, curr) => {
+    const isCompleted = curr.status === 'COMPLETED' || curr.status === 'FULLY RECEIVED';
+    if (isCompleted) return acc;
+    const pending = curr.pendingQty !== undefined 
+      ? Number(curr.pendingQty)
+      : (curr.balQtyKg !== undefined ? Number(curr.balQtyKg) : (Number(curr.sentQtyKg) || 0));
+    return acc + (pending > 0 ? pending : 0);
+  }, 0);
+
   const dynamicStages = lifecycleStages.map(stage => {
     if (stage.id === 1) return { ...stage, value: rmStock.toLocaleString() };
     if (stage.id === 2) return { ...stage, value: jobWorkStock.toLocaleString() };
+    if (stage.id === 3) return { ...stage, value: inProcessStock.toLocaleString(), active: inProcessStock > 0 };
     if (stage.id === 4) return { ...stage, value: fgStock.toLocaleString() };
     if (stage.id === 5) return { ...stage, value: (simulatedSalesOrders || []).length.toString() };
     if (stage.id === 6) return { ...stage, value: (simulatedDispatches || []).length.toString() };
@@ -632,7 +666,7 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayJobWorkList.map(jw => (
+                  {displayJobWorkList.slice(0, 5).map(jw => (
                     <tr
                       key={jw.id}
                       onClick={() => navigate('/job-work', { state: { selectedJwId: jw.id || jw.rawDocId } })}
@@ -672,7 +706,7 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
                   View Stock →
                 </button>
               </div>
-              <BarChart fgStock={fgStock} />
+              <BarChart fgStock={fgStock} fgList={fgList} />
             </div>
           </div>
         </div>
@@ -692,25 +726,31 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
               </button>
             </div>
             <div className="dispatch-list">
-              {simulatedDispatches.map((d, i) => (
-                <div
-                  key={i}
-                  className="dispatch-item"
-                  onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
-                  style={{ cursor: 'pointer' }}
-                  title={`View dispatches for ${d.customer}`}
-                >
-                  <div className="dispatch-bar" />
-                  <div className="dispatch-info">
-                    <div className="dispatch-party">{d.customer}</div>
-                    <div className="dispatch-ref">{d.challanNo || d.dispatchNo} • {d.dispatchedQty}</div>
-                  </div>
-                  <div className="dispatch-right">
-                    <div className="dispatch-amount">{d.value}</div>
-                    <StatusBadge status={d.status} />
-                  </div>
+              {(simulatedDispatches || []).length === 0 ? (
+                <div style={{ color: '#94a3b8', fontSize: '0.78rem', padding: '12px 0', textAlign: 'center' }}>
+                  No recent dispatches recorded in database.
                 </div>
-              ))}
+              ) : (
+                (simulatedDispatches || []).slice(0, 5).map((d, i) => (
+                  <div
+                    key={d.id || i}
+                    className="dispatch-item"
+                    onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
+                    style={{ cursor: 'pointer' }}
+                    title={`View dispatches for ${d.customer}`}
+                  >
+                    <div className="dispatch-bar" />
+                    <div className="dispatch-info">
+                      <div className="dispatch-party">{d.customer}</div>
+                      <div className="dispatch-ref">{d.challanNo || d.dispatchNo} • {d.dispatchedQty || `${d.dispatchedQtyCoils || 0} Coils`}</div>
+                    </div>
+                    <div className="dispatch-right">
+                      <div className="dispatch-amount">{d.value}</div>
+                      <StatusBadge status={d.status} />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

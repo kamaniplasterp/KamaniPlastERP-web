@@ -17,7 +17,7 @@ import { updateRmStock, logStockMovement } from './inventory.api';
 /**
  * Subscribe to real-time Job Works collection with optional limit
  */
-export function subscribeJobWorks(callback, limitCount = 100) {
+export function subscribeJobWorks(callback, limitCount = 200) {
   if (!db) return () => {};
   const q = query(collection(db, 'jobWorks'), orderBy('createdAt', 'desc'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
@@ -33,39 +33,149 @@ export function subscribeJobWorks(callback, limitCount = 100) {
 }
 
 /**
+ * Standard tare weights for article types matching Excel Misc Master
+ */
+export const ARTICLE_TARE_DEFAULTS = {
+  'BORA': 0.200,          // 200 grams per bora
+  'PLASTIC CONE': 0.025,  // 25 grams per cone
+  'KHALI BAG': 0.120,     // 120 grams per bag
+  'THELI': 0.015,         // 15 grams per theli
+  'NONE': 0.000
+};
+
+/**
+ * Standard Process list matching Excel Sub Item & Misc Master
+ */
+export const JW_PROCESS_LIST = [
+  'GRANUAL - FISHING YARN',
+  'GRANUAL - VIP YARN',
+  'VIP YARN- TWINE HANK',
+  'VIP YARN- TWINE CONE',
+  'VIP TWINE - 20GRAM',
+  'FISHING CONE - 100GRAM CONE',
+  'FISHING CONE - 200GRAM CONE',
+  'FISHING YARN - TWINE',
+  'GARUD YARN - CONE',
+  'ROPE COIL - 404',
+  'ROPE COIL - 405',
+  'ROPE COIL - 406',
+  'ROPE COIL - 4121',
+  'ROPE COIL - 4121 SINGLE LABEL',
+  'ROPE COIL - 41212',
+  'ROPE COIL - 4124',
+  'TAPE EXTRUSION & SPINNING',
+  'MONOFILAMENT EXTRUSION'
+];
+
+/**
+ * Standard Personnel List matching Excel Misc Master
+ */
+export const AUTHORIZED_PERSONS = [
+  'SURESHBHAI',
+  'DIPAKBHAI',
+  'SUDHIRBHAI',
+  'MANSUKHBHAI',
+  'RAMILBHAI',
+  'ILYASHBHAI',
+  'DHARMENDRABHAI',
+  'DHURMITBHAI',
+  'PRAVINBHAI',
+  'HIMMATBHAI'
+];
+
+/**
  * Create a new Job Work Order with atomic stock update & movement logging
+ * Stores full schema aligned with Excel JW-Outward and Delivery Challan
  */
 export async function createJobWork(data) {
   if (!db) throw new Error('Firestore not initialized');
 
-  const sentKg = Number(data.sentQtyKg || data.inputQty || data.dispatchQty || 0);
-  const jwNo = data.jwNo || `JW-2026-${Math.floor(100 + Math.random() * 900)}`;
-  const chargesRate = Number(data.charges || data.processingRate || data.ratePerKg || 0);
+  const grossWght = Number(data.grossWeight || data.grossWght || 0);
+  const boraCount = Number(data.boraCount || data.noOfBora || data.noOfArtcls || 0);
+  const articleType = data.articleType || (boraCount > 0 ? 'BORA' : 'NONE');
+  const unitTare = Number(data.unitTare || ARTICLE_TARE_DEFAULTS[articleType] || (articleType === 'BORA' ? 0.2 : 0));
+  const articleWeight = Number(data.articleWeight !== undefined ? data.articleWeight : (boraCount * unitTare));
+  
+  // Net weight = Gross - Article tare (or fallback to sentQtyKg)
+  const calculatedNetKg = grossWght > 0 ? Math.max(0, grossWght - articleWeight) : Number(data.sentQtyKg || data.inputQty || data.dispatchQty || 0);
+  const sentKg = calculatedNetKg;
+
+  // Burning Loss / Process Loss
+  const bLossPct = Number(data.bLossPct !== undefined ? data.bLossPct : (parseFloat(String(data.wastage || 0).replace(/[^0-9.]/g, '')) || 0));
+  const bLossKg = Number(data.bLossKg !== undefined ? data.bLossKg : (sentKg * (bLossPct / 100)));
+  const netOutwardKg = Math.max(0, sentKg - bLossKg);
+
+  const jwSeries = data.challanSeries || 'JW-2026-';
+  const autoNum = Math.floor(1000 + Math.random() * 9000);
+  const jwNo = data.jwNo || `${jwSeries}${autoNum}`;
+  const chNo = data.chNo || data.chalNo || `${autoNum}`;
+  const chargesRate = Number(data.ratePerKg || data.charges || data.processingRate || 0);
+  const totalCharges = Number(data.totalCharges || (sentKg * chargesRate));
 
   const jwDoc = {
-    jwNo: jwNo,
-    chNo: data.chNo || `CH-${jwNo}`,
+    // Challan & Classification
+    jwNo,
+    chNo: String(chNo),
+    challanSeries: jwSeries,
+    subChalNo: data.subChalNo || '1',
+    workOrder: data.workOrder || data.workOrderNo || `WO-${autoNum}`,
+    department: data.department || 'Job Work Extrusion',
     date: data.date || data.challanDate || new Date().toISOString().split('T')[0],
     expectedReturn: data.expectedReturn || '',
-    vendor: data.vendor || '',
+    durationDays: Number(data.durationDays || data.duration || 5),
+
+    // Party / Vendor
+    vendor: data.vendor || data.party || '',
     vendorId: data.vendorId || null,
-    rawMat: data.rawMat || '',
+
+    // Material Details
+    rawMat: data.rawMat || data.material || '',
+    grade: data.grade || '',
     rawMaterialId: data.rawMaterialId || null,
-    process: data.process || data.processType || '',
-    sentQty: `${sentKg.toLocaleString()} KG`,
+    process: data.process || data.processType || 'GRANUAL - FISHING YARN',
+
+    // Weight & Packaging Matrix (Matching Excel JW-Outward)
+    grossWeight: grossWght || sentKg,
+    boraCount: boraCount,
+    articleType: articleType,
+    articleWeight: articleWeight,
     sentQtyKg: sentKg,
-    expectedFg: data.expectedFg || '',
+    sentQty: `${sentKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
+
+    // Burning / Process Loss
+    bLossPct: bLossPct,
+    bLossKg: bLossKg,
+    netOutwardKg: netOutwardKg,
+    expectedFg: data.expectedFg || `${netOutwardKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
+    wastage: `${bLossPct}%`,
+
+    // Pieces & Sample Matrix
+    pieces: Number(data.pieces || data.pcs || 0),
+    samplePcs: Number(data.samplePcs || data.smplPcs || 0),
+    sampleWeight: Number(data.sampleWeight || data.samplePcsWght || 0),
+
+    // Inward tracking initial state
     recQty: '0 KG',
     recQtyKg: 0,
-    balQty: `${sentKg.toLocaleString()} KG`,
+    recBoraCount: 0,
+    balQty: `${sentKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
     balQtyKg: sentKg,
     scrapQtyKg: 0,
+    reworkQtyKg: 0,
+    rejectionQtyKg: 0,
+    inwardReceipts: [],
+
+    // Financials
     charges: chargesRate,
     ratePerKg: chargesRate,
-    batch: data.batch || data.batchNo || '',
+    totalCharges: totalCharges,
+
+    // Logistics & Administration
+    batch: data.batch || data.batchNo || `BATCH-${autoNum}`,
     vehicleNo: data.vehicleNo || data.vehicle || '',
-    stockSource: data.stockSource || 'Factory Silo',
-    wastage: data.wastage || '0%',
+    stockSource: data.stockSource || 'Factory Silo A',
+    issuedBy: data.issuedBy || 'SURESHBHAI',
+    approvedBy: data.approvedBy || 'FINAL APPROVED',
     status: 'SENT',
     statusClass: 'pill-blue',
     remarks: data.remarks || '',
@@ -84,13 +194,13 @@ export async function createJobWork(data) {
     type: 'JWIssue',
     typeBadge: 'inv-badge-jwissue',
     icon: '🚚',
-    ref: jwNo,
-    item: data.rawMat || 'PP Granules',
-    batch: data.batch || 'BATCH-RM-JW',
+    ref: chNo,
+    item: `${data.rawMat || 'Raw Material'}${data.grade ? ' ^ ' + data.grade : ''}`,
+    batch: jwDoc.batch,
     inward: '0 KG',
     outward: `-${sentKg} KG`,
     location: `Factory Silo -> ${data.vendor || 'Job Worker'}`,
-    remarks: data.remarks || `Dispatched ${sentKg} KG to job worker`
+    remarks: data.remarks || `Dispatched ${sentKg} KG (${boraCount} Bora) to ${data.vendor || 'Job Worker'}`
   });
 
   return docRef.id;
@@ -98,8 +208,31 @@ export async function createJobWork(data) {
 
 /**
  * Receive partial or full completed material from Job Worker atomically
+ * Stores full schema aligned with Excel JW-Inward and Inward Slip
  */
-export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg = 0, currentRecKg = 0, currentScrapKg = 0, totalSentKg, itemLabel, remarks }) {
+export async function receiveJobWork({ 
+  jwId, 
+  rawMaterialId, 
+  recQtyKg, 
+  recGrossWeight = 0,
+  recBoraCount = 0,
+  recArticleType = 'BORA',
+  recArticleWeight = 0,
+  reworkQtyKg = 0,
+  rejectionQtyKg = 0,
+  scrapQtyKg = 0, 
+  currentRecKg = 0, 
+  currentScrapKg = 0, 
+  totalSentKg, 
+  inwardSlipNo,
+  inwardDate,
+  receivedBy = 'RAMILBHAI',
+  itemLabel, 
+  ratePerKg,
+  samplePcs = 0,
+  sampleWeight = 0,
+  remarks 
+}) {
   if (!db || !jwId) throw new Error('Firestore not initialized');
 
   let targetRef = doc(db, 'jobWorks', jwId);
@@ -112,23 +245,56 @@ export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg
     console.warn('Direct ID used for jobWork receive');
   }
 
+  const receiptSlip = inwardSlipNo || `INW-${Math.floor(1000 + Math.random() * 9000)}`;
+  const dateOfReceipt = inwardDate || new Date().toISOString().split('T')[0];
+
+  const receiptEntry = {
+    slipNo: receiptSlip,
+    date: dateOfReceipt,
+    grossWeight: Number(recGrossWeight || recQtyKg),
+    boraCount: Number(recBoraCount || 0),
+    articleType: recArticleType,
+    articleWeight: Number(recArticleWeight || 0),
+    netQtyKg: Number(recQtyKg || 0),
+    reworkQtyKg: Number(reworkQtyKg || 0),
+    rejectionQtyKg: Number(rejectionQtyKg || 0),
+    scrapQtyKg: Number(scrapQtyKg || 0),
+    samplePcs: Number(samplePcs || 0),
+    sampleWeight: Number(sampleWeight || 0),
+    receivedBy: receivedBy,
+    ratePerKg: Number(ratePerKg || 0),
+    value: Number(recQtyKg || 0) * Number(ratePerKg || 0),
+    remarks: remarks || '',
+    recordedAt: new Date().toISOString()
+  };
+
   await runTransaction(db, async (transaction) => {
     const docSnap = await transaction.get(targetRef);
     const existingData = docSnap.exists() ? docSnap.data() : {};
     
     const recSoFar = (Number(existingData.recQtyKg) || Number(currentRecKg) || 0) + Number(recQtyKg || 0);
     const scrapSoFar = (Number(existingData.scrapQtyKg) || Number(currentScrapKg) || 0) + Number(scrapQtyKg || 0);
+    const reworkSoFar = (Number(existingData.reworkQtyKg) || 0) + Number(reworkQtyKg || 0);
+    const rejectionSoFar = (Number(existingData.rejectionQtyKg) || 0) + Number(rejectionQtyKg || 0);
+    const recBoraSoFar = (Number(existingData.recBoraCount) || 0) + Number(recBoraCount || 0);
+
     const sentTotal = Number(existingData.sentQtyKg) || Number(totalSentKg) || (recSoFar + scrapSoFar);
-    const remBal = Math.max(0, sentTotal - (recSoFar + scrapSoFar));
+    const remBal = Math.max(0, sentTotal - (recSoFar + scrapSoFar + rejectionSoFar));
     const compState = remBal <= 0;
 
+    const existingReceipts = Array.isArray(existingData.inwardReceipts) ? existingData.inwardReceipts : [];
+
     transaction.set(targetRef, {
-      recQty: `${recSoFar.toLocaleString()} KG`,
+      recQty: `${recSoFar.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
       recQtyKg: recSoFar,
-      scrapQty: `${scrapSoFar.toLocaleString()} KG`,
+      recBoraCount: recBoraSoFar,
+      scrapQty: `${scrapSoFar.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
       scrapQtyKg: scrapSoFar,
-      balQty: `${remBal.toLocaleString()} KG`,
+      reworkQtyKg: reworkSoFar,
+      rejectionQtyKg: rejectionSoFar,
+      balQty: `${remBal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG`,
       balQtyKg: remBal,
+      inwardReceipts: [...existingReceipts, receiptEntry],
       status: compState ? 'COMPLETED' : 'PARTIAL',
       statusClass: compState ? 'pill-green' : 'pill-orange',
       updatedAt: serverTimestamp()
@@ -136,7 +302,7 @@ export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg
   });
 
   // Update RM stock atomically (increase factory available stock, decrease atJobWork count)
-  const totalDeduction = Number(recQtyKg || 0) + Number(scrapQtyKg || 0);
+  const totalDeduction = Number(recQtyKg || 0) + Number(scrapQtyKg || 0) + Number(rejectionQtyKg || 0);
   const recInward = Number(recQtyKg || 0);
   if (rawMaterialId) {
     await updateRmStock(rawMaterialId, recInward, -totalDeduction);
@@ -147,13 +313,14 @@ export async function receiveJobWork({ jwId, rawMaterialId, recQtyKg, scrapQtyKg
     type: 'JWReturn',
     typeBadge: 'inv-badge-jwreturn',
     icon: '↙',
-    ref: `GRN-${String(jwId).slice(0, 8).toUpperCase()}`,
+    ref: receiptSlip,
     item: itemLabel || 'Processed Material',
     batch: 'WIP-RECEIPT',
     inward: `+${recQtyKg} KG`,
     outward: '0 KG',
     location: 'Job Worker -> Factory WIP Floor',
-    remarks: remarks || `Receipt of ${recQtyKg} KG processed material from Job Worker`
+    remarks: remarks || `Receipt Slip ${receiptSlip} of ${recQtyKg} KG (${recBoraCount} Bora) received by ${receivedBy}`
   });
 }
+
 

@@ -964,15 +964,18 @@
 /* ─── Ops Row ─── */
 .ops-row {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 14px;
   align-items: stretch;
+  width: 100%;
 }
 
 .ops-main {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
+  width: 100%;
 }
 
 .ops-sidebar {
@@ -980,6 +983,8 @@
   flex-direction: column;
   gap: 14px;
   height: 100%;
+  min-width: 0;
+  width: 300px;
 }
 
 /* ─── Section Card ─── */
@@ -1075,7 +1080,10 @@
 
 .td-material {
   color: var(--text-secondary);
-  max-width: 180px;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .td-overdue {
@@ -1572,7 +1580,7 @@
 /* ============================================================
    RESPONSIVE BREAKPOINTS
    ============================================================ */
-@media (max-width: 1200px) {
+@media (max-width: 1280px) {
   .kpi-grid {
     grid-template-columns: repeat(2, 1fr);
   }

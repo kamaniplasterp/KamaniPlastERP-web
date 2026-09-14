@@ -11,7 +11,6 @@ import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
 import { printTaxInvoice, printDeliveryChallan } from '../utils/printDocument';
 import { subscribeSalesOrders, subscribeDispatches, createSalesOrder, createDispatch } from '../api/sales.api';
-import { seedInitialData } from '../api/seed';
 import '../styles/SalesDispatch.css';
 
 

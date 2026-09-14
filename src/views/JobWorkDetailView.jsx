@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, FileText, Printer, GitBranch, Plus, CheckCircle2,
-  AlertCircle, Truck, Package, Layers, DollarSign, Clock, Download
+  AlertCircle, Truck, Package, Layers, DollarSign, Clock, Download,
+  Calculator, UserCheck, ShieldCheck, Receipt
 } from 'lucide-react';
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
 import { useWorkflow } from '../context/WorkflowContext';
@@ -19,9 +20,25 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
   const matchingRm = rmList.find(r => r.id === simMatch?.rawMaterialId || r.code === simMatch?.rawMaterialId || r.name === simMatch?.rawMat);
 
   const sentNum = Number(simMatch?.sentQtyKg) || (simMatch?.sentQty ? parseFloat(String(simMatch.sentQty).replace(/[^0-9.]/g, '')) : 0) || (simMatch?.inputQty ? Number(simMatch.inputQty) : 0);
+  const grossWght = Number(simMatch?.grossWeight || sentNum);
+  const boraCnt = Number(simMatch?.boraCount || 0);
+  const tareWeight = Number(simMatch?.articleWeight || (boraCnt * 0.2));
+  const bLossPct = Number(simMatch?.bLossPct !== undefined ? simMatch.bLossPct : (parseFloat(String(simMatch?.wastage || 0).replace(/[^0-9.]/g, '')) || 0));
+  const bLossKg = Number(simMatch?.bLossKg !== undefined ? simMatch.bLossKg : (sentNum * (bLossPct / 100)));
+  const netOutwardKg = Number(simMatch?.netOutwardKg !== undefined ? simMatch.netOutwardKg : Math.max(0, sentNum - bLossKg));
+
   const recNum = simMatch?.recQtyKg !== undefined ? Number(simMatch.recQtyKg) : (simMatch?.receivedQty ? parseFloat(String(simMatch.receivedQty).replace(/[^0-9.]/g, '')) : 0);
   const scrapNum = simMatch?.scrapQtyKg !== undefined ? Number(simMatch.scrapQtyKg) : (simMatch?.scrapQty ? parseFloat(String(simMatch.scrapQty).replace(/[^0-9.]/g, '')) : 0);
-  const balNum = simMatch?.balQtyKg !== undefined ? Number(simMatch.balQtyKg) : Math.max(0, sentNum - recNum - scrapNum);
+  const reworkNum = Number(simMatch?.reworkQtyKg || 0);
+  const rejectionNum = Number(simMatch?.rejectionQtyKg || 0);
+  
+  const pendingFromDoc = (simMatch?.pendingQty !== undefined && simMatch?.pendingQty !== null)
+    ? Number(simMatch.pendingQty)
+    : (simMatch?.balQtyKg !== undefined && simMatch?.balQtyKg !== null ? Number(simMatch.balQtyKg) : null);
+
+  const balNum = pendingFromDoc !== null
+    ? pendingFromDoc
+    : Math.max(0, netOutwardKg - recNum - scrapNum - rejectionNum);
 
   let chargeRate = 0;
   if (typeof simMatch?.ratePerKg === 'number' && simMatch.ratePerKg > 0) {
@@ -31,91 +48,124 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
   } else if (typeof simMatch?.charges === 'number' && simMatch.charges > 0) {
     chargeRate = simMatch.charges < 100 ? simMatch.charges : Math.round(simMatch.charges / (sentNum || 1));
   } else {
-    chargeRate = 12;
+    chargeRate = 17.5;
   }
 
   const totalCost = Math.round(sentNum * chargeRate);
   const rmCode = matchingRm?.code || simMatch?.rawMaterialCode || simMatch?.rawMaterialId || '';
   const issueDate = simMatch?.date || simMatch?.challanDate || '';
   const returnDate = simMatch?.expectedReturn || '';
-  const processName = simMatch?.process || simMatch?.processType || '';
+  const processName = simMatch?.process || simMatch?.processType || 'GRANUAL - FISHING YARN';
   const currentChallan = simMatch?.chNo || simMatch?.challan || `CH-${simMatch?.jwNo || jwId}`;
+  const subChal = simMatch?.subChalNo || '1';
+  const workOrder = simMatch?.workOrder || 'WO-1001';
+  const department = simMatch?.department || 'Job Work Extrusion';
   const batchNo = simMatch?.batch || simMatch?.batchNo || '';
   const vehicle = simMatch?.vehicleNo || simMatch?.vehicle || '';
+  const issuedBy = simMatch?.issuedBy || 'SURESHBHAI';
+  const approvedBy = simMatch?.approvedBy || 'FINAL APPROVED';
   const isCompleted = balNum <= 0 || simMatch?.status === 'COMPLETED' || simMatch?.status === 'FULLY RECEIVED';
+
+  const inwardReceipts = Array.isArray(simMatch?.inwardReceipts) && simMatch.inwardReceipts.length > 0
+    ? simMatch.inwardReceipts
+    : (recNum > 0 || scrapNum > 0 ? [
+        {
+          slipNo: `SLIP-${currentChallan}`,
+          date: returnDate || issueDate,
+          grossWeight: recNum + (boraCnt * 0.2),
+          boraCount: boraCnt,
+          articleWeight: boraCnt * 0.2,
+          netQtyKg: recNum,
+          reworkQtyKg: reworkNum,
+          rejectionQtyKg: rejectionNum,
+          scrapQtyKg: scrapNum,
+          samplePcs: Number(simMatch?.samplePcs || 10),
+          sampleWeight: Number(simMatch?.sampleWeight || 0.5),
+          receivedBy: 'RAMILBHAI',
+          ratePerKg: chargeRate,
+          value: recNum * chargeRate,
+          status: 'Approved',
+          remarks: 'Process return logged in system.'
+        }
+      ] : []);
 
   const detailData = {
     id: simMatch?.jwNo || simMatch?.id || jwId,
     status: isCompleted ? 'FULLY RECEIVED' : (recNum > 0 ? 'PARTIALLY RECEIVED' : (simMatch?.status || 'SENT')),
     statusClass: isCompleted ? 'pill-completed' : (recNum > 0 ? 'pill-partial' : 'pill-blue'),
-    party: simMatch?.vendor || simMatch?.party || '',
+    party: simMatch?.vendor || simMatch?.party || 'Job Worker',
     challan: currentChallan,
+    subChalNo: subChal,
+    workOrder: workOrder,
+    department: department,
     inputMaterialCode: rmCode,
-    inputMaterialName: simMatch?.rawMat || matchingRm?.name || '',
+    inputMaterialName: simMatch?.rawMat || matchingRm?.name || 'Raw Material',
+    grade: simMatch?.grade || '',
     process: processName,
-    dispatchedQty: `${sentNum.toLocaleString('en-IN')} KG`,
+    grossWeight: `${grossWght.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    grossWeightNum: grossWght,
+    boraCount: `${boraCnt} Bora`,
+    boraCountNum: boraCnt,
+    articleWeight: `${tareWeight.toFixed(2)} KG`,
+    articleWeightNum: tareWeight,
+    dispatchedQty: `${sentNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    sentQtyKg: sentNum,
+    inputQty: sentNum,
+    bLossPct: `${bLossPct}%`,
+    bLossPctNum: bLossPct,
+    bLossKg: `${bLossKg.toFixed(1)} KG`,
+    bLossKgNum: bLossKg,
+    netOutwardExpected: `${netOutwardKg.toFixed(1)} KG`,
+    netOutwardKg: netOutwardKg,
     batch: batchNo,
-    stockSource: simMatch?.stockSource || 'Factory Silo',
+    stockSource: simMatch?.stockSource || 'Factory Silo A',
     vehicleNo: vehicle,
     date: issueDate,
     expectedReturn: returnDate,
-    expectedOutput: simMatch?.expectedFg || `${sentNum.toLocaleString('en-IN')} KG`,
-    receivedQty: `${recNum.toLocaleString('en-IN')} KG`,
-    pendingQty: `${balNum.toLocaleString('en-IN')} KG`,
-    scrapQty: `${scrapNum.toLocaleString('en-IN')} KG`,
-    expectedScrapLimit: simMatch?.wastage || '0%',
+    expectedOutput: simMatch?.expectedFg || `${netOutwardKg.toFixed(1)} KG`,
+    receivedQty: `${recNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    recQtyKg: recNum,
+    pendingQty: `${balNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    balQtyKg: balNum,
+    scrapQty: `${scrapNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    scrapQtyKg: scrapNum,
+    reworkQty: `${reworkNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    rejectionQty: `${rejectionNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    samplePcs: Number(simMatch?.samplePcs || 10),
+    sampleWeight: Number(simMatch?.sampleWeight || 0.5),
+    issuedBy: issuedBy,
+    approvedBy: approvedBy,
     ratePerKg: `₹${chargeRate} / KG`,
     processingCost: `₹${totalCost.toLocaleString('en-IN')}`,
-    freightCost: '₹0',
-    gstAmount: '₹0',
     totalCharges: `₹${totalCost.toLocaleString('en-IN')}`,
-    paymentTerms: '30 Days Post Receipt',
-    grnHistory: (recNum > 0 || scrapNum > 0) ? [
-      {
-        grnNo: `GRN-${simMatch?.jwNo || jwId}`,
-        date: '2026-08-26',
-        receivedQty: `${recNum.toLocaleString('en-IN')} KG`,
-        wastage: `${scrapNum.toLocaleString('en-IN')} KG`,
-        acceptedQty: `${recNum.toLocaleString('en-IN')} KG`,
-        status: 'Approved',
-        location: 'WIP Storage Floor 1',
-        notes: 'Process return logged in system.'
-      }
-    ] : [],
-    auditTrail: [
-      {
-        id: jwId,
-        type: 'Job Work Issue',
-        date: issueDate,
-        qtyChange: `-${sentNum.toLocaleString('en-IN')} KG`,
-        colorClass: 'text-red',
-        notes: `Dispatched ${sentNum.toLocaleString('en-IN')} KG for processing via Challan ${currentChallan}.`
-      },
-      ...(recNum > 0 ? [{
-        id: `GRN-${simMatch?.jwNo || jwId}`,
-        type: 'Job Work Return',
-        date: '2026-08-26',
-        qtyChange: `+${recNum.toLocaleString('en-IN')} KG`,
-        colorClass: 'text-green',
-        notes: `Received ${recNum.toLocaleString('en-IN')} KG processed material back into inventory.`
-      }] : [])
-    ]
+    paymentTerms: '30 Days Post Inward Receipt'
   };
+
 
   const handleSaveReceiveModal = async (grnData) => {
     try {
-      const recKg = Number(grnData.receivedQty || grnData.acceptedQty || 0);
-      const scrapKg = Number(grnData.scrapQty || 0);
       await receiveJobWork({
         jwId: simMatch?.id || jwId,
         rawMaterialId: simMatch?.rawMaterialId || null,
-        recQtyKg: recKg,
-        scrapQtyKg: scrapKg,
+        recGrossWeight: grnData.recGrossWeight,
+        recBoraCount: grnData.recBoraCount,
+        recArticleType: grnData.recArticleType,
+        recArticleWeight: grnData.recArticleWeight,
+        recQtyKg: grnData.recQtyKg,
+        reworkQtyKg: grnData.reworkQtyKg,
+        rejectionQtyKg: grnData.rejectionQtyKg,
+        scrapQtyKg: grnData.scrapQtyKg,
         currentRecKg: recNum,
         currentScrapKg: scrapNum,
         totalSentKg: sentNum || 1000,
-        itemLabel: detailData.inputMaterialName || 'Processed Material',
-        remarks: grnData.notes || `GRN Receipt of ${recKg} KG (${grnData.qualityStatus || 'Approved'})`
+        inwardSlipNo: grnData.inwardSlipNo,
+        inwardDate: grnData.inwardDate,
+        receivedBy: grnData.receivedBy,
+        ratePerKg: grnData.ratePerKg,
+        samplePcs: grnData.samplePcs,
+        sampleWeight: grnData.sampleWeight,
+        itemLabel: detailData.inputMaterialName,
+        remarks: grnData.notes || `Inward Slip ${grnData.inwardSlipNo} recorded`
       });
       setShowReceiveModal(false);
     } catch (err) {
@@ -141,7 +191,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
               <span className={`jw-status-pill ${detailData.status === 'FULLY RECEIVED' ? 'pill-completed' : 'pill-partial'}`}>• {detailData.status}</span>
             </div>
             <p className="jwd-subtitle">
-              Party: <strong>{detailData.party}</strong> • Challan: <strong>{detailData.challan}</strong>
+              Party: <strong>{detailData.party}</strong> • Challan: <strong>#{detailData.challan}</strong> • Dept: <strong>{detailData.department}</strong>
             </p>
           </div>
         </div>
@@ -155,12 +205,12 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
           ) : (
             <button className="jwd-btn-orange" onClick={() => setShowReceiveModal(true)}>
               <FileText size={15} />
-              Receive Material (GRN)
+              Record Inward Slip
             </button>
           )}
-          <button className="jwd-btn-dark" title="Print Job Work Challan" onClick={() => printJobWorkChallan(detailData)}>
+          <button className="jwd-btn-dark" title="Print Rule 55 Delivery Challan" onClick={() => printJobWorkChallan(detailData)}>
             <Printer size={15} />
-            Print Job Work Challan
+            Print Rule 55 Challan
           </button>
           <button className="jwd-btn-ghost" onClick={handleTraceLifecycle} title="Explore Material Genealogy">
             <GitBranch size={15} />
@@ -171,36 +221,32 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
 
       {/* ── JOB WORK EXECUTION PIPELINE (Stepper Bar) ── */}
       <div className="jwd-card jwd-stepper-card">
-        <div className="jwd-card-sublabel">JOB WORK EXECUTION PIPELINE</div>
+        <div className="jwd-card-sublabel">RULE 55 STATUTORY JOB WORK LIFECYCLE</div>
         <div className="jwd-pipeline-steps">
-          {/* Step 1 */}
           <div className="pipeline-step step-done">
             <div className="step-circle">1</div>
-            <div className="step-label">Material Sent</div>
-            <div className="step-sub">{detailData.date}</div>
+            <div className="step-label">Outward Issued</div>
+            <div className="step-sub">{detailData.date} ({detailData.dispatchedQty})</div>
           </div>
           <div className="pipeline-line line-done" />
 
-          {/* Step 2 */}
           <div className="pipeline-step step-done">
             <div className="step-circle">2</div>
-            <div className="step-label">Processing</div>
+            <div className="step-label">Outside Processing</div>
             <div className="step-sub">{detailData.process}</div>
           </div>
           <div className="pipeline-line line-done" />
 
-          {/* Step 3 */}
           <div className="pipeline-step step-done">
             <div className="step-circle">3</div>
-            <div className="step-label">Partially Received</div>
+            <div className="step-label">Inward Received</div>
             <div className="step-sub">{detailData.receivedQty}</div>
           </div>
-          <div className={`pipeline-line ${detailData.status === 'FULLY RECEIVED' ? 'line-done' : 'line-pending'}`} />
+          <div className={`pipeline-line ${isCompleted ? 'line-done' : 'line-pending'}`} />
 
-          {/* Step 4 */}
-          <div className={`pipeline-step ${detailData.status === 'FULLY RECEIVED' ? 'step-done' : 'step-pending'}`}>
+          <div className={`pipeline-step ${isCompleted ? 'step-done' : 'step-pending'}`}>
             <div className="step-circle">4</div>
-            <div className="step-label">Completed / Full GRN</div>
+            <div className="step-label">Reconciled</div>
             <div className="step-sub">Target: {detailData.expectedOutput}</div>
           </div>
         </div>
@@ -208,88 +254,96 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
 
       {/* ── 3 Summary Cards Row (Middle Grid) ── */}
       <div className="jwd-summary-grid">
-        {/* Card 1: Input Material */}
+        {/* Card 1: Input Material & Packaging Tare */}
         <div className="jwd-card">
           <div className="jwd-card-header-line">
-            <span className="jwd-card-title-sm">INPUT MATERIAL</span>
-            <span className="jwd-code-tag">{detailData.inputMaterialCode}</span>
+            <span className="jwd-card-title-sm">OUTWARD SPECIFICATIONS</span>
+            <span className="jwd-code-tag">{detailData.workOrder}</span>
           </div>
-          <div className="jwd-item-title">{detailData.inputMaterialName}</div>
+          <div className="jwd-item-title">{detailData.inputMaterialName} {detailData.grade ? `^ ${detailData.grade}` : ''}</div>
           <div className="jwd-item-sub">Process: {detailData.process}</div>
 
-          <div className="jwd-kv-grid">
+          <div className="jwd-kv-grid" style={{ marginTop: '10px' }}>
             <div>
-              <span className="jwd-k-label">Dispatched Qty:</span>
-              <span className="jwd-v-val font-bold">{detailData.dispatchedQty}</span>
+              <span className="jwd-k-label">Gross Scale Weight:</span>
+              <span className="jwd-v-val font-bold">{detailData.grossWeight}</span>
             </div>
             <div>
-              <span className="jwd-k-label">Batch / Lot:</span>
-              <span className="jwd-v-val font-mono">{detailData.batch}</span>
+              <span className="jwd-k-label">Bora / Tare:</span>
+              <span className="jwd-v-val">{detailData.boraCount} ({detailData.articleWeight})</span>
             </div>
             <div>
-              <span className="jwd-k-label">Stock Source:</span>
-              <span className="jwd-v-val">{detailData.stockSource}</span>
+              <span className="jwd-k-label">Net Dispatched:</span>
+              <span className="jwd-v-val font-bold" style={{ color: '#0284c7' }}>{detailData.dispatchedQty}</span>
             </div>
             <div>
-              <span className="jwd-k-label">Vehicle No:</span>
-              <span className="jwd-v-val font-mono">{detailData.vehicleNo}</span>
+              <span className="jwd-k-label">B.Loss Allowance:</span>
+              <span className="jwd-v-val">{detailData.bLossPct} ({detailData.bLossKg})</span>
+            </div>
+            <div>
+              <span className="jwd-k-label">Issued By:</span>
+              <span className="jwd-v-val">{detailData.issuedBy}</span>
+            </div>
+            <div>
+              <span className="jwd-k-label">Approval Status:</span>
+              <span className="jwd-v-val">{detailData.approvedBy}</span>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Output & Wastage */}
+        {/* Card 2: Output & Wastage Balance */}
         <div className="jwd-card">
           <div className="jwd-card-header-line">
-            <span className="jwd-card-title-sm">OUTPUT &amp; WASTAGE</span>
-            <span className="jwd-badge-green-sm">62.4% Accounted</span>
+            <span className="jwd-card-title-sm">WEIGHT RECONCILIATION</span>
+            <span className="jwd-badge-green-sm">Yield Monitored</span>
           </div>
 
           <div className="jwd-boxes-2x2">
             <div className="jwd-kpi-box box-grey">
-              <span className="box-lbl">EXPECTED OUTPUT</span>
+              <span className="box-lbl">NET RECEIVABLE</span>
               <span className="box-val">{detailData.expectedOutput}</span>
             </div>
             <div className="jwd-kpi-box box-green">
-              <span className="box-lbl">RECEIVED QUANTITY</span>
+              <span className="box-lbl">INWARD RECEIVED</span>
               <span className="box-val text-green">{detailData.receivedQty}</span>
             </div>
             <div className="jwd-kpi-box box-orange">
-              <span className="box-lbl">PENDING QUANTITY</span>
+              <span className="box-lbl">PENDING BALANCE</span>
               <span className="box-val text-orange">{detailData.pendingQty}</span>
             </div>
             <div className="jwd-kpi-box box-red">
-              <span className="box-lbl">SCRAP / WASTAGE</span>
-              <span className="box-val text-red">{detailData.scrapQty}</span>
+              <span className="box-lbl">SCRAP &amp; REJECT</span>
+              <span className="box-val text-red">{(scrapNum + rejectionNum).toFixed(1)} KG</span>
             </div>
           </div>
 
           <div className="jwd-scrap-limit">
-            Expected Scrap Limit: <strong>{detailData.expectedScrapLimit}</strong>
+            QA Sample Audit: <strong>{detailData.samplePcs} PCs ({detailData.sampleWeight} KG)</strong>
           </div>
         </div>
 
-        {/* Card 3: Processing Charges */}
+        {/* Card 3: Processing Charges & Rate Master */}
         <div className="jwd-card">
           <div className="jwd-card-header-line">
-            <span className="jwd-card-title-sm">PROCESSING CHARGES</span>
+            <span className="jwd-card-title-sm">PROCESSING CHARGES &amp; VALUE</span>
             <span className="jwd-rate-tag">{detailData.ratePerKg}</span>
           </div>
 
           <div className="jwd-charges-list">
             <div className="charge-line">
-              <span>Job Work Processing ({detailData.dispatchedQty} @ {detailData.ratePerKg}):</span>
+              <span>Rate Master ({detailData.process}):</span>
+              <span>{detailData.ratePerKg}</span>
+            </div>
+            <div className="charge-line">
+              <span>Gross Outward Value:</span>
               <span>{detailData.processingCost}</span>
             </div>
             <div className="charge-line">
-              <span>Freight / Loading Charges:</span>
-              <span>{detailData.freightCost}</span>
-            </div>
-            <div className="charge-line">
-              <span>GST (18% Reverse Charge / Tax):</span>
-              <span>{detailData.gstAmount}</span>
+              <span>Rejection / Extra Cutting:</span>
+              <span style={{ color: '#dc2626' }}>-₹{(rejectionNum * 100).toLocaleString('en-IN')}</span>
             </div>
             <div className="charge-total-line">
-              <span>Total Payable Charges:</span>
+              <span>Net Processing Payable:</span>
               <span className="total-val">{detailData.totalCharges}</span>
             </div>
           </div>
@@ -300,115 +354,82 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
         </div>
       </div>
 
-      {/* ── MATERIAL TRACEABILITY & FLOW ROUTE ── */}
-      <div className="jwd-card">
-        <div className="jwd-card-sublabel">MATERIAL TRACEABILITY &amp; FLOW ROUTE</div>
-        <div className="jwd-flow-route">
-          <div className="flow-route-card route-grey">
-            <span className="step-tag">STEP 1</span>
-            <div className="route-title">Raw Material Stock</div>
-            <div className="route-sub">Silo Bay A-1</div>
-          </div>
-
-          <span className="route-arrow">&rarr;</span>
-
-          <div className="flow-route-card route-gold">
-            <span className="step-tag tag-gold">STEP 2 (OUTWARD)</span>
-            <div className="route-title">{detailData.party}</div>
-            <div className="route-sub font-mono">{detailData.challan}</div>
-          </div>
-
-          <span className="route-arrow">&rarr;</span>
-
-          <div className="flow-route-card route-green">
-            <span className="step-tag tag-green">STEP 3 (RETURN)</span>
-            <div className="route-title">{detailData.receivedQty} Returned</div>
-            <div className="route-sub">WIP Storage / Bay</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Goods Receipt Notes (GRN History) Table ── */}
+      {/* ── Inward Receipts (Slip History) Table ── */}
       <div className="jwd-card">
         <div className="jwd-section-header-inline">
           <div>
             <div className="jwd-section-title-md">
-              <FileText size={16} className="inline-icon" /> Goods Receipt Notes (GRN History)
+              <Receipt size={16} className="inline-icon" /> Job Work Inward Slips (Receipt History)
             </div>
-            <div className="jwd-section-sub font-normal">Every lot receipt and quality inspection recorded</div>
+            <div className="jwd-section-sub font-normal">Audit of all incoming slips with Bora tare, rework, rejection, and supervisor signatures</div>
           </div>
-          <button className="jwd-btn-dark-sm" onClick={() => setShowReceiveModal(true)}>
-            <Plus size={14} /> Record Receipt
-          </button>
+          {!isCompleted && (
+            <button className="jwd-btn-dark-sm" onClick={() => setShowReceiveModal(true)}>
+              <Plus size={14} /> Record Inward Slip
+            </button>
+          )}
         </div>
 
         <div className="jwd-table-wrap">
           <table className="jwd-table">
             <thead>
               <tr>
-                <th>GRN NUMBER</th>
+                <th>INWARD SLIP NO.</th>
                 <th>RECEIPT DATE</th>
-                <th>RECEIVED QTY</th>
-                <th>WASTAGE / SCRAP</th>
-                <th>ACCEPTED QTY</th>
-                <th>QUALITY STATUS</th>
-                <th>STOCK LOCATION</th>
-                <th>NOTES &amp; INSPECTION</th>
-                <th>ACTION</th>
+                <th>GROSS (KG)</th>
+                <th>BORA COUNT</th>
+                <th>NET RECD (KG)</th>
+                <th>REWORK / REJECT</th>
+                <th>SAMPLE</th>
+                <th>RECEIVED BY</th>
+                <th>VALUE (₹)</th>
+                <th>QA STATUS</th>
               </tr>
             </thead>
             <tbody>
-              {detailData.grnHistory.map(grn => (
-                <tr key={grn.grnNo}>
-                  <td className="font-mono font-bold text-dark">{grn.grnNo}</td>
-                  <td className="text-muted">{grn.date}</td>
-                  <td className="font-bold text-green">{grn.receivedQty}</td>
-                  <td className="font-bold text-red">{grn.wastage}</td>
-                  <td className="font-bold text-dark">{grn.acceptedQty}</td>
-                  <td>
-                    <span className="jw-status-badge pill-completed">• {grn.status}</span>
-                  </td>
-                  <td>{grn.location}</td>
-                  <td className="text-sub font-normal">{grn.notes}</td>
-                  <td>
-                    <button className="jwd-btn-ghost-xs" title="Print Goods Receipt Note" onClick={() => printGRN(grn, detailData)}>
-                      Print GRN
-                    </button>
+              {inwardReceipts.length > 0 ? (
+                inwardReceipts.map((grn, gi) => (
+                  <tr key={gi}>
+                    <td className="font-mono font-bold" style={{ color: '#ea580c' }}>{grn.slipNo}</td>
+                    <td>{grn.date}</td>
+                    <td>{grn.grossWeight ? `${Number(grn.grossWeight).toFixed(1)} KG` : '—'}</td>
+                    <td>{grn.boraCount ? `${grn.boraCount} Bora` : '—'}</td>
+                    <td className="font-bold" style={{ color: '#16a34a' }}>{Number(grn.netQtyKg || 0).toFixed(1)} KG</td>
+                    <td style={{ color: '#dc2626' }}>
+                      {(Number(grn.reworkQtyKg || 0) + Number(grn.rejectionQtyKg || 0)).toFixed(1)} KG
+                    </td>
+                    <td>{grn.samplePcs || 10} PCs ({grn.sampleWeight || 0.5}k)</td>
+                    <td>{grn.receivedBy || 'RAMILBHAI'}</td>
+                    <td className="font-bold">₹{Number(grn.value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                    <td>
+                      <span className="badge-green-sm">✓ {grn.status || 'Approved'}</span>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '18px', color: '#64748b' }}>
+                    No inward receipt slips recorded yet for this challan.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* ── AUDIT TRAIL & LINKED STOCK MOVEMENTS (2) ── */}
-      <div className="jwd-card">
-        <div className="jwd-card-sublabel">
-          <Clock size={14} className="inline-icon" /> AUDIT TRAIL &amp; LINKED STOCK MOVEMENTS ({detailData.auditTrail.length})
-        </div>
-
-        <div className="jwd-audit-list">
-          {detailData.auditTrail.map((item, idx) => (
-            <div key={idx} className="jwd-audit-item">
-              <div className="audit-header-line">
-                <div className="audit-title-left">
-                  <span className="audit-id font-mono font-bold">{item.id}</span>
-                  <span className="audit-type-badge">{item.type}</span>
-                  <span className="audit-date text-muted">• {item.date}</span>
-                </div>
-                <span className={`audit-qty ${item.colorClass}`}>{item.qtyChange}</span>
-              </div>
-              <p className="audit-notes">{item.notes}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Receive Material Modal */}
+      {/* ── Receive Material Dialog (Inward Slip Modal) ── */}
       {showReceiveModal && (
         <ReceiveJobWorkModal
-          row={{ jwNo: detailData.id, id: simMatch?.id || jwId, party: detailData.party, balQtyKg: simMatch?.balQtyKg !== undefined ? simMatch.balQtyKg : 2000 }}
+          row={{
+            id: detailData.id,
+            jwNo: detailData.id,
+            chNo: detailData.challan,
+            party: detailData.party,
+            material: detailData.inputMaterialName,
+            balQtyKg: balNum,
+            ratePerKg: chargeRate
+          }}
           onClose={() => setShowReceiveModal(false)}
           onSave={handleSaveReceiveModal}
         />
