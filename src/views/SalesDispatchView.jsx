@@ -146,7 +146,14 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
   const totalBookedRevenueLakhs = (totalBookedRevenueInr / 100000).toFixed(2);
 
   const totalReadyCoils = liveOrders.reduce((sum, o) => {
-    return sum + (o.reservedCoils || parseVal(o.reserved) || parseVal(o.orderedQty) || 0);
+    const ordQty = typeof o.orderedQtyCoils === 'number' ? o.orderedQtyCoils : (parseVal(o.orderedQty) || 0);
+    const dispQty = typeof o.dispatchedCoils === 'number' ? o.dispatchedCoils : (typeof o.dispatchedQtyCoils === 'number' ? o.dispatchedQtyCoils : (parseVal(o.dispatched) || 0));
+    if (o.status === 'COMPLETED' || (dispQty >= ordQty && ordQty > 0)) return sum;
+    const balQty = Math.max(0, ordQty - dispQty);
+    const res = typeof o.reservedQtyCoils === 'number'
+      ? Math.min(o.reservedQtyCoils, balQty)
+      : (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : (parseVal(o.reserved) || balQty));
+    return sum + (Number(res) || 0);
   }, 0);
 
   const totalDispatchedValInr = liveDispatches.reduce((sum, d) => {
@@ -199,10 +206,13 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
   const displaySalesOrders = liveOrders.map(o => {
     const { qty, grandTotal } = calcOrderTotals(o);
     const ordQty = typeof o.orderedQtyCoils === 'number' ? o.orderedQtyCoils : (parseVal(o.orderedQty) || qty);
-    const dispQty = typeof o.dispatchedCoils === 'number' ? o.dispatchedCoils : (parseVal(o.dispatched) || 0);
+    const dispQty = typeof o.dispatchedCoils === 'number' ? o.dispatchedCoils : (typeof o.dispatchedQtyCoils === 'number' ? o.dispatchedQtyCoils : (parseVal(o.dispatched) || 0));
     const balQty = typeof o.balanceCoils === 'number' ? o.balanceCoils : Math.max(0, ordQty - dispQty);
     const isCompleted = o.status === 'COMPLETED' || (dispQty >= ordQty && ordQty > 0);
-    const resQty = isCompleted ? 0 : (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : balQty);
+    const resQty = isCompleted ? 0 : (
+      typeof o.reservedQtyCoils === 'number' ? Math.min(o.reservedQtyCoils, balQty) :
+      (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : (parseVal(o.reserved) || balQty))
+    );
 
     return {
       id: o.id,
@@ -429,7 +439,16 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
             <div className="sd-skpi-card sd-skpi-green">
               <div className="sd-skpi-title sd-skpi-title-green">READY TO DISPATCH</div>
               <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val sd-text-green">{liveOrders.filter(o => (o.reservedCoils || parseVal(o.reserved) || parseVal(o.orderedQty) || 0) > 0).length}</span>
+                <span className="sd-skpi-val sd-text-green">
+                  {liveOrders.filter(o => {
+                    const ordQty = typeof o.orderedQtyCoils === 'number' ? o.orderedQtyCoils : (parseVal(o.orderedQty) || 0);
+                    const dispQty = typeof o.dispatchedCoils === 'number' ? o.dispatchedCoils : (typeof o.dispatchedQtyCoils === 'number' ? o.dispatchedQtyCoils : (parseVal(o.dispatched) || 0));
+                    if (o.status === 'COMPLETED' || (dispQty >= ordQty && ordQty > 0)) return false;
+                    const balQty = Math.max(0, ordQty - dispQty);
+                    const res = typeof o.reservedQtyCoils === 'number' ? Math.min(o.reservedQtyCoils, balQty) : (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : (parseVal(o.reserved) || balQty));
+                    return Number(res) > 0;
+                  }).length}
+                </span>
               </div>
               <div className="sd-skpi-sub">Stock reserved &amp; ready</div>
             </div>
