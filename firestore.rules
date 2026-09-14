@@ -2,53 +2,80 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check authentication
+    // Helper function: verifies user is securely logged into Firebase Auth
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // User & Username Registry (Allow unauthenticated read for username login lookup)
+    // ── 1. User & Username Registry ──
+    // Allow public read for login username-to-email resolution, but only authenticated writes
     match /usernames/{document=**} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAuthenticated();
     }
 
     match /users/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
-    // Master Data Collections
+    // ── 2. Master Data Collections (Authenticated Only) ──
     match /rawMaterials/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
     match /finishedGoods/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
     match /vendors/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
     match /buyers/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
-    // Operational Collections
+    match /jobWorkRates/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /jwValueMasters/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── 3. Operational Transaction Collections (Authenticated Only) ──
     match /jobWorks/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
+    }
+
+    match /rmInwards/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /rmFactoryIssues/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /extraCuttings/{document=**} {
+      allow read, write: if isAuthenticated();
     }
 
     match /salesOrders/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
     match /dispatches/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
 
-    // Append-only Inventory Ledger
+    match /systemSettings/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ── 4. Stock Movement Audit Ledger (Immutable) ──
+    // Authenticated users can read and record movements, but cannot alter or delete history
     match /stockMovements/{document=**} {
-      allow read, create: if true;
+      allow read, create: if isAuthenticated();
       allow update, delete: if false;
     }
   }

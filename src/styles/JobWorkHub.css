@@ -357,10 +357,12 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-.jw-search-input-wrap {
+.jw-search-input-wrap,
+.jw-search-wrap {
   position: relative;
   flex: 1;
-  min-width: 220px;
+  min-width: 260px;
+  max-width: 440px;
   display: flex;
   align-items: center;
 }
@@ -368,21 +370,26 @@
   position: absolute;
   left: 10px;
   color: #94a3b8;
+  pointer-events: none;
 }
-.jw-filter-search {
+.jw-filter-search,
+.jw-search-input {
   width: 100%;
-  padding: 7px 12px 7px 32px;
-  background: #f8fafc;
-  border: 1px solid #d1d5db;
+  padding: 8px 12px 8px 34px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
-  font-size: 0.76rem;
+  font-size: 0.8rem;
   color: #0f172a;
   outline: none;
   font-family: var(--font, 'Inter', sans-serif);
-  transition: border-color 0.15s;
+  transition: all 0.15s ease-in-out;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-.jw-filter-search:focus {
-  border-color: #3b82f6;
+.jw-filter-search:focus,
+.jw-search-input:focus {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
   background: #ffffff;
 }
 
@@ -530,6 +537,31 @@
   transition: all 0.15s;
 }
 .jw-icon-action:hover { background: #f1f5f9; color: #0f172a; }
+
+.jw-slip-print-btn {
+  background: #f0f9ff;
+  border: 1px solid #0284c7;
+  color: #0284c7;
+  border-radius: 5px;
+  height: 28px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.jw-slip-print-btn:hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25);
+}
 
 /* ─── TAB 2: VENDOR GROUPED CARDS ─── */
 .jw-vendor-groups {

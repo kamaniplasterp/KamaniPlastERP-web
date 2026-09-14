@@ -1,8 +1,14 @@
 import { useState, useEffect } from 'react';
 import { X, Calculator, Truck, FileText, Layers, UserCheck } from 'lucide-react';
-import { createJobWork, ARTICLE_TARE_DEFAULTS, JW_PROCESS_LIST, AUTHORIZED_PERSONS } from '../api/jobwork.api';
+import { createJobWork, ARTICLE_TARE_DEFAULTS, JW_PROCESS_LIST } from '../api/jobwork.api';
 import { subscribeRawMaterials } from '../api/inventory.api';
-import { subscribeVendors } from '../api/directory.api';
+import { 
+  subscribeVendors, 
+  subscribePersonnel, 
+  subscribeTareStandards, 
+  DEFAULT_PERSONNEL, 
+  DEFAULT_TARE_STANDARDS 
+} from '../api/directory.api';
 import '../styles/Modals.css';
 
 function today() {
@@ -17,15 +23,29 @@ function addDays(n) {
 export default function NewJobWorkModal({ onClose, onSave }) {
   const [liveMaterials, setLiveMaterials] = useState([]);
   const [liveVendors, setLiveVendors] = useState([]);
+  const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
+  const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
 
   useEffect(() => {
     const unsubRm = subscribeRawMaterials(setLiveMaterials);
     const unsubVe = subscribeVendors(setLiveVendors);
+    const unsubPers = subscribePersonnel(setPersonnelList);
+    const unsubTare = subscribeTareStandards(setTareStandards);
     return () => {
       unsubRm();
       unsubVe();
+      unsubPers();
+      unsubTare();
     };
   }, []);
+
+  const getUnitTare = (type) => {
+    if (type === 'BORA') return Number(tareStandards.bora || 0.200);
+    if (type === 'PLASTIC CONE') return Number(tareStandards.plasticCone || 0.025);
+    if (type === 'KHALI BAG') return Number(tareStandards.khaliBag || 0.120);
+    if (type === 'THELI') return Number(tareStandards.theli || 0.015);
+    return Number(ARTICLE_TARE_DEFAULTS[type] || 0);
+  };
 
   const [form, setForm] = useState({
     // Challan Headers
@@ -63,7 +83,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     batchNo: `BATCH-2026-${Math.floor(Math.random() * 900 + 100)}`,
     vehicleNo: '',
     stockSource: 'Factory Silo Bay A-1',
-    issuedBy: AUTHORIZED_PERSONS[0],
+    issuedBy: DEFAULT_PERSONNEL[0],
     approvedBy: 'FINAL APPROVED',
     remarks: ''
   });
@@ -83,7 +103,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
   const boraCnt = parseFloat(form.boraCount) || 0;
   const tareRate = form.articleType === 'CUSTOM'
     ? (parseFloat(form.customTareRate) || 0)
-    : (ARTICLE_TARE_DEFAULTS[form.articleType] !== undefined ? ARTICLE_TARE_DEFAULTS[form.articleType] : 0.200);
+    : getUnitTare(form.articleType);
   
   const articleTareWeight = boraCnt * tareRate;
   const netWeight = grossWght > 0 ? Math.max(0, grossWght - articleTareWeight) : 0;
@@ -227,22 +247,6 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             </div>
             <div className="mform-row mform-col-4">
               <div className="mform-field">
-                <label className="mform-label">Challan Series</label>
-                <select className="mform-select" value={form.challanSeries} onChange={e => set('challanSeries', e.target.value)}>
-                  <option value="JW-2026-">JW-2026- (Standard)</option>
-                  <option value="CH-">CH- (Direct Challan)</option>
-                  <option value="EXT-">EXT- (Extrusion Issue)</option>
-                </select>
-              </div>
-              <div className="mform-field">
-                <label className="mform-label">Sub Challan No.</label>
-                <input type="text" className="mform-input" value={form.subChalNo} onChange={e => set('subChalNo', e.target.value)} placeholder="1" />
-              </div>
-              <div className="mform-field">
-                <label className="mform-label">Work Order No.</label>
-                <input type="text" className="mform-input" value={form.workOrder} onChange={e => set('workOrder', e.target.value)} required />
-              </div>
-              <div className="mform-field">
                 <label className="mform-label">Department</label>
                 <select className="mform-select" value={form.department} onChange={e => set('department', e.target.value)}>
                   <option value="Job Work Extrusion">Job Work Extrusion</option>
@@ -251,20 +255,40 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                   <option value="Rope Laying">Rope Laying</option>
                 </select>
               </div>
+              <div className="mform-field">
+                <label className="mform-label">Status</label>
+                <input type="text" className="mform-input" value="SENT" readOnly style={{ background: '#f1f5f9', fontWeight: 'bold', color: '#ea580c' }} />
+              </div>
+              <div className="mform-field">
+                <label className="mform-label">Work Order</label>
+                <input type="text" className="mform-input" value={form.workOrder} onChange={e => set('workOrder', e.target.value)} required />
+              </div>
+              <div className="mform-field">
+                <label className="mform-label">Challan Series</label>
+                <select className="mform-select" value={form.challanSeries} onChange={e => set('challanSeries', e.target.value)}>
+                  <option value="JW-2026-">JW-2026- (Standard)</option>
+                  <option value="CH-">CH- (Direct Challan)</option>
+                  <option value="EXT-">EXT- (Extrusion Issue)</option>
+                </select>
+              </div>
             </div>
 
-            <div className="mform-row mform-col-3" style={{ marginTop: '10px' }}>
+            <div className="mform-row mform-col-4" style={{ marginTop: '10px' }}>
               <div className="mform-field">
-                <label className="mform-label">Challan Date <span className="req">*</span></label>
+                <label className="mform-label">Sub Challan No.</label>
+                <input type="text" className="mform-input" value={form.subChalNo} onChange={e => set('subChalNo', e.target.value)} placeholder="1" />
+              </div>
+              <div className="mform-field">
+                <label className="mform-label">Challan No.</label>
+                <input type="text" className="mform-input" value={`${form.challanSeries}${form.subChalNo || '1'}`} readOnly style={{ background: '#f1f5f9', fontWeight: 'bold' }} />
+              </div>
+              <div className="mform-field">
+                <label className="mform-label">Date <span className="req">*</span></label>
                 <input type="date" className="mform-input" value={form.challanDate} onChange={e => set('challanDate', e.target.value)} required />
               </div>
               <div className="mform-field">
-                <label className="mform-label">Duration (Days)</label>
-                <input type="number" className="mform-input" min="1" max="90" value={form.durationDays} onChange={e => set('durationDays', e.target.value)} />
-              </div>
-              <div className="mform-field">
-                <label className="mform-label">Expected Return Date</label>
-                <input type="date" className="mform-input" value={form.expectedReturn} onChange={e => set('expectedReturn', e.target.value)} required />
+                <label className="mform-label">Duration</label>
+                <input type="number" className="mform-input" min="1" max="90" value={form.durationDays} onChange={e => set('durationDays', e.target.value)} placeholder="Days" />
               </div>
             </div>
           </div>
@@ -277,7 +301,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             </div>
             <div className="mform-row mform-col-2">
               <div className="mform-field">
-                <label className="mform-label">Job Work Party (Vendor) <span className="req">*</span></label>
+                <label className="mform-label">Party Name <span className="req">*</span></label>
                 <select className="mform-select" value={form.jwParty} onChange={e => handlePartySelect(e.target.value)} required>
                   <option value="">-- Select Vendor / Job Worker --</option>
                   {displayVendors.map(p => (
@@ -294,7 +318,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
 
               <div className="mform-field">
-                <label className="mform-label">Select Raw Material <span className="req">*</span></label>
+                <label className="mform-label">Item Name <span className="req">*</span></label>
                 <select className="mform-select" value={form.rawMaterial} onChange={e => handleMaterialSelect(e.target.value)} required>
                   <option value="">-- Select Polymer Material --</option>
                   {liveMaterials.map(m => (
@@ -313,14 +337,14 @@ export default function NewJobWorkModal({ onClose, onSave }) {
 
             <div className="mform-row mform-col-2" style={{ marginTop: '10px' }}>
               <div className="mform-field">
-                <label className="mform-label">Process Name (Matching Master) <span className="req">*</span></label>
+                <label className="mform-label">Process Name <span className="req">*</span></label>
                 <select className="mform-select" value={form.processType} onChange={e => set('processType', e.target.value)} required>
                   {JW_PROCESS_LIST.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div className="mform-field">
-                <label className="mform-label">Material Grade Spec</label>
-                <input type="text" className="mform-input" placeholder="e.g. 8MFI, HD, HMEL OG, MB6501, ABC12" value={form.grade} onChange={e => set('grade', e.target.value)} />
+                <label className="mform-label">Rejection/Rework</label>
+                <input type="text" className="mform-input" placeholder="e.g. Standard 0% allowance / fresh issue" defaultValue="Fresh Issue" />
               </div>
             </div>
           </div>
@@ -334,7 +358,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             
             <div className="mform-row mform-col-4">
               <div className="mform-field">
-                <label className="mform-label">Gross Weight (KG) <span className="req">*</span></label>
+                <label className="mform-label">Gross Weight <span className="req">*</span></label>
                 <input
                   type="number" step="0.1" className="mform-input" placeholder="e.g. 5000"
                   value={form.grossWeight} onChange={e => set('grossWeight', e.target.value)}
@@ -343,7 +367,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
 
               <div className="mform-field">
-                <label className="mform-label">No. of BORA / Bags</label>
+                <label className="mform-label">No. of BORA</label>
                 <input
                   type="number" className="mform-input" placeholder="e.g. 200"
                   value={form.boraCount} onChange={e => set('boraCount', e.target.value)}
@@ -352,7 +376,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
 
               <div className="mform-field">
-                <label className="mform-label">Article / Packaging Type</label>
+                <label className="mform-label">Article Type</label>
                 <select className="mform-select" value={form.articleType} onChange={e => set('articleType', e.target.value)}>
                   <option value="BORA">BORA (0.200 KG / Bag)</option>
                   <option value="PLASTIC CONE">PLASTIC CONE (0.025 KG / Cone)</option>
@@ -364,7 +388,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
 
               <div className="mform-field">
-                <label className="mform-label">Calculated Tare (KG)</label>
+                <label className="mform-label">Article Weight</label>
                 <div className="mform-calc-field">
                   <span className="calc-value">{articleTareWeight.toFixed(2)} KG</span>
                   <span className="calc-note">({boraCnt} × {tareRate} kg)</span>
@@ -375,7 +399,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             {/* Net Weight & Burning Loss Row */}
             <div className="mform-row mform-col-4" style={{ marginTop: '12px', borderTop: '1px dashed #cbd5e1', paddingTop: '12px' }}>
               <div className="mform-field">
-                <label className="mform-label" style={{ fontWeight: 'bold', color: '#1e293b' }}>Net Dispatch Weight</label>
+                <label className="mform-label" style={{ fontWeight: 'bold', color: '#1e293b' }}>Net Weight</label>
                 <div className="mform-calc-field" style={{ background: '#e0f2fe', borderColor: '#38bdf8' }}>
                   <span className="calc-value" style={{ color: '#0284c7', fontWeight: 'bold' }}>
                     {netWeight.toFixed(2)} KG
@@ -384,7 +408,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
 
               <div className="mform-field">
-                <label className="mform-label">B.Loss % (Burning/Process)</label>
+                <label className="mform-label">B. Loss %</label>
                 <input
                   type="number" step="0.1" min="0" max="50" className="mform-input" placeholder="0.0"
                   value={form.bLossPct} onChange={e => set('bLossPct', e.target.value)}
@@ -392,7 +416,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
 
               <div className="mform-field">
-                <label className="mform-label">B.Loss Weight (KG)</label>
+                <label className="mform-label">B. Loss</label>
                 <div className="mform-calc-field">
                   <span className="calc-value">{bLossKg.toFixed(2)} KG</span>
                   <span className="calc-note">Process Loss</span>
@@ -400,7 +424,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
 
               <div className="mform-field">
-                <label className="mform-label" style={{ fontWeight: 'bold', color: '#15803d' }}>Net Outward Returnable</label>
+                <label className="mform-label" style={{ fontWeight: 'bold', color: '#15803d' }}>Net Weight (final)</label>
                 <div className="mform-calc-field" style={{ background: '#dcfce7', borderColor: '#86efac' }}>
                   <span className="calc-value" style={{ color: '#15803d', fontWeight: 'bold' }}>
                     {netOutwardExpectedKg.toFixed(2)} KG
@@ -410,17 +434,21 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             </div>
 
             {/* Sample Pieces & Count Row */}
-            <div className="mform-row mform-col-3" style={{ marginTop: '12px' }}>
+            <div className="mform-row mform-col-4" style={{ marginTop: '12px' }}>
               <div className="mform-field">
-                <label className="mform-label">Total Pieces (PCs.)</label>
+                <label className="mform-label">PCs.</label>
                 <input type="number" className="mform-input" placeholder="Optional" value={form.pieces} onChange={e => set('pieces', e.target.value)} />
               </div>
               <div className="mform-field">
-                <label className="mform-label">Sample Pieces (Smpl PCs.)</label>
+                <label className="mform-label">Auto Pcs</label>
+                <input type="text" className="mform-input" readOnly style={{ background: '#f8fafc', fontWeight: 'bold' }} value={form.pieces || (boraCnt ? `${boraCnt * 10} PCs` : '—')} />
+              </div>
+              <div className="mform-field">
+                <label className="mform-label">Sample PCs.</label>
                 <input type="number" className="mform-input" placeholder="e.g. 10" value={form.samplePcs} onChange={e => set('samplePcs', e.target.value)} />
               </div>
               <div className="mform-field">
-                <label className="mform-label">Sample Pcs Weight (KG)</label>
+                <label className="mform-label">Sample Pcs Weight</label>
                 <input type="number" step="0.01" className="mform-input" placeholder="e.g. 0.50" value={form.sampleWeight} onChange={e => set('sampleWeight', e.target.value)} />
               </div>
             </div>
@@ -463,7 +491,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               <div className="mform-field">
                 <label className="mform-label">Issued By</label>
                 <select className="mform-select" value={form.issuedBy} onChange={e => set('issuedBy', e.target.value)}>
-                  {AUTHORIZED_PERSONS.map(p => <option key={p} value={p}>{p}</option>)}
+                  {personnelList.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div className="mform-field">
@@ -475,7 +503,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
 
           {/* Remarks */}
           <div className="mform-field" style={{ marginTop: '10px' }}>
-            <label className="mform-label">Processing Instructions &amp; Challan Remarks</label>
+            <label className="mform-label">Remarks</label>
             <textarea className="mform-textarea" rows={2} value={form.remarks} onChange={e => set('remarks', e.target.value)} placeholder="Enter process specs, yarn denier, twist count, and delivery terms..." />
           </div>
 

@@ -2,6 +2,8 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
+  getDoc,
+  updateDoc,
   doc, 
   serverTimestamp,
   query,
@@ -137,6 +139,26 @@ export async function reserveSalesOrderStock(soId, fgSkuId, reserveCoils = 500) 
 /**
  * Create a Dispatch Challan atomically
  */
+/**
+ * Update a Dispatch valuation directly
+ */
+export async function updateDispatchValue(dispatchId, totalValue) {
+  if (!db || !dispatchId || !totalValue) return;
+  try {
+    const num = Number(totalValue);
+    const dRef = doc(db, 'dispatches', dispatchId);
+    await updateDoc(dRef, {
+      totalValue: num,
+      value: `₹${num.toLocaleString('en-IN')}`
+    });
+  } catch (err) {
+    console.error('Error updating dispatch value:', err);
+  }
+}
+
+/**
+ * Create a Dispatch Challan atomically
+ */
 export async function createDispatch(data) {
   if (!db) throw new Error('Firestore not initialized');
 
@@ -146,9 +168,42 @@ export async function createDispatch(data) {
   const invNo = data.taxInvoice || data.invoiceNo || `INV-2026-${uniqueSuffix}`;
   const chNo = data.challanNo || `DC-2026-${uniqueSuffix}`;
 
-  const numVal = typeof data.totalValue === 'number' && data.totalValue > 0
+  let numVal = typeof data.totalValue === 'number' && data.totalValue > 0
     ? data.totalValue
-    : (typeof data.value === 'number' ? data.value : (parseFloat(String(data.value || '').replace(/[^0-9.]/g, '')) || 0));
+    : (typeof data.value === 'number' && data.value > 0
+        ? data.value
+        : (parseFloat(String(data.value || '').replace(/[^0-9.]/g, '')) || 0));
+
+  let orderRate = Number(data.rate || data.pricePerUnit) || 0;
+  let orderGrandTotal = Number(data.grandTotal) || 0;
+  let orderTotalQty = Number(data.totalOrderedCoils) || 0;
+  let itemSummary = data.itemSummary || '';
+
+  if (numVal <= 0 && data.soId) {
+    try {
+      const soSnap = await getDoc(doc(db, 'salesOrders', data.soId));
+      if (soSnap.exists()) {
+        const soData = soSnap.data();
+        orderRate = Number(soData.rate || soData.pricePerUnit) || 0;
+        orderGrandTotal = Number(soData.grandTotal || soData.totalValue) || 0;
+        orderTotalQty = Number(soData.orderedQtyCoils) || 0;
+        if (!itemSummary) itemSummary = soData.itemSummary || '';
+      }
+    } catch (e) {
+      console.warn('Could not fetch SO for valuation:', e);
+    }
+  }
+
+  if (numVal <= 0) {
+    if (orderGrandTotal > 0 && orderTotalQty > 0) {
+      numVal = Math.round((orderGrandTotal / orderTotalQty) * dispatchQtyCoils);
+    } else if (orderRate > 0) {
+      const taxable = dispatchQtyCoils * orderRate;
+      numVal = Math.round(taxable * 1.18);
+    } else {
+      numVal = Math.round(dispatchQtyCoils * 2450 * 1.18);
+    }
+  }
 
   const dispatchDoc = {
     dispatchNo: dispatchNo,
@@ -162,7 +217,9 @@ export async function createDispatch(data) {
     ewayBill: data.ewayBill || `E-way: ${Math.floor(100000000000 + Math.random() * 900000000000)}`,
     dispatchedQty: `${dispatchQtyCoils} Coils`,
     dispatchedQtyCoils: dispatchQtyCoils,
-    value: data.value || `₹${numVal.toLocaleString('en-IN')}`,
+    rate: orderRate || 2450,
+    itemSummary: itemSummary || 'PP Danline High Tenacity Rope (Yellow)',
+    value: `₹${numVal.toLocaleString('en-IN')}`,
     totalValue: numVal,
     vehicle: data.vehicle || '',
     vehicleNo: data.vehicle || data.vehicleNo || '',
@@ -179,17 +236,19 @@ export async function createDispatch(data) {
     await runTransaction(db, async (transaction) => {
       const soSnap = await transaction.get(soRef);
       const existingSo = soSnap.exists() ? soSnap.data() : {};
-
       const currentDispatched = (Number(existingSo.dispatchedCoils) || Number(data.currentDispatchedCoils) || 0) + dispatchQtyCoils;
       const totalOrdered = Number(existingSo.orderedQtyCoils) || Number(data.totalOrderedCoils) || 500;
       const balanceCoils = Math.max(0, totalOrdered - currentDispatched);
       const isCompleted = balanceCoils <= 0;
+      const currentReserved = Math.max(0, (Number(existingSo.reservedCoils) || totalOrdered) - dispatchQtyCoils);
 
       transaction.set(soRef, {
         dispatched: `${currentDispatched}`,
         dispatchedCoils: currentDispatched,
         balance: `${balanceCoils}`,
         balanceCoils: balanceCoils,
+        reserved: `${currentReserved} Coils`,
+        reservedCoils: currentReserved,
         status: isCompleted ? 'COMPLETED' : 'PARTIALLY DISPATCHED',
         statusClass: isCompleted ? 'pill-completed' : 'pill-partial-disp',
         updatedAt: serverTimestamp()
@@ -197,9 +256,10 @@ export async function createDispatch(data) {
     });
   }
 
-  // Deduct FG Stock atomically
-  if (data.fgSkuId) {
-    await updateFgStock(data.fgSkuId, -dispatchQtyCoils, -dispatchQtyCoils);
+  // Deduct FG Stock atomically (both physical stock and reserved stock)
+  const targetSkuId = data.fgSkuId || (data.soId ? (await getDoc(doc(db, 'salesOrders', data.soId))).data()?.fgSkuId : null);
+  if (targetSkuId) {
+    await updateFgStock(targetSkuId, -dispatchQtyCoils, -dispatchQtyCoils);
   }
 
   // Log movement
@@ -208,7 +268,7 @@ export async function createDispatch(data) {
     typeBadge: 'inv-badge-dispatch',
     icon: '🚚',
     ref: dispatchNo,
-    item: data.itemSummary || 'PP Danline Rope 6mm (Yellow)',
+    item: dispatchDoc.itemSummary,
     batch: 'BATCH-FG-DISPATCH',
     inward: '0',
     outward: `-${dispatchQtyCoils} Coils`,

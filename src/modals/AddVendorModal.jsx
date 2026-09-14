@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { X, Building } from 'lucide-react';
+import { JW_PROCESS_LIST } from '../api/jobwork.api';
 import '../styles/Modals.css';
 
 export default function AddVendorModal({ onClose, onSave }) {
   const [formData, setFormData] = useState({
     name: '',
-    processBadge: 'Extrusion / Yarn Making / Twisting',
+    processBadge: JW_PROCESS_LIST[0] || 'GRANUAL - FISHING YARN',
     phone: '',
     location: '',
     gst: '',
-    rate: '8.5'
+    rate: '17.5'
   });
 
   const handleChange = (field, val) => {
@@ -50,7 +51,7 @@ export default function AddVendorModal({ onClose, onSave }) {
         <form className="modal-body" onSubmit={handleSubmit}>
           <div className="mform-row mform-col-2">
             <div className="mform-field">
-              <label className="mform-label">Vendor Business Name <span className="req">*</span></label>
+              <label className="mform-label">Supplier Name <span className="req">*</span></label>
               <input
                 type="text"
                 className="mform-input"
@@ -61,18 +62,16 @@ export default function AddVendorModal({ onClose, onSave }) {
               />
             </div>
             <div className="mform-field">
-              <label className="mform-label">Process Specialization <span className="req">*</span></label>
+              <label className="mform-label">Process Specialization (from Excel Sub Item) <span className="req">*</span></label>
               <select
                 className="mform-select"
                 value={formData.processBadge}
                 onChange={e => handleChange('processBadge', e.target.value)}
                 required
               >
-                <option value="Extrusion / Yarn Making / Twisting">Extrusion / Yarn Making / Twisting</option>
-                <option value="Rope Twisting & 3-Strand Laying">Rope Twisting &amp; 3-Strand Laying</option>
-                <option value="Tape Plant & Monofilament Extrusion">Tape Plant &amp; Monofilament Extrusion</option>
-                <option value="Fishing Twine Ring Twisting & Spooling">Fishing Twine Ring Twisting &amp; Spooling</option>
-                <option value="Dyeing / Coloring & Braiding">Dyeing / Coloring &amp; Braiding</option>
+                {JW_PROCESS_LIST.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
               </select>
             </div>
           </div>

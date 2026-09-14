@@ -3,13 +3,33 @@ import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
   Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck
 } from 'lucide-react';
-import { subscribeVendors, subscribeBuyers, addVendor, addBuyer, subscribeJobWorkRates, addJobWorkRate } from '../api/directory.api';
-import { subscribeJobWorks, ARTICLE_TARE_DEFAULTS, AUTHORIZED_PERSONS, JW_PROCESS_LIST } from '../api/jobwork.api';
+import { 
+  subscribeVendors, 
+  subscribeBuyers, 
+  addVendor, 
+  addBuyer, 
+  subscribeJobWorkRates, 
+  addJobWorkRate,
+  subscribeJwValueMasters,
+  deleteJwValueMaster,
+  subscribeTareStandards,
+  updateTareStandards,
+  subscribePersonnel,
+  addPersonnel,
+  deletePersonnel,
+  subscribeCompanyProfile,
+  updateCompanyProfile,
+  DEFAULT_TARE_STANDARDS,
+  DEFAULT_PERSONNEL,
+  DEFAULT_COMPANY_PROFILE
+} from '../api/directory.api';
+import { subscribeJobWorks, JW_PROCESS_LIST } from '../api/jobwork.api';
 import { subscribeSalesOrders } from '../api/sales.api';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
 import AddVendorModal from '../modals/AddVendorModal';
 import AddCustomerModal from '../modals/AddCustomerModal';
+import JwValueMasterModal from '../modals/JwValueMasterModal';
 import '../styles/DirectorySettings.css';
 
 export default function DirectorySettingsView() {
@@ -17,16 +37,19 @@ export default function DirectorySettingsView() {
   const [vendorSearch, setVendorSearch] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [rateSearch, setRateSearch] = useState('');
+  const [valueSearch, setValueSearch] = useState('');
 
   const [liveVendors, setLiveVendors] = useState([]);
   const [liveBuyers, setLiveBuyers] = useState([]);
   const [liveJobWorks, setLiveJobWorks] = useState([]);
   const [liveSalesOrders, setLiveSalesOrders] = useState([]);
   const [liveRates, setLiveRates] = useState([]);
+  const [liveValueMasters, setLiveValueMasters] = useState([]);
 
   const [showAddVendorModal, setShowAddVendorModal] = useState(false);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showAddRateModal, setShowAddRateModal] = useState(false);
+  const [showAddValueModal, setShowAddValueModal] = useState(false);
 
   const [newRateForm, setNewRateForm] = useState({
     party: 'GALAXY.ENTERPRISE',
@@ -36,18 +59,31 @@ export default function DirectorySettingsView() {
     rate: '17.50'
   });
 
+  const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
+  const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
+  const [newPersonName, setNewPersonName] = useState('');
+  const [companyProfile, setCompanyProfile] = useState(DEFAULT_COMPANY_PROFILE);
+
   useEffect(() => {
     const unsubV = subscribeVendors(setLiveVendors);
     const unsubB = subscribeBuyers(setLiveBuyers);
     const unsubJ = subscribeJobWorks(setLiveJobWorks);
     const unsubS = subscribeSalesOrders(setLiveSalesOrders);
     const unsubR = subscribeJobWorkRates(setLiveRates);
+    const unsubVal = subscribeJwValueMasters(setLiveValueMasters);
+    const unsubTare = subscribeTareStandards(setTareStandards);
+    const unsubPers = subscribePersonnel(setPersonnelList);
+    const unsubProf = subscribeCompanyProfile(setCompanyProfile);
     return () => {
       unsubV();
       unsubB();
       unsubJ();
       unsubS();
       unsubR();
+      unsubVal();
+      unsubTare();
+      unsubPers();
+      unsubProf();
     };
   }, []);
 
@@ -95,25 +131,18 @@ export default function DirectorySettingsView() {
     }
   };
 
-  const [companyProfile, setCompanyProfile] = useState({
-    legalName: 'Kamani Plastic Industries',
-    gstin: '24AAACK1234F1Z8',
-    phone: '+91 2824 220011 / +91 98250 12345',
-    address: 'Plot No. 12 & 14, GIDC Phase-II, Dhoraji, Dist. Rajkot, Gujarat - 360410',
-    jwPrefix: 'JW-2026-',
-    wastageAllowance: '2.5'
-  });
-
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    alert('Factory company profile configuration saved successfully!');
-  };
-
-  const handleReloadDemoData = () => {
-    if (confirm('Are you sure you want to reload clean factory sample data for Job Work, RM, FG, Orders, and Dispatches?')) {
-      alert('Factory sample data reloaded successfully!');
+    try {
+      await updateCompanyProfile(companyProfile);
+      alert('Factory company profile configuration saved to database successfully!');
+    } catch (err) {
+      console.error('Error saving company profile:', err);
+      alert('Failed to save company profile.');
     }
   };
+
+
 
   // Deduplicate and enrich liveVendors
   const uniqueVendorsMap = new Map();
@@ -210,6 +239,11 @@ export default function DirectorySettingsView() {
     (r.item || '').toLowerCase().includes(rateSearch.toLowerCase())
   );
 
+  const filteredValueMasters = liveValueMasters.filter(v => 
+    (v.code || '').toLowerCase().includes(valueSearch.toLowerCase()) ||
+    (v.itemDescription || '').toLowerCase().includes(valueSearch.toLowerCase())
+  );
+
   return (
     <div className="ds-container">
       {/* ── Page Header ── */}
@@ -217,7 +251,7 @@ export default function DirectorySettingsView() {
         <div>
           <h1 className="ds-page-title">Directory, Rate Masters &amp; System Configuration</h1>
           <p className="ds-page-subtitle">
-            Maintain Job Work Rate Masters, packaging tare standards, vendors, wholesale customers, and company profile.
+            Maintain Job Work Rate Masters, JW Value Masters, packaging tare standards, vendors, wholesale customers, and company profile.
           </p>
         </div>
 
@@ -227,7 +261,7 @@ export default function DirectorySettingsView() {
             className={`ds-tab-btn ${activeTab === 'vendors' ? 'active' : ''}`}
             onClick={() => setActiveTab('vendors')}
           >
-            Processing Vendors
+            Supplier Master (Vendors)
           </button>
           <button
             className={`ds-tab-btn ${activeTab === 'rateMaster' ? 'active' : ''}`}
@@ -236,10 +270,16 @@ export default function DirectorySettingsView() {
             JW Rate Master
           </button>
           <button
+            className={`ds-tab-btn ${activeTab === 'valueMaster' ? 'active' : ''}`}
+            onClick={() => setActiveTab('valueMaster')}
+          >
+            JW Value Master
+          </button>
+          <button
             className={`ds-tab-btn ${activeTab === 'miscMaster' ? 'active' : ''}`}
             onClick={() => setActiveTab('miscMaster')}
           >
-            Packaging &amp; Tare Standards
+            Misc Master (Tare &amp; Personnel)
           </button>
           <button
             className={`ds-tab-btn ${activeTab === 'customers' ? 'active' : ''}`}
@@ -351,12 +391,12 @@ export default function DirectorySettingsView() {
             <table className="jw-ledger-table">
               <thead>
                 <tr>
-                  <th>JOB WORK PARTY</th>
-                  <th>PROCESS NAME</th>
-                  <th>ITEM SPECIFICATION</th>
+                  <th>PARTY NAME</th>
+                  <th>PROCESS</th>
+                  <th>ITEM NAME</th>
                   <th>UOM</th>
-                  <th>EFFECTIVE DATE</th>
-                  <th>PROCESSING RATE (₹)</th>
+                  <th>DATE</th>
+                  <th>RATE</th>
                   <th>STATUS</th>
                 </tr>
               </thead>
@@ -390,7 +430,89 @@ export default function DirectorySettingsView() {
         </div>
       )}
 
+      {/* ── TAB: Job Work Value Master (Sheet: JW Value Master) ── */}
+      {activeTab === 'valueMaster' && (
+        <div className="jw-ledger-section">
+          <div className="ds-filter-row">
+            <div className="ds-search-wrap">
+              <Search size={14} className="ds-search-icon" />
+              <input
+                type="text"
+                placeholder="Search by Code, Item Description..."
+                className="ds-search-input"
+                value={valueSearch}
+                onChange={e => setValueSearch(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="ds-records-count">Showing {filteredValueMasters.length} valuation entries</span>
+              <button className="jw-btn-ghost" onClick={() => exportToCsv('JW_Value_Master.csv', filteredValueMasters)} style={{ cursor: 'pointer' }}>
+                <Download size={14} /> Export CSV
+              </button>
+              <button className="inv-btn-dark-pill" onClick={() => setShowAddValueModal(true)}>
+                <Plus size={14} /> Add Valuation Entry
+              </button>
+            </div>
+          </div>
+
+          <div className="jw-table-container" style={{ marginTop: '12px' }}>
+            <table className="jw-ledger-table">
+              <thead>
+                <tr>
+                  <th>CODE</th>
+                  <th>DATE</th>
+                  <th>ITEM DESCRIPTION</th>
+                  <th>VALUE</th>
+                  <th style={{ textAlign: 'center' }}>ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredValueMasters.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
+                      No JW Value Master records found. Click <strong>"+ Add Valuation Entry"</strong> above to register one.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredValueMasters.map((v, idx) => (
+                    <tr key={v.id || idx}>
+                      <td className="td-party" style={{ fontWeight: 'bold', color: '#ea580c' }}>{v.code}</td>
+                      <td className="td-date">{v.date}</td>
+                      <td className="td-material-col" style={{ fontWeight: '600' }}>{v.itemDescription}</td>
+                      <td className="td-charges" style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#059669' }}>
+                        ₹{Number(v.value || 0).toFixed(2)} / Kg
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          onClick={async () => {
+                            if (window.confirm(`Delete valuation entry ${v.code}?`)) {
+                              await deleteJwValueMaster(v.id);
+                            }
+                          }}
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid #fecaca',
+                            color: '#dc2626',
+                            borderRadius: '4px',
+                            padding: '3px 8px',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── TAB 3: Misc Master & Packaging Tare Standards ── */}
+      {/* ── TAB 3: Misc Master & Packaging Tare Standards (Sheet: Misc Master) ── */}
       {activeTab === 'miscMaster' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
           {/* Packaging Tare Standards Card */}
@@ -400,42 +522,121 @@ export default function DirectorySettingsView() {
                 <Package size={18} style={{ color: '#ea580c' }} />
                 <h2 className="ds-card-title">Packaging Tare Weight Standards</h2>
               </div>
-              <p className="ds-card-subtitle">Default tare deducted on gross scale weights (from Excel Misc Master)</p>
+              <p className="ds-card-subtitle">Default tare deducted on gross scale weights (Sheet: Misc Master)</p>
             </div>
 
-            <div className="jw-table-container" style={{ marginTop: '10px' }}>
-              <table className="jw-ledger-table">
-                <thead>
-                  <tr>
-                    <th>ARTICLE TYPE</th>
-                    <th>STANDARD TARE WEIGHT</th>
-                    <th>TYPICAL USE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td style={{ fontWeight: 'bold' }}>BORA</td>
-                    <td className="td-qty" style={{ fontWeight: 'bold', color: '#0284c7' }}>0.200 KG (200g)</td>
-                    <td>Polymer Granules &amp; Danline Bags</td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 'bold' }}>PLASTIC CONE</td>
-                    <td className="td-qty" style={{ fontWeight: 'bold', color: '#0284c7' }}>0.025 KG (25g)</td>
-                    <td>Yarn / Monofilament Cones</td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 'bold' }}>KHALI BAG</td>
-                    <td className="td-qty" style={{ fontWeight: 'bold', color: '#0284c7' }}>0.120 KG (120g)</td>
-                    <td>Secondary Pack Bagging</td>
-                  </tr>
-                  <tr>
-                    <td style={{ fontWeight: 'bold' }}>THELI (PACKAGING)</td>
-                    <td className="td-qty" style={{ fontWeight: 'bold', color: '#0284c7' }}>0.015 KG (15g)</td>
-                    <td>Consumer Hank Sleeves</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await updateTareStandards(tareStandards);
+                  alert('Packaging Tare Standards updated and saved to database successfully!');
+                } catch (err) {
+                  console.error('Error saving tare standards:', err);
+                  alert('Failed to save tare standards.');
+                }
+              }}
+              style={{ marginTop: '12px' }}
+            >
+              <div style={{ display: 'grid', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>
+                      BORA (Polymer Bags)
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Granules &amp; Danline secondary bags</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={tareStandards.bora}
+                      onChange={e => setTareStandards({ ...tareStandards, bora: parseFloat(e.target.value) || 0 })}
+                      style={{ width: '85px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold', textAlign: 'right', color: '#0f172a', background: '#ffffff' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>KG</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>
+                      PLASTIC CONE
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Yarn / monofilament winding cones</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={tareStandards.plasticCone}
+                      onChange={e => setTareStandards({ ...tareStandards, plasticCone: parseFloat(e.target.value) || 0 })}
+                      style={{ width: '85px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold', textAlign: 'right', color: '#0f172a', background: '#ffffff' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>KG</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>
+                      KHALI BAG
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Secondary pack protective bags</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={tareStandards.khaliBag}
+                      onChange={e => setTareStandards({ ...tareStandards, khaliBag: parseFloat(e.target.value) || 0 })}
+                      style={{ width: '85px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold', textAlign: 'right', color: '#0f172a', background: '#ffffff' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>KG</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>
+                      THELI (PACKAGING)
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Consumer hank sleeves &amp; liners</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={tareStandards.theli}
+                      onChange={e => setTareStandards({ ...tareStandards, theli: parseFloat(e.target.value) || 0 })}
+                      style={{ width: '85px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold', textAlign: 'right', color: '#0f172a', background: '#ffffff' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>KG</span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                style={{
+                  marginTop: '12px',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '7px 16px',
+                  borderRadius: '6px',
+                  fontSize: '0.82rem',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Save Tare Standards
+              </button>
+            </form>
           </div>
 
           {/* Authorized Personnel & Supervisors Card */}
@@ -445,15 +646,177 @@ export default function DirectorySettingsView() {
                 <Users size={18} style={{ color: '#2563eb' }} />
                 <h2 className="ds-card-title">Authorized Personnel &amp; Supervisors</h2>
               </div>
-              <p className="ds-card-subtitle">Dispatch issuers and inward QA signatories configured in system</p>
+              <p className="ds-card-subtitle">Dispatch issuers and inward QA signatories (Sheet: Misc Master)</p>
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-              {AUTHORIZED_PERSONS.map(p => (
-                <span key={p} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 'bold', color: '#1e293b' }}>
+              {personnelList.map((p, idx) => (
+                <span
+                  key={idx}
+                  style={{
+                    background: '#f1f5f9',
+                    border: '1px solid #cbd5e1',
+                    padding: '5px 10px',
+                    borderRadius: '20px',
+                    fontSize: '0.78rem',
+                    fontWeight: 'bold',
+                    color: '#1e293b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
                   👤 {p}
+                  {personnelList.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await deletePersonnel(p);
+                        } catch (err) {
+                          console.error('Error deleting signatory:', err);
+                        }
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        padding: 0,
+                        marginLeft: '2px',
+                        fontSize: '0.75rem',
+                        lineHeight: 1
+                      }}
+                      title="Remove Signatory"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </span>
               ))}
+            </div>
+
+            {/* Add New Personnel Form */}
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const trimmed = newPersonName.trim().toUpperCase();
+                if (!trimmed) return;
+                if (personnelList.includes(trimmed)) {
+                  alert('Person already registered in directory.');
+                  return;
+                }
+                try {
+                  await addPersonnel(trimmed);
+                  setNewPersonName('');
+                } catch (err) {
+                  console.error('Error adding signatory:', err);
+                  alert('Failed to add signatory to database.');
+                }
+              }}
+              style={{ marginTop: '16px', display: 'flex', gap: '8px' }}
+            >
+              <input
+                type="text"
+                placeholder="Enter person name (e.g. RAJESHBHAI)..."
+                value={newPersonName}
+                onChange={e => setNewPersonName(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '0.8rem'
+                }}
+              />
+              <button
+                type="submit"
+                style={{
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                + Add Signatory
+              </button>
+            </form>
+          </div>
+
+          {/* 12 Lookup Master Categories from Excel Misc Master */}
+          <div className="ds-settings-card" style={{ gridColumn: 'span 2', marginTop: '10px' }}>
+            <div className="ds-card-header-inner">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={18} style={{ color: '#0284c7' }} />
+                <h2 className="ds-card-title">Misc Master Lookup Reference Catalog (12 Standard Tables)</h2>
+              </div>
+              <p className="ds-card-subtitle">Master dropdown &amp; lookup definitions matching Excel Sheet: Misc Master</p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '14px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>1. Deduction Particulars</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Trimming, Wastage, Extra Cutting, Edge Loss, Coil Core</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>2. Division</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Danline Rope, Twine, Hank Yarn, Polymer Trading</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>3. UOM (Unit of Measure)</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Kgs, Pieces, Coils, Hanks, Bundles, Reels, Nos</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>4. Articles</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Secondary Packaging Bags, Bobbins, Cones, Liners</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>5. Nature</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Job Work Processing, Internal Extrusion, Scrap Salvage</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>6. Process</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>FISHING YARN, DANLINE YARN, HANK, TWISTING, ROPE</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>7. Item Description</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>PP Danline, HDPE Granules, Masterbatch, White Natural</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>8. Sample PCs.</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Standard 10 PCs / batch QA sampling protocol</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>9. Person Name</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>SURESHBHAI, RAMILBHAI, MANSUKHBHAI, RAJESHBHAI</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>10. Article Type</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>BORA, PLASTIC CONE, KHALI BAG, THELI, NONE</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>11. Bags Type</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>PP Woven 25kg, HDPE Woven 50kg, Laminated Sacks</div>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>12. B. Loss % (Bag Loss %)</div>
+                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Standard 0.00% – 5.00% allowable burning tare loss</div>
+              </div>
             </div>
           </div>
         </div>
@@ -603,17 +966,7 @@ export default function DirectorySettingsView() {
             </form>
           </div>
 
-          <div className="ds-demo-reset-box">
-            <div className="ds-demo-header">
-              <RotateCcw size={16} /> Factory Demo Data Management
-            </div>
-            <p className="ds-demo-desc">
-              Restore the ERP with clean demonstration records for Job Work challans, RM stock, finished goods, sales orders, and dispatches.
-            </p>
-            <button className="ds-btn-reload" onClick={handleReloadDemoData}>
-              <RotateCcw size={14} /> Reload Factory Sample Data
-            </button>
-          </div>
+
         </div>
       )}
 
@@ -644,24 +997,24 @@ export default function DirectorySettingsView() {
             </div>
             <form className="modal-body" onSubmit={handleSaveNewRate}>
               <div className="mform-field">
-                <label className="mform-label">Job Work Party</label>
+                <label className="mform-label">Party Name</label>
                 <select className="mform-select" value={newRateForm.party} onChange={e => setNewRateForm({ ...newRateForm, party: e.target.value })}>
                   {displayVendors.map(v => <option key={v.name} value={v.name}>{v.name}</option>)}
                 </select>
               </div>
               <div className="mform-field">
-                <label className="mform-label">Process Name</label>
+                <label className="mform-label">Process</label>
                 <select className="mform-select" value={newRateForm.process} onChange={e => setNewRateForm({ ...newRateForm, process: e.target.value })}>
                   {JW_PROCESS_LIST.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div className="mform-field">
-                <label className="mform-label">Item Description</label>
+                <label className="mform-label">Item Name</label>
                 <input type="text" className="mform-input" value={newRateForm.item} onChange={e => setNewRateForm({ ...newRateForm, item: e.target.value })} required />
               </div>
-              <div className="mform-row mform-col-2">
+              <div className="mform-row mform-col-3">
                 <div className="mform-field">
-                  <label className="mform-label">Rate (₹)</label>
+                  <label className="mform-label">Rate</label>
                   <input type="number" step="0.01" className="mform-input" value={newRateForm.rate} onChange={e => setNewRateForm({ ...newRateForm, rate: e.target.value })} required />
                 </div>
                 <div className="mform-field">
@@ -672,6 +1025,10 @@ export default function DirectorySettingsView() {
                     <option value="Coils">Coils</option>
                   </select>
                 </div>
+                <div className="mform-field">
+                  <label className="mform-label">Date</label>
+                  <input type="date" className="mform-input" value={newRateForm.date || new Date().toISOString().split('T')[0]} onChange={e => setNewRateForm({ ...newRateForm, date: e.target.value })} required />
+                </div>
               </div>
               <div className="modal-footer" style={{ marginTop: '14px' }}>
                 <button type="button" className="mfooter-btn cancel" onClick={() => setShowAddRateModal(false)}>Cancel</button>
@@ -680,6 +1037,13 @@ export default function DirectorySettingsView() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Add JW Value Master Modal */}
+      {showAddValueModal && (
+        <JwValueMasterModal
+          onClose={() => setShowAddValueModal(false)}
+        />
       )}
     </div>
   );

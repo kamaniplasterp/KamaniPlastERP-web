@@ -3,8 +3,10 @@ import {
   onSnapshot, 
   addDoc, 
   doc, 
+  getDoc,
   serverTimestamp,
   query,
+  where,
   orderBy,
   limit,
   runTransaction,
@@ -226,40 +228,47 @@ export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0) {
 export async function updateFgStock(skuId, stockDelta = 0, reservedDelta = 0) {
   if (!db) return;
   try {
-    let targetRef = skuId ? doc(db, 'finishedGoods', skuId) : null;
+    let targetRef = null;
+
+    if (skuId) {
+      // 1. Check if skuId is a valid direct Firestore document ID
+      try {
+        const directRef = doc(db, 'finishedGoods', String(skuId));
+        const directSnap = await getDoc(directRef);
+        if (directSnap.exists()) {
+          targetRef = directRef;
+        }
+      } catch (e) {
+        // Not a direct doc id
+      }
+
+      // 2. Query by product code (e.g. FG-LOT-04MM-954)
+      if (!targetRef) {
+        const qCode = query(collection(db, 'finishedGoods'), where('code', '==', String(skuId)));
+        const snapCode = await getDocs(qCode);
+        if (!snapCode.empty) {
+          targetRef = snapCode.docs[0].ref;
+        }
+      }
+
+      // 3. Query by product name
+      if (!targetRef) {
+        const qName = query(collection(db, 'finishedGoods'), where('name', '==', String(skuId)));
+        const snapName = await getDocs(qName);
+        if (!snapName.empty) {
+          targetRef = snapName.docs[0].ref;
+        }
+      }
+    }
 
     if (!targetRef) {
-      const allSnap = await getDocs(collection(db, 'finishedGoods'));
-      if (!allSnap.empty) {
-        targetRef = allSnap.docs[0].ref;
-      } else {
-        return;
-      }
+      console.warn('updateFgStock: Target SKU not found for identifier:', skuId);
+      return;
     }
 
     await runTransaction(db, async (transaction) => {
       const docSnap = await transaction.get(targetRef);
-      if (!docSnap.exists()) {
-        const fallbackSnap = await getDocs(collection(db, 'finishedGoods'));
-        if (fallbackSnap.empty) return;
-        const fbRef = fallbackSnap.docs[0].ref;
-        const fbDoc = await transaction.get(fbRef);
-        if (!fbDoc.exists()) return;
-        
-        const fbData = fbDoc.data();
-        const newStock = Math.max(0, (Number(fbData.stockQty) || 0) + stockDelta);
-        const newReserved = Math.max(0, (Number(fbData.reservedQty) || 0) + reservedDelta);
-        const reorderLvl = Number(fbData.reorderLevel || 50);
-        const newStatus = newStock >= reorderLvl ? 'IN STOCK' : newStock > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
-
-        transaction.update(fbRef, {
-          stockQty: newStock,
-          reservedQty: newReserved,
-          status: newStatus,
-          updatedAt: serverTimestamp()
-        });
-        return;
-      }
+      if (!docSnap.exists()) return;
 
       const data = docSnap.data();
       const newStock = Math.max(0, (Number(data.stockQty) || 0) + stockDelta);
@@ -277,5 +286,226 @@ export async function updateFgStock(skuId, stockDelta = 0, reservedDelta = 0) {
   } catch (err) {
     console.error('Error updating FG stock atomically:', err);
   }
+}
+
+/**
+ * Standard Raw Material Item Names from Excel Sub Item sheet
+ */
+export const RM_ITEM_NAMES = [
+  'GRANUALS-HDPE',
+  'GRANUALS-PP',
+  'GRANUALS-MIX',
+  'GRANUALS-LD/LL',
+  'GRINDER-HDPE',
+  'GRINDER-PP',
+  'GRINDER-MIX',
+  'GRINDER-LD/LL',
+  'YARN-FISHING YARN',
+  'YARN-VIP',
+  'YARN-ROPE',
+  'YARN-GARUD',
+  'TWINE-FISHING TWINE',
+  'TWINE-VIP',
+  'TWINE-ROPE'
+];
+
+/**
+ * Standard Raw Material Grades from Excel Sub Item sheet
+ */
+export const RM_GRADES = [
+  '8MFI HDPE',
+  'BOROUGE',
+  'HD',
+  'HMEL OG',
+  'MB6501',
+  'MB6502',
+  'PLAIN BAG HDPE',
+  'ABC12',
+  'RIL H030SG',
+  'RIL M60075',
+  'OPAL 5410',
+  'OPAL R5410',
+  'T9',
+  'T10H',
+  'SABIC.HD',
+  'PP',
+  'UNSPECIFIED'
+];
+
+/**
+ * Standard Raw Material Suppliers from Excel Supplier Master
+ */
+export const RM_SUPPLIERS = [
+  'RAMJIBHAI',
+  'GALAXY.ENTERPRISE',
+  'CHIRIMIRIPLASTICS',
+  'HIMMATBHAI',
+  'LALABHAI.KPI',
+  'MAHALAXMI PLASTICS',
+  'TIDABHAI',
+  'PRAVINBHAI',
+  'JENUBHAI',
+  'SHAH MONOFILAMENT',
+  'SANVI',
+  'RAINBOW PACKAGING',
+  'UNKNOWN SUPPLIER'
+];
+
+/**
+ * Subscribe to real-time Raw Material Inward GRNs
+ */
+export function subscribeRmInwards(callback, limitCount = 100) {
+  if (!db) return () => {};
+  const q = query(collection(db, 'rmInwards'), orderBy('createdAt', 'desc'), limit(limitCount));
+  return onSnapshot(q, (snapshot) => {
+    const list = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+    callback(list);
+  }, (error) => {
+    console.error('Error fetching RM Inwards:', error);
+    callback([]);
+  });
+}
+
+/**
+ * Subscribe to real-time Factory Issue slips
+ */
+export function subscribeRmFactoryIssues(callback, limitCount = 100) {
+  if (!db) return () => {};
+  const q = query(collection(db, 'rmFactoryIssues'), orderBy('createdAt', 'desc'), limit(limitCount));
+  return onSnapshot(q, (snapshot) => {
+    const list = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+    callback(list);
+  }, (error) => {
+    console.error('Error fetching Factory Issues:', error);
+    callback([]);
+  });
+}
+
+/**
+ * Record a new Raw Material Inward GRN (matching Excel sheet 'Raw Material Inward')
+ */
+export async function recordRmInward(data) {
+  if (!db) throw new Error('Firestore not initialized');
+
+  const grossWght = Number(data.grossWeight || 0);
+  const boraCount = Number(data.boraCount || data.noOfArticles || 0);
+  const articleType = data.articleType || 'BORA';
+  const unitTare = Number(data.unitTare !== undefined ? data.unitTare : (articleType === 'BORA' ? 0.200 : (articleType === 'PLASTIC CONE' ? 0.025 : (articleType === 'KHALI BAG' ? 0.120 : (articleType === 'THELI' ? 0.015 : 0)))));
+  const articleTareWeight = Number(data.articleWeight !== undefined ? data.articleWeight : (boraCount * unitTare));
+  const netInwardKg = grossWght > 0 ? Math.max(0, grossWght - articleTareWeight) : Number(data.netWeight || 0);
+
+  const grnRef = await addDoc(collection(db, 'rmInwards'), {
+    grnNo: data.grnNo || `GRN-${Math.floor(1000 + Math.random() * 9000)}`,
+    challanNo: data.challanNo || '',
+    date: data.date || new Date().toISOString().split('T')[0],
+    supplierName: data.supplierName || 'RAMJIBHAI',
+    itemName: data.itemName || 'GRANUALS-HDPE',
+    grade: data.grade || 'HD',
+    grossWeight: grossWght,
+    noOfArticles: boraCount,
+    articleType,
+    articleWeight: articleTareWeight,
+    netWeight: netInwardKg,
+    rate: Number(data.rate || 112),
+    receivedBy: data.receivedBy || 'SURESHBHAI',
+    remarks: data.remarks || 'Raw material inward received',
+    createdAt: serverTimestamp()
+  });
+
+  // Find or update matching rawMaterial SKU in Firestore
+  const rmSnap = await getDocs(collection(db, 'rawMaterials'));
+  let matchedRm = null;
+  for (const docSnap of rmSnap.docs) {
+    const d = docSnap.data();
+    if (
+      (d.name && d.name.toLowerCase() === (data.itemName || '').toLowerCase()) ||
+      (d.code && d.code.toLowerCase().includes((data.grade || '').toLowerCase())) ||
+      (d.grade && d.grade.toLowerCase() === (data.grade || '').toLowerCase())
+    ) {
+      matchedRm = { id: docSnap.id, ...d };
+      break;
+    }
+  }
+
+  if (matchedRm) {
+    await updateRmStock(matchedRm.id, netInwardKg, 0);
+  } else {
+    await addRawMaterial({
+      code: `RM-${(data.itemName || 'POLY').slice(0, 4).toUpperCase()}-${(data.grade || 'STD').slice(0, 3).toUpperCase()}`,
+      name: data.itemName,
+      brand: data.supplierName,
+      grade: data.grade,
+      desc: `${data.itemName} ^ ${data.grade}`,
+      availFactory: netInwardKg,
+      rate: Number(data.rate || 112),
+      reorderLevel: 1000
+    });
+  }
+
+  await logStockMovement({
+    type: 'Receipt',
+    typeBadge: 'inv-badge-receipt',
+    icon: '📦',
+    ref: data.grnNo || `GRN-INWARD`,
+    item: `${data.itemName} ^ ${data.grade}`,
+    batch: data.challanNo ? `CHL-${data.challanNo}` : 'LOT-INWARD',
+    inward: `+${netInwardKg} KG`,
+    outward: '0 KG',
+    location: 'Factory Main Silo',
+    remarks: `Inward from ${data.supplierName} (${boraCount} ${articleType})`
+  });
+
+  return grnRef.id;
+}
+
+/**
+ * Issue Raw Material to Factory Machine/Extrusion (matching Excel sheet 'Issue To Factory')
+ */
+export async function issueRmToFactory(data) {
+  if (!db) throw new Error('Firestore not initialized');
+
+  const grossWght = Number(data.grossWeight || 0);
+  const articleWght = Number(data.articleWeight || 0);
+  const netWght = grossWght > 0 ? Math.max(0, grossWght - articleWght) : Number(data.netWeight || data.qty || 0);
+
+  const issueRef = await addDoc(collection(db, 'rmFactoryIssues'), {
+    slipNo: data.slipNo || `ISS-${Math.floor(1000 + Math.random() * 9000)}`,
+    date: data.date || new Date().toISOString().split('T')[0],
+    rawMaterialId: data.rawMaterialId || '',
+    itemName: data.itemName || 'GRANUALS-HDPE',
+    grade: data.grade || '',
+    grossWeight: grossWght,
+    articleWeight: articleWght,
+    netWeight: netWght,
+    quantity: Number(data.quantity || 1),
+    issuedBy: data.issuedBy || 'SURESHBHAI',
+    remarks: data.remarks || 'Issued to internal extrusion plant',
+    createdAt: serverTimestamp()
+  });
+
+  if (data.rawMaterialId) {
+    await updateRmStock(data.rawMaterialId, -netWght, 0);
+  }
+
+  await logStockMovement({
+    type: 'Issue to Factory',
+    typeBadge: 'inv-badge-issue',
+    icon: '🏭',
+    ref: data.slipNo || `ISSUE-SLIP`,
+    item: `${data.itemName} ^ ${data.grade}`,
+    batch: 'PLANT-EXTRUSION',
+    inward: '0 KG',
+    outward: `-${netWght} KG`,
+    location: 'Plant Line 1 (Extrusion)',
+    remarks: data.remarks || 'Internal plant issue'
+  });
+
+  return issueRef.id;
 }
 

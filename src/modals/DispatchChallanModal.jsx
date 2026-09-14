@@ -85,24 +85,46 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
       return;
     }
 
+    const unitRate = Number(targetOrder.rate || targetOrder.pricePerUnit) || 2450;
+    const taxableSubtotal = enteredQty * unitRate;
+    const gstVal = Math.round(taxableSubtotal * 0.18);
+    const ordCoils = Number(targetOrder.orderedQtyCoils) || enteredQty;
+    const propFreight = ordCoils > 0 ? Math.round(((Number(targetOrder.freight) || 0) / ordCoils) * enteredQty) : 0;
+    const dispatchTotal = (targetOrder.grandTotal && ordCoils > 0)
+      ? Math.round((Number(targetOrder.grandTotal) / ordCoils) * enteredQty)
+      : (taxableSubtotal + gstVal + propFreight);
+
     try {
+      const dispatchPayload = {
+        soId: targetOrder.id,
+        customer: targetOrder.customer || 'Customer',
+        orderRef: targetOrder.orderNo || `Ref: ${selectedOrder}`,
+        dispatchedQtyCoils: enteredQty,
+        totalOrderedCoils: targetOrder.orderedQtyCoils || enteredQty,
+        currentDispatchedCoils: targetOrder.dispatchedCoils || 0,
+        fgSkuId: targetOrder.fgSkuId || null,
+        rate: unitRate,
+        taxableSubtotal: taxableSubtotal,
+        gst: gstVal,
+        freight: propFreight,
+        totalValue: dispatchTotal,
+        value: `₹${dispatchTotal.toLocaleString('en-IN')}`,
+        itemSummary: targetOrder.itemSummary || 'PP Danline High Tenacity Rope (Yellow)',
+        vehicle: form.vehicleNo || 'GJ-03-BW-5544',
+        vehicleNo: form.vehicleNo || 'GJ-03-BW-5544',
+        transporter: form.transporter || 'Shree Saurashtra Roadlines',
+        driverName: form.driverName || '',
+        driverMobile: form.driverMobile || '',
+        lrNumber: form.lrNumber || '',
+        remarks: form.remarks || ''
+      };
+
       if (onSave) {
-        await onSave({ orderId: selectedOrder, quantities, ...form });
+        await onSave({ orderId: selectedOrder, quantities, ...form, ...dispatchPayload });
       } else {
-        await createDispatch({
-          soId: targetOrder.id,
-          customer: targetOrder.customer || 'Customer',
-          orderRef: targetOrder.orderNo || `Ref: ${selectedOrder}`,
-          dispatchedQtyCoils: enteredQty,
-          totalOrderedCoils: targetOrder.orderedQtyCoils || enteredQty,
-          currentDispatchedCoils: targetOrder.dispatchedCoils || 0,
-          fgSkuId: targetOrder.fgSkuId || null,
-          vehicle: form.vehicleNo || 'GJ-03-BW-5544',
-          vehicleNo: form.vehicleNo || 'GJ-03-BW-5544',
-          transporter: form.transporter || 'Shree Saurashtra Roadlines'
-        });
+        await createDispatch(dispatchPayload);
       }
-      alert(`Outward Dispatch Challan for ${targetOrder.customer || 'Customer'} generated successfully!`);
+      alert(`Outward Dispatch Challan for ${targetOrder.customer || 'Customer'} (₹${dispatchTotal.toLocaleString('en-IN')}) generated successfully!`);
     } catch (err) {
       console.error('Error creating dispatch:', err);
     }

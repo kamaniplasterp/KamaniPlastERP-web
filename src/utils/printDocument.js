@@ -47,6 +47,16 @@ function parseVal(v) {
   return isNaN(n) ? 0 : n;
 }
 
+export function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 const COMPANY_INFO = {
   name: 'KAMANI PLASTIC INDUSTRIES',
   tagline: 'Manufacturers & Exporters of PP Danline Ropes, HDPE Twines & Quality Plastic Products',
@@ -364,19 +374,21 @@ function openPrintWindow(title, htmlBody) {
     return;
   }
 
+  const safeTitle = escapeHtml(title);
+
   const fullHtml = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>${title} - ${COMPANY_INFO.name}</title>
+      <title>${safeTitle} - ${escapeHtml(COMPANY_INFO.name)}</title>
       <style>${BASE_STYLES}</style>
     </head>
     <body>
       <div class="action-bar no-print">
         <div class="action-bar-title">
           <span>📄</span>
-          <span>${title} Preview</span>
+          <span>${safeTitle} Preview</span>
         </div>
         <div>
           <button class="action-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
@@ -1141,104 +1153,198 @@ export function printSalesOrderAck(data = {}) {
 }
 
 /**
- * 5. Print Goods Receipt Note (GRN)
+ * 5. Print Job Work Inward Delivery Slip (Rule 55 & Sec 143 Format matching Excel Sheet 22: Inward Slip)
  */
-export function printGRN(grn = {}, jwData = {}) {
-  const grnNo = grn.grnNo || `GRN-${jwData.id || 'JW-2026-311'}`;
-  const date = grn.date || '2026-08-26';
-  const jwNo = jwData.id || grn.jwNo || 'JW-2026-311';
-  const party = jwData.party || 'Shree Plastic Works';
-  const rawMat = jwData.inputMaterialName || jwData.rawMat || 'Reliance Repol';
-  const recQty = grn.receivedQty || grn.acceptedQty || (jwData.receivedQty ? jwData.receivedQty : '990 KG');
-  const scrapQty = grn.wastage || grn.scrapQty || (jwData.scrapQty ? jwData.scrapQty : '10 KG');
-  const sentNum = parseVal(jwData.dispatchedQty || 1000);
-  const recNum = parseVal(recQty || 990);
-  const yieldPct = sentNum > 0 ? ((recNum / sentNum) * 100).toFixed(1) + '%' : '99.0%';
+export function printInwardDeliverySlip(slip = {}, jwData = {}) {
+  const challanNo = jwData.challan || jwData.chNo || slip.challan || slip.chNo || '9820';
+  const subChal = jwData.subChalNo || slip.subChalNo || '1';
+  const slipNo = slip.slipNo || slip.inwardSlipNo || `SLIP-${challanNo}`;
+  const date = slip.date || slip.inwardDate || new Date().toISOString().split('T')[0];
+  const party = jwData.party || jwData.vendor || slip.party || 'Radhe Rope Synthetics';
+  const process = jwData.process || jwData.processType || slip.process || 'ROPE COIL - 404';
+  const workOrder = jwData.workOrder || slip.workOrder || 'WO-6612';
+  const department = slip.department || jwData.department || 'Job Work Extrusion';
+  const vehicle = jwData.vehicleNo || jwData.vehicle || slip.vehicleNo || 'GJ-03-XX-1234';
+  const receivedBy = slip.receivedBy || 'RAMILBHAI';
+  const rawMat = jwData.inputMaterialName || jwData.rawMat || 'HDPE Granules (IOCL F5400)';
+  const returnedItem = slip.itemLabel || slip.itemDescription || 'ANCHOR YARN / FISHING YARN';
+  
+  const grossWght = parseVal(slip.grossWeight || slip.recGrossWeight) || 1202.5;
+  const boraCount = parseVal(slip.boraCount || slip.recBoraCount) || 10;
+  const articleType = slip.articleType || slip.recArticleType || 'BORA + CONES';
+  const articleWeight = parseVal(slip.articleWeight || slip.recArticleWeight) || 2.5;
+  const netQtyKg = parseVal(slip.netQtyKg || slip.recQtyKg || slip.receivedQty) || (grossWght > 0 ? Math.max(0, grossWght - articleWeight) : 1200);
+  const reworkKg = parseVal(slip.reworkQtyKg || 0);
+  const rejectionKg = parseVal(slip.rejectionQtyKg || 0);
+  const scrapKg = parseVal(slip.scrapQtyKg || slip.scrapQty || 0);
+  const samplePcs = parseVal(slip.samplePcs || jwData.samplePcs) || 10;
+  const sampleWeight = parseVal(slip.sampleWeight || jwData.sampleWeight) || 0.5;
+
+  let chargeRate = parseVal(slip.ratePerKg || jwData.ratePerKg || 16);
+  const totalValue = parseVal(slip.value) || Math.round(netQtyKg * chargeRate);
+  const remarks = slip.remarks || slip.notes || 'Process return logged in system.';
+  const qualityStatus = slip.status || slip.qualityStatus || 'Approved';
+
+  const dispatchedNet = parseVal(jwData.netOutwardKg || jwData.netOutwardExpected || jwData.sentQtyKg || 2925);
+  const cumulativeRec = parseVal(jwData.recQtyKg || jwData.receivedQty || netQtyKg);
+  const balPending = parseVal(jwData.pendingQty || jwData.balQtyKg || Math.max(0, dispatchedNet - cumulativeRec));
 
   const html = `
-    <div class="doc-header">
+    <!-- Header -->
+    <div class="doc-header" style="border-bottom: 2px solid #0f172a; padding-bottom: 12px;">
       <div>
-        <div class="company-title">${COMPANY_INFO.name}</div>
+        <div class="company-title" style="font-size: 18px; font-weight: 800;">${COMPANY_INFO.name}</div>
         <div class="company-sub">${COMPANY_INFO.tagline}</div>
-        <div class="company-contact">
+        <div class="company-contact" style="font-size: 11px;">
           ${COMPANY_INFO.address}<br/>
-          <strong>GSTIN:</strong> ${COMPANY_INFO.gstin}
+          <strong>GSTIN:</strong> ${COMPANY_INFO.gstin} | <strong>State:</strong> Gujarat (Code: 24)
         </div>
       </div>
-      <div class="doc-badge-col">
-        <div class="doc-badge-main" style="background: #16a34a;">GOODS RECEIPT NOTE</div>
-        <div class="doc-badge-copy">JOB WORK INWARD • GRN</div>
+      <div class="doc-badge-col" style="text-align: right;">
+        <div class="doc-badge-main" style="background: #0284c7; color: #fff; font-size: 13px; font-weight: bold; padding: 4px 10px; border-radius: 4px;">
+          DELIVERY SLIP (INWARD)
+        </div>
+        <div style="font-size: 9px; font-weight: bold; margin-top: 4px; color: #475569;">
+          [ ] ORIGINAL &nbsp; [ ] DUPLICATE &nbsp; [ ] TRIPLICATE
+        </div>
+        <div style="font-size: 9px; color: #64748b; margin-top: 2px;">
+          Rule 55 &amp; Sec 143 CGST • Excel Sheet: Inward Slip
+        </div>
       </div>
     </div>
 
-    <div class="meta-grid">
+    <!-- Statutory Sub-Heading -->
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 10px; margin: 10px 0; font-size: 9.5px; color: #334155; line-height: 1.35; text-align: center;">
+      <em>Movement of processed goods received back from Job Worker under <strong>Rule 55 and Section 143 of The CGST Act, 2017</strong> for parent factory inventory &amp; billing reconciliation.</em>
+    </div>
+
+    <!-- Metadata Grid -->
+    <div class="meta-grid" style="margin-bottom: 12px;">
       <div class="meta-card">
-        <div class="meta-card-title">GRN RECEIPT DETAILS</div>
+        <div class="meta-card-title">JOB WORKER / PROCESSING UNIT DETAILS</div>
+        <div class="party-name" style="font-size: 12px; font-weight: bold;">${party}</div>
+        <div class="meta-row" style="margin-top: 6px;">
+          <span class="meta-label">Process Performed:</span>
+          <span class="meta-val" style="color: #ea580c; font-weight: bold;">${process}</span>
+        </div>
         <div class="meta-row">
-          <span class="meta-label">GRN Number:</span>
-          <span class="meta-val">${grnNo}</span>
+          <span class="meta-label">Parent Work Order:</span>
+          <span class="meta-val">${workOrder} • ${department}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Transport Vehicle No:</span>
+          <span class="meta-val" style="font-weight: bold;">${vehicle}</span>
+        </div>
+      </div>
+
+      <div class="meta-card">
+        <div class="meta-card-title">INWARD RECEIPT &amp; CHALLAN REFERENCE</div>
+        <div class="meta-row">
+          <span class="meta-label">Inward Slip No:</span>
+          <span class="meta-val" style="font-weight: 800; font-size: 13px; color: #0284c7;">${slipNo}</span>
         </div>
         <div class="meta-row">
           <span class="meta-label">Receipt Date:</span>
           <span class="meta-val">${date}</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Job Work Order Ref:</span>
-          <span class="meta-val">${jwNo}</span>
-        </div>
-      </div>
-
-      <div class="meta-card">
-        <div class="meta-card-title">JOB WORK PROCESSOR</div>
-        <div class="party-name">${party}</div>
-        <div class="meta-row" style="margin-top: 8px;">
-          <span class="meta-label">Quality Status:</span>
-          <span class="meta-val" style="color: #16a34a;">APPROVED &amp; ACCEPTED</span>
+          <span class="meta-label">Original Outward Challan:</span>
+          <span class="meta-val" style="font-weight: bold; color: #0f172a;">#${challanNo} (Sub: ${subChal})</span>
         </div>
         <div class="meta-row">
-          <span class="meta-label">Storage Location:</span>
-          <span class="meta-val">WIP Storage Floor 1</span>
+          <span class="meta-label">Received By Supervisor:</span>
+          <span class="meta-val" style="font-weight: bold;">${receivedBy}</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Quality Status:</span>
+          <span class="meta-val" style="color: #16a34a; font-weight: bold;">✓ ${qualityStatus}</span>
         </div>
       </div>
     </div>
 
+    <!-- 1. Description of Returned Goods & Packaging Tare Matrix (Excel Sheet 22) -->
+    <div style="font-weight: 700; font-size: 11px; margin-bottom: 4px; color: #0f172a;">
+      1. DETAILS OF GOODS RECEIVED, PACKAGING TARE &amp; SETTLEMENT (EXCEL: INWARD SLIP)
+    </div>
     <table class="doc-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>MATERIAL DESCRIPTION</th>
-          <th class="text-right">RECEIVED / ACCEPTED (KG)</th>
-          <th class="text-right">SCRAP / WASTAGE (KG)</th>
-          <th class="text-right">YIELD %</th>
-          <th class="text-center">QC STATUS</th>
+          <th style="width: 25px;">#</th>
+          <th style="width: 65px;" class="text-center">CHLN NO.</th>
+          <th>RETURNED ITEM DESCRIPTION</th>
+          <th class="text-right" style="width: 75px;">REJECT</th>
+          <th class="text-right" style="width: 75px;">REWORK</th>
+          <th class="text-right" style="width: 85px;">G. WEIGHT</th>
+          <th class="text-center" style="width: 110px;">PACKAGING / TARE</th>
+          <th class="text-right" style="width: 95px;">N. WEIGHT</th>
+          <th class="text-right" style="width: 75px;">RATE (₹)</th>
+          <th class="text-right" style="width: 90px;">AMOUNT (₹)</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>1</td>
+          <td class="text-center">1</td>
+          <td class="text-center font-bold">#${challanNo}</td>
           <td>
-            <strong>${rawMat} Processed Output</strong>
-            <div style="font-size: 10px; color: #64748b;">Inspected against thickness, denier and tensile standards</div>
+            <strong>${returnedItem}</strong>
+            <div style="font-size: 10px; color: #64748b;">Processed from: ${rawMat}</div>
           </td>
-          <td class="text-right"><strong>${recQty}</strong></td>
-          <td class="text-right">${scrapQty}</td>
-          <td class="text-right"><strong>${yieldPct}</strong></td>
-          <td class="text-center" style="color: #16a34a; font-weight: 700;">PASSED</td>
+          <td class="text-right" style="color: ${rejectionKg > 0 ? '#dc2626' : '#64748b'};">${rejectionKg.toFixed(1)} KG</td>
+          <td class="text-right" style="color: ${reworkKg > 0 ? '#ea580c' : '#64748b'};">${reworkKg.toFixed(1)} KG</td>
+          <td class="text-right">${grossWght.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+          <td class="text-center">${boraCount > 0 ? `${boraCount} Bora` : articleType} (${articleWeight.toFixed(2)}k)</td>
+          <td class="text-right" style="font-weight: bold; color: #16a34a;">${netQtyKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+          <td class="text-right">₹${chargeRate}</td>
+          <td class="text-right" style="font-weight: bold;">₹${totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
         </tr>
       </tbody>
+      <tfoot>
+        <tr style="font-weight: bold; background: #f8fafc; border-top: 1.5px solid #0f172a;">
+          <td colspan="3" class="text-right">TOTAL INWARD QUANTITY:</td>
+          <td class="text-right" style="color: ${rejectionKg > 0 ? '#dc2626' : '#64748b'};">${rejectionKg.toFixed(1)} KG</td>
+          <td class="text-right" style="color: ${reworkKg > 0 ? '#ea580c' : '#64748b'};">${reworkKg.toFixed(1)} KG</td>
+          <td class="text-right">${grossWght.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+          <td class="text-center">${articleWeight.toFixed(2)} KG Tare</td>
+          <td class="text-right" style="color: #16a34a;">${netQtyKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+          <td class="text-right">—</td>
+          <td class="text-right">₹${totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+        </tr>
+      </tfoot>
     </table>
 
-    <div class="signatures-grid">
+    <div style="display: flex; justify-content: space-between; font-size: 10px; color: #475569; margin: 6px 0 12px 0; background: #f1f5f9; padding: 6px 10px; border-radius: 4px;">
+      <span><strong>QA Sample Audit:</strong> ${samplePcs} PCs (${sampleWeight} KG)</span>
+      <span><strong>Cumulative Received on Challan:</strong> ${cumulativeRec.toLocaleString('en-IN', { maximumFractionDigits: 1 })} / ${dispatchedNet.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+      <span><strong>Challan Balance Pending:</strong> <strong style="color: #ea580c;">${balPending.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</strong></span>
+    </div>
+
+    <!-- 2. Remarks & Operational Notes -->
+    <div style="margin-bottom: 12px; font-size: 10.5px; border: 1px dashed #cbd5e1; padding: 6px 10px; border-radius: 4px; background: #ffffff;">
+      <strong>Remarks / Tare Verification:</strong> ${remarks} &nbsp;•&nbsp; Tare standard applied: Bora 0.200 KG, Plastic Cone 0.025 KG.
+    </div>
+
+    <!-- Statutory Receipt Declaration -->
+    <div class="words-box" style="background: #f0fdf4; border-color: #bbf7d0; color: #166534; font-size: 10px; line-height: 1.35;">
+      <strong>Receipt &amp; Acceptance Declaration:</strong> The goods described above have been received back from job work processing, physically weighed, quality checked, and taken into parent factory inventory in accordance with Rule 55 and Section 143 of CGST Act, 2017.
+    </div>
+
+    <!-- Signatures -->
+    <div class="signatures-grid" style="margin-top: 16px;">
       <div class="sig-box">
-        <div style="height: 48px;"></div>
-        <div class="sig-designation">Quality Inspector Sign</div>
+        <div style="height: 38px;"></div>
+        <div class="sig-designation">Job Worker / Carrier Signature &amp; Stamp</div>
       </div>
       <div class="sig-box right">
         <div class="sig-for">For ${COMPANY_INFO.name}</div>
-        <div class="sig-designation">Store Incharge / Factory Manager</div>
+        <div class="sig-designation">Store Incharge / Received By (${receivedBy})</div>
       </div>
     </div>
   `;
 
-  openPrintWindow(`GRN_${grnNo}`, html);
+  openPrintWindow(`Rule55_JobWork_InwardSlip_${slipNo}`, html);
+}
+
+// Alias printGRN to printInwardDeliverySlip for backward compatibility
+export function printGRN(grn = {}, jwData = {}) {
+  return printInwardDeliverySlip(grn, jwData);
 }

@@ -8,7 +8,7 @@ import {
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
 import { useWorkflow } from '../context/WorkflowContext';
 import { receiveJobWork } from '../api/jobwork.api';
-import { printJobWorkChallan, printGRN } from '../utils/printDocument';
+import { printJobWorkChallan, printInwardDeliverySlip, printGRN } from '../utils/printDocument';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
@@ -19,13 +19,38 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
   const simMatch = simulatedJobWorks.find(s => s.jwNo === jwId || s.id === jwId) || (simulatedJobWorks.length > 0 ? simulatedJobWorks[0] : null);
   const matchingRm = rmList.find(r => r.id === simMatch?.rawMaterialId || r.code === simMatch?.rawMaterialId || r.name === simMatch?.rawMat);
 
-  const sentNum = Number(simMatch?.sentQtyKg) || (simMatch?.sentQty ? parseFloat(String(simMatch.sentQty).replace(/[^0-9.]/g, '')) : 0) || (simMatch?.inputQty ? Number(simMatch.inputQty) : 0);
-  const grossWght = Number(simMatch?.grossWeight || sentNum);
-  const boraCnt = Number(simMatch?.boraCount || 0);
-  const tareWeight = Number(simMatch?.articleWeight || (boraCnt * 0.2));
-  const bLossPct = Number(simMatch?.bLossPct !== undefined ? simMatch.bLossPct : (parseFloat(String(simMatch?.wastage || 0).replace(/[^0-9.]/g, '')) || 0));
-  const bLossKg = Number(simMatch?.bLossKg !== undefined ? simMatch.bLossKg : (sentNum * (bLossPct / 100)));
-  const netOutwardKg = Number(simMatch?.netOutwardKg !== undefined ? simMatch.netOutwardKg : Math.max(0, sentNum - bLossKg));
+  const grossWght = Number(
+    simMatch?.grossWeight !== undefined && simMatch?.grossWeight !== null ? simMatch.grossWeight :
+    (simMatch?.sentQtyKg || 0)
+  );
+  const boraCnt = Number(
+    simMatch?.boraCount !== undefined && simMatch?.boraCount !== null ? simMatch.boraCount :
+    (simMatch?.noOfBora !== undefined && simMatch?.noOfBora !== null ? simMatch.noOfBora : (simMatch?.noOfArticles || 0))
+  );
+  const tareWeight = Number(
+    simMatch?.articleWeight !== undefined && simMatch?.articleWeight !== null ? simMatch.articleWeight :
+    (simMatch?.artWght !== undefined ? simMatch.artWght : (boraCnt * 0.2))
+  );
+  const netWeight = Number(
+    simMatch?.netWeight !== undefined && simMatch?.netWeight !== null ? simMatch.netWeight :
+    simMatch?.netWeightKg !== undefined ? simMatch.netWeightKg :
+    Math.max(0, grossWght - tareWeight)
+  );
+  const sentNum = Number(simMatch?.sentQtyKg) || netWeight || (simMatch?.sentQty ? parseFloat(String(simMatch.sentQty).replace(/[^0-9.]/g, '')) : 0) || (simMatch?.inputQty ? Number(simMatch.inputQty) : 0);
+  const bLossPct = Number(
+    simMatch?.bLossPct !== undefined && simMatch?.bLossPct !== null ? simMatch.bLossPct :
+    simMatch?.bLossPercent !== undefined && simMatch?.bLossPercent !== null ? simMatch.bLossPercent :
+    (parseFloat(String(simMatch?.wastage || 0).replace(/[^0-9.]/g, '')) || 0)
+  );
+  const bLossKg = Number(
+    simMatch?.bLossKg !== undefined && simMatch?.bLossKg !== null ? simMatch.bLossKg :
+    (netWeight * (bLossPct / 100))
+  );
+  const netOutwardKg = Number(
+    simMatch?.netWeightFinal !== undefined && simMatch?.netWeightFinal !== null ? simMatch.netWeightFinal :
+    simMatch?.netOutwardKg !== undefined && simMatch?.netOutwardKg !== null ? simMatch.netOutwardKg :
+    Math.max(0, netWeight - bLossKg)
+  );
 
   const recNum = simMatch?.recQtyKg !== undefined ? Number(simMatch.recQtyKg) : (simMatch?.receivedQty ? parseFloat(String(simMatch.receivedQty).replace(/[^0-9.]/g, '')) : 0);
   const scrapNum = simMatch?.scrapQtyKg !== undefined ? Number(simMatch.scrapQtyKg) : (simMatch?.scrapQty ? parseFloat(String(simMatch.scrapQty).replace(/[^0-9.]/g, '')) : 0);
@@ -108,9 +133,9 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
     boraCountNum: boraCnt,
     articleWeight: `${tareWeight.toFixed(2)} KG`,
     articleWeightNum: tareWeight,
-    dispatchedQty: `${sentNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
-    sentQtyKg: sentNum,
-    inputQty: sentNum,
+    dispatchedQty: `${netWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
+    sentQtyKg: netWeight,
+    inputQty: netWeight,
     bLossPct: `${bLossPct}%`,
     bLossPctNum: bLossPct,
     bLossKg: `${bLossKg.toFixed(1)} KG`,
@@ -177,6 +202,28 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
     navigate('/inventory', { state: { tab: 'traceability', search: detailData.id } });
   };
 
+  const handlePrintInwardSlip = () => {
+    const latestSlip = inwardReceipts.length > 0 ? inwardReceipts[0] : {
+      slipNo: `SLIP-${currentChallan}`,
+      date: returnDate || issueDate || new Date().toISOString().split('T')[0],
+      grossWeight: recNum > 0 ? recNum + (boraCnt * 0.2) : grossWght,
+      boraCount: boraCnt,
+      articleWeight: tareWeight,
+      netQtyKg: recNum > 0 ? recNum : netOutwardKg,
+      reworkQtyKg: reworkNum,
+      rejectionQtyKg: rejectionNum,
+      scrapQtyKg: scrapNum,
+      samplePcs: Number(simMatch?.samplePcs || 10),
+      sampleWeight: Number(simMatch?.sampleWeight || 0.5),
+      receivedBy: 'RAMILBHAI',
+      ratePerKg: chargeRate,
+      value: (recNum > 0 ? recNum : netOutwardKg) * chargeRate,
+      status: 'Approved',
+      remarks: 'Process return logged in system.'
+    };
+    printInwardDeliverySlip(latestSlip, detailData);
+  };
+
   return (
     <div className="jw-detail-container">
       {/* ── Top Navigation Bar ── */}
@@ -208,9 +255,18 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
               Record Inward Slip
             </button>
           )}
-          <button className="jwd-btn-dark" title="Print Rule 55 Delivery Challan" onClick={() => printJobWorkChallan(detailData)}>
+          <button className="jwd-btn-dark" title="Print Rule 55 Delivery Challan (Outward)" onClick={() => printJobWorkChallan(detailData)}>
             <Printer size={15} />
             Print Rule 55 Challan
+          </button>
+          <button
+            className="jwd-btn-dark"
+            style={{ background: '#0284c7', borderColor: '#0284c7', color: '#ffffff' }}
+            title="Print Job Work Inward Delivery Slip (Sheet 22: Inward Slip)"
+            onClick={handlePrintInwardSlip}
+          >
+            <Receipt size={15} />
+            Print Inward Slip
           </button>
           <button className="jwd-btn-ghost" onClick={handleTraceLifecycle} title="Explore Material Genealogy">
             <GitBranch size={15} />
@@ -384,6 +440,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
                 <th>RECEIVED BY</th>
                 <th>VALUE (₹)</th>
                 <th>QA STATUS</th>
+                <th style={{ textAlign: 'center', width: '120px', minWidth: '110px' }}>ACTION</th>
               </tr>
             </thead>
             <tbody>
@@ -404,11 +461,21 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
                     <td>
                       <span className="badge-green-sm">✓ {grn.status || 'Approved'}</span>
                     </td>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <button
+                        className="jw-slip-print-btn"
+                        title="Print Job Work Inward Delivery Slip"
+                        onClick={() => printInwardDeliverySlip(grn, detailData)}
+                      >
+                        <Printer size={13} />
+                        <span>Print Slip</span>
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} style={{ textAlign: 'center', padding: '18px', color: '#64748b' }}>
+                  <td colSpan={11} style={{ textAlign: 'center', padding: '18px', color: '#64748b' }}>
                     No inward receipt slips recorded yet for this challan.
                   </td>
                 </tr>

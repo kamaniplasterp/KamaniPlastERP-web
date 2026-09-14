@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Layers } from 'lucide-react';
+import { RM_ITEM_NAMES, RM_GRADES } from '../api/inventory.api';
 import '../styles/Modals.css';
 
 export default function AddRawMaterialModal({ onClose, onSave }) {
   const [formData, setFormData] = useState({
-    code: '',
+    code: `RM-${Math.floor(1000 + Math.random() * 9000)}`,
     category: 'PP Granules',
-    name: '',
-    brand: '',
-    grade: '',
+    name: RM_ITEM_NAMES[0],
+    brand: 'Reliance Polymers',
+    grade: RM_GRADES[0],
     openingStock: '0',
-    rate: '',
+    rate: '112',
     reorderLevel: '1000'
   });
 
@@ -29,7 +30,7 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
       return;
     }
     if (onSave) onSave(formData);
-    alert(`Polymer Raw Material "${formData.name || formData.code}" successfully added!`);
+    alert(`Polymer Raw Material "${formData.name} ^ ${formData.grade}" successfully added!`);
     onClose();
   };
 
@@ -38,8 +39,14 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
       <div className="modal-dialog modal-md">
         {/* Dark Header */}
         <div className="modal-header-dark">
-          <div>
-            <h2 className="modal-title">Add Polymer Raw Material</h2>
+          <div className="modal-header-icon-row">
+            <div className="modal-header-icon">
+              <Layers size={18} />
+            </div>
+            <div>
+              <h2 className="modal-title">Add Polymer Raw Material Master</h2>
+              <p className="modal-subtitle">Configure SKU code, polymer classification, grade, and initial stock.</p>
+            </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
             <X size={18} />
@@ -68,27 +75,29 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
                 onChange={e => handleChange('category', e.target.value)}
                 required
               >
-                <option value="PP Granules">PP Granules</option>
-                <option value="HDPE Granules">HDPE Granules</option>
-                <option value="Masterbatch">Colour Masterbatch</option>
-                <option value="Yarn & Tape">Yarn &amp; Tape</option>
-                <option value="Packaging">Packaging Supplies</option>
-                <option value="Consumables">Consumables &amp; Cores</option>
+                <option value="Granules">Polymer Granules</option>
+                <option value="Grinder">Grinder / Regrind</option>
+                <option value="Yarn">Monofilament / Raffia Yarn</option>
+                <option value="Twine">Twine &amp; Hank</option>
+                <option value="Masterbatch">Color Masterbatch</option>
+                <option value="Packaging">Packaging Bora &amp; Cones</option>
               </select>
             </div>
           </div>
 
-          {/* Row 2: Material Name */}
+          {/* Row 2: Material Item Name (Sub Item) */}
           <div className="mform-field">
-            <label className="mform-label">Material Name <span className="req">*</span></label>
-            <input
-              type="text"
-              className="mform-input"
-              placeholder="e.g. PP Raffia Grade Granules"
+            <label className="mform-label">Item Name <span className="req">*</span></label>
+            <select
+              className="mform-select"
               value={formData.name}
               onChange={e => handleChange('name', e.target.value)}
               required
-            />
+            >
+              {RM_ITEM_NAMES.map(item => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
           </div>
 
           {/* Row 3: Brand & Grade */}
@@ -98,18 +107,23 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
               <input
                 type="text"
                 className="mform-input"
+                placeholder="e.g. Reliance, Indian Oil, Borouge"
                 value={formData.brand}
                 onChange={e => handleChange('brand', e.target.value)}
               />
             </div>
             <div className="mform-field">
-              <label className="mform-label">Grade Code</label>
-              <input
-                type="text"
-                className="mform-input"
+              <label className="mform-label">Grade <span className="req">*</span></label>
+              <select
+                className="mform-select"
                 value={formData.grade}
                 onChange={e => handleChange('grade', e.target.value)}
-              />
+                required
+              >
+                {RM_GRADES.map(g => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
             </div>
           </div>
 

@@ -24,9 +24,10 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
   };
 
   const orderedQtyNum = simMatch ? (Number(simMatch.orderedQtyCoils) || parseVal(simMatch.orderedQty) || 0) : 0;
-  const reservedQtyNum = simMatch ? (Number(simMatch.reservedCoils) || parseVal(simMatch.reserved) || 0) : 0;
   const dispatchedQtyNum = simMatch ? (Number(simMatch.dispatchedCoils) || parseVal(simMatch.dispatched) || 0) : 0;
   const balanceQtyNum = Math.max(0, orderedQtyNum - dispatchedQtyNum);
+  const rawReserved = simMatch ? (Number(simMatch.reservedCoils) || parseVal(simMatch.reserved) || 0) : 0;
+  const reservedQtyNum = Math.min(rawReserved, balanceQtyNum);
 
   // Rate per unit (taxable rate)
   const rateNum = Number(simMatch?.rate) || Number(simMatch?.pricePerUnit) || 2450;

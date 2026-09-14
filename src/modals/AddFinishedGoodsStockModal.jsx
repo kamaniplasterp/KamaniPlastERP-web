@@ -6,15 +6,30 @@ export default function AddFinishedGoodsStockModal({ material, onClose, onSucces
   const [qty, setQty] = useState('');
   const [batchNo, setBatchNo] = useState(`BATCH-FG-${Math.floor(Math.random() * 900 + 100)}`);
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (onSuccess) {
-      onSuccess({ qty, batchNo, notes });
-    } else {
-      alert(`Successfully added ${qty} Coils for ${material?.code || 'FG-PPD-06-YL'}!`);
+    const qtyNum = Number(qty);
+    if (!qtyNum || qtyNum <= 0) {
+      alert('Please enter a valid inward quantity greater than 0.');
+      return;
     }
-    onClose();
+
+    setIsSubmitting(true);
+    try {
+      if (onSuccess) {
+        await onSuccess({ qty: qtyNum, batchNo, notes });
+      } else {
+        alert(`Successfully added ${qtyNum} Coils for ${material?.code || 'FG-PPD-06-YL'}!`);
+        onClose();
+      }
+    } catch (err) {
+      console.error('Error submitting stock:', err);
+      alert('Failed to update stock. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -79,8 +94,8 @@ export default function AddFinishedGoodsStockModal({ material, onClose, onSucces
             <button type="button" className="afg-btn-cancel" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="afg-btn-submit">
-              Add Stock
+            <button type="submit" className="afg-btn-submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Adding Stock...' : 'Add Stock'}
             </button>
           </div>
         </form>

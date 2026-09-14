@@ -2,6 +2,7 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
+  deleteDoc,
   doc, 
   serverTimestamp,
   query,
@@ -64,7 +65,9 @@ export const JW_PROCESS_LIST = [
   'ROPE COIL - 41212',
   'ROPE COIL - 4124',
   'TAPE EXTRUSION & SPINNING',
-  'MONOFILAMENT EXTRUSION'
+  'MONOFILAMENT EXTRUSION',
+  'ROPE WINDING & PACKING',
+  'TWISTING & BRAIDING'
 ];
 
 /**
@@ -323,4 +326,50 @@ export async function receiveJobWork({
   });
 }
 
+/**
+ * Subscribe to real-time Extra Cutting / Deductions collection
+ */
+export function subscribeExtraCuttings(callback, limitCount = 100) {
+  if (!db) return () => {};
+  const q = query(collection(db, 'extraCuttings'), orderBy('createdAt', 'desc'), limit(limitCount));
+  return onSnapshot(q, (snapshot) => {
+    const list = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+    callback(list);
+  }, (error) => {
+    console.error('Error fetching extra cuttings:', error);
+    callback([]);
+  });
+}
 
+/**
+ * Add a new Extra Cutting / Deductions entry
+ */
+export async function addExtraCutting(data) {
+  if (!db) throw new Error('Firestore not initialized');
+  const weightKg = Number(data.weightKg || data.weight || 0);
+  const rate = Number(data.rate || 0);
+  const totalAmount = Number((weightKg * rate).toFixed(2));
+
+  const ref = await addDoc(collection(db, 'extraCuttings'), {
+    date: data.date || new Date().toISOString().split('T')[0],
+    partyName: data.partyName || '',
+    deductionDetails: data.deductionDetails || '',
+    weightKg: weightKg,
+    rate: rate,
+    totalAmount: totalAmount,
+    remarks: data.remarks || '',
+    createdAt: serverTimestamp()
+  });
+  return ref.id;
+}
+
+/**
+ * Delete an Extra Cutting entry
+ */
+export async function deleteExtraCutting(id) {
+  if (!db) throw new Error('Firestore not initialized');
+  await deleteDoc(doc(db, 'extraCuttings', id));
+}

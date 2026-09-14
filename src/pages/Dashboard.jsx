@@ -731,25 +731,31 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
                   No recent dispatches recorded in database.
                 </div>
               ) : (
-                (simulatedDispatches || []).slice(0, 5).map((d, i) => (
-                  <div
-                    key={d.id || i}
-                    className="dispatch-item"
-                    onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
-                    style={{ cursor: 'pointer' }}
-                    title={`View dispatches for ${d.customer}`}
-                  >
-                    <div className="dispatch-bar" />
-                    <div className="dispatch-info">
-                      <div className="dispatch-party">{d.customer}</div>
-                      <div className="dispatch-ref">{d.challanNo || d.dispatchNo} • {d.dispatchedQty || `${d.dispatchedQtyCoils || 0} Coils`}</div>
+                (simulatedDispatches || []).slice(0, 5).map((d, i) => {
+                  const dQty = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 0;
+                  const dVal = (typeof d.totalValue === 'number' && d.totalValue > 0)
+                    ? `₹${d.totalValue.toLocaleString('en-IN')}`
+                    : ((d.value && d.value !== '₹0') ? d.value : `₹${Math.round(dQty * 2450 * 1.18).toLocaleString('en-IN')}`);
+                  return (
+                    <div
+                      key={d.id || i}
+                      className="dispatch-item"
+                      onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
+                      style={{ cursor: 'pointer' }}
+                      title={`View dispatches for ${d.customer}`}
+                    >
+                      <div className="dispatch-bar" />
+                      <div className="dispatch-info">
+                        <div className="dispatch-party">{d.customer}</div>
+                        <div className="dispatch-ref">{d.challanNo || d.dispatchNo} • {d.dispatchedQty || `${dQty} Coils`}</div>
+                      </div>
+                      <div className="dispatch-right">
+                        <div className="dispatch-amount">{dVal}</div>
+                        <StatusBadge status={d.status} />
+                      </div>
                     </div>
-                    <div className="dispatch-right">
-                      <div className="dispatch-amount">{d.value}</div>
-                      <StatusBadge status={d.status} />
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

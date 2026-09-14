@@ -4,15 +4,16 @@ import {
   Plus, Search, Download, ArrowUpDown, Printer, ChevronRight,
   Package, Users, Briefcase, DollarSign, Percent, Filter, X,
   Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell,
-  FileSpreadsheet, Receipt, Layers, Calendar
+  FileSpreadsheet, Receipt, Layers, Calendar, Scissors
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
+import ExtraCuttingModal from '../modals/ExtraCuttingModal';
 import JobWorkDetailView from '../views/JobWorkDetailView';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
-import { printJobWorkChallan } from '../utils/printDocument';
-import { subscribeJobWorks, receiveJobWork, createJobWork } from '../api/jobwork.api';
+import { printJobWorkChallan, printInwardDeliverySlip } from '../utils/printDocument';
+import { subscribeJobWorks, receiveJobWork, createJobWork, subscribeExtraCuttings, deleteExtraCutting } from '../api/jobwork.api';
 import { subscribeVendors } from '../api/directory.api';
 import '../styles/JobWorkHub.css';
 
@@ -26,14 +27,18 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [materialFilter, setMaterialFilter] = useState('All');
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [receivingRow, setReceivingRow] = useState(null);
+  const [showExtraCuttingModal, setShowExtraCuttingModal] = useState(false);
+  const [extraCuttingSearch, setExtraCuttingSearch] = useState('');
   
-  // Statement tab specific filters
+  // Statement tab specific filters (dynamic FY range covering historical + current 2026 operations)
+  const currentYear = new Date().getFullYear();
   const [statementParty, setStatementParty] = useState('');
-  const [statementStartDate, setStatementStartDate] = useState('2025-03-01');
-  const [statementEndDate, setStatementEndDate] = useState('2025-04-30');
+  const [statementStartDate, setStatementStartDate] = useState(`${currentYear - 1}-04-01`);
+  const [statementEndDate, setStatementEndDate] = useState(`${currentYear + 1}-03-31`);
 
   const [liveJobWorks, setLiveJobWorks] = useState([]);
   const [liveVendors, setLiveVendors] = useState([]);
+  const [liveExtraCuttings, setLiveExtraCuttings] = useState([]);
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -47,9 +52,11 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   useEffect(() => {
     const unsubJw = subscribeJobWorks(setLiveJobWorks);
     const unsubVe = subscribeVendors(setLiveVendors);
+    const unsubEc = subscribeExtraCuttings(setLiveExtraCuttings);
     return () => {
       unsubJw();
       unsubVe();
+      unsubEc();
     };
   }, []);
 
@@ -108,26 +115,55 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
   // Map all Job Works with rich Excel fields
   const allJobWorkData = liveJobWorks.map(jw => {
-    const inputQty = jw.sentQtyKg !== undefined
-      ? Number(jw.sentQtyKg)
-      : (jw.sentQty ? Number(String(jw.sentQty).replace(/[^0-9.]/g, '')) : 1000) || 1000;
-    
-    const grossWeight = Number(jw.grossWeight || inputQty);
-    const boraCount = Number(jw.boraCount || 0);
-    const articleWeight = Number(jw.articleWeight || 0);
-    const bLossPct = Number(jw.bLossPct !== undefined ? jw.bLossPct : (parseFloat(String(jw.wastage || 0).replace(/[^0-9.]/g, '')) || 0));
-    const bLossKg = Number(jw.bLossKg !== undefined ? jw.bLossKg : (inputQty * (bLossPct / 100)));
-    const netOutwardKg = Number(jw.netOutwardKg !== undefined ? jw.netOutwardKg : Math.max(0, inputQty - bLossKg));
+    const grossWeight = Number(
+      jw.grossWeight !== undefined && jw.grossWeight !== null ? jw.grossWeight : 
+      (jw.sentQtyKg || 1000)
+    );
 
-    const receivedQty = jw.recQtyKg !== undefined
-      ? Number(jw.recQtyKg)
-      : (jw.recQty ? Number(String(jw.recQty).replace(/[^0-9.]/g, '')) : 0);
+    const boraCount = Number(
+      jw.boraCount !== undefined && jw.boraCount !== null ? jw.boraCount : 
+      (jw.noOfBora !== undefined && jw.noOfBora !== null ? jw.noOfBora : (jw.noOfArticles || 0))
+    );
+
+    const articleWeight = Number(
+      jw.articleWeight !== undefined && jw.articleWeight !== null ? jw.articleWeight : 
+      (jw.artWght !== undefined ? jw.artWght : (boraCount * 0.2))
+    );
+
+    const netWeight = Number(
+      jw.netWeight !== undefined && jw.netWeight !== null ? jw.netWeight : 
+      jw.netWeightKg !== undefined ? jw.netWeightKg : 
+      (jw.sentQtyKg !== undefined ? jw.sentQtyKg : Math.max(0, grossWeight - articleWeight))
+    );
+
+    const bLossPct = Number(
+      jw.bLossPct !== undefined && jw.bLossPct !== null ? jw.bLossPct : 
+      jw.bLossPercent !== undefined && jw.bLossPercent !== null ? jw.bLossPercent : 
+      (parseFloat(String(jw.wastage || 0).replace(/[^0-9.]/g, '')) || 0)
+    );
+
+    const bLossKg = Number(
+      jw.bLossKg !== undefined && jw.bLossKg !== null ? jw.bLossKg : 
+      (netWeight * (bLossPct / 100))
+    );
+
+    const netOutwardKg = Number(
+      jw.netWeightFinal !== undefined && jw.netWeightFinal !== null ? jw.netWeightFinal : 
+      jw.netOutwardKg !== undefined && jw.netOutwardKg !== null ? jw.netOutwardKg : 
+      Math.max(0, netWeight - bLossKg)
+    );
+
+    const receivedQty = Number(
+      jw.recQtyKg !== undefined && jw.recQtyKg !== null ? jw.recQtyKg : 
+      (jw.receivedQty !== undefined && jw.receivedQty !== null ? jw.receivedQty : 
+      (jw.recQty ? Number(String(jw.recQty).replace(/[^0-9.]/g, '')) : 0))
+    );
     
-    const pendingQty = (jw.pendingQty !== undefined && jw.pendingQty !== null)
-      ? Number(jw.pendingQty)
-      : (jw.balQtyKg !== undefined && jw.balQtyKg !== null
-        ? Number(jw.balQtyKg)
-        : (jw.balQty ? Number(String(jw.balQty).replace(/[^0-9.]/g, '')) : Math.max(0, netOutwardKg - receivedQty - (Number(jw.scrapQtyKg) || 0))));
+    const pendingQty = (jw.balQtyKg !== undefined && jw.balQtyKg !== null)
+      ? Number(jw.balQtyKg)
+      : (jw.pendingQty !== undefined && jw.pendingQty !== null
+        ? Number(jw.pendingQty)
+        : (jw.balQty ? Number(String(jw.balQty).replace(/[^0-9.]/g, '')) : Math.max(0, netOutwardKg - receivedQty)));
     
     const scrapKg = jw.scrapQtyKg !== undefined
       ? Number(jw.scrapQtyKg)
@@ -135,46 +171,49 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
     
     const wastage = scrapKg > 0 ? `${scrapKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG` : (bLossPct > 0 ? `${bLossPct}%` : '-');
 
-    const vendorMatch = liveVendors.find(v => v.id === jw.vendorId || v.name === jw.vendor);
+    const vendorMatch = liveVendors.find(v => v.id === jw.vendorId || v.name === jw.vendor || v.name === jw.partyName);
     const vendorDefaultRate = vendorMatch && vendorMatch.rate ? Number(vendorMatch.rate) : 17.5;
 
     let ratePerKg = 0;
     if (typeof jw.ratePerKg === 'number' && jw.ratePerKg > 0) {
       ratePerKg = jw.ratePerKg;
+    } else if (typeof jw.rate === 'number' && jw.rate > 0) {
+      ratePerKg = jw.rate;
     } else if (typeof jw.processingRate === 'number' && jw.processingRate > 0) {
       ratePerKg = jw.processingRate;
     } else if (typeof jw.charges === 'number' && jw.charges > 0) {
-      ratePerKg = jw.charges < 100 ? jw.charges : Math.round(jw.charges / (inputQty || 1));
+      ratePerKg = jw.charges < 100 ? jw.charges : Math.round(jw.charges / (netWeight || 1));
     } else {
       ratePerKg = vendorDefaultRate;
     }
 
     const totalCharges = typeof jw.totalCharges === 'number' && jw.totalCharges > 0
       ? jw.totalCharges
-      : Math.round(inputQty * ratePerKg);
+      : Math.round(netWeight * ratePerKg);
 
     return {
       id: jw.jwNo || jw.id,
       firestoreId: jw.id,
       rawMaterialId: jw.rawMaterialId,
       challan: jw.chNo || `${jw.jwNo || jw.id}`,
-      subChalNo: jw.subChalNo || '1',
+      subChalNo: jw.subChalNo || jw.subChallanNo || '1',
       workOrder: jw.workOrder || 'WO-1001',
       department: jw.department || 'Job Work Extrusion',
-      date: jw.date || '2025-03-01',
-      party: jw.vendor || 'Job Worker',
-      material: jw.rawMat || 'GRANUALS-HDPE ^ HD',
+      date: jw.date || '2026-08-01',
+      party: jw.partyName || jw.vendor || 'Job Worker',
+      material: jw.itemName || jw.rawMat || 'GRANUALS-HDPE ^ HD',
       grade: jw.grade || '',
-      process: jw.process || 'GRANUAL - FISHING YARN',
+      process: jw.processName || jw.process || 'GRANUAL - FISHING YARN',
       batch: jw.batch || 'BATCH-RM-JW',
-      vehicleNo: jw.vehicleNo || '',
+      vehicleNo: jw.vehicleNumber || jw.vehicleNo || '',
       issuedBy: jw.issuedBy || 'SURESHBHAI',
-      approvedBy: jw.approvedBy || 'FINAL APPROVED',
+      approvedBy: jw.finalApproval || jw.approvedBy || 'FINAL APPROVED',
       grossWeight,
       boraCount,
       articleWeight,
-      articleType: jw.articleType || 'BORA',
-      inputQty,
+      articleType: jw.articleType || 'BORA: 0.200',
+      inputQty: netWeight,
+      netWeight,
       bLossPct,
       bLossKg,
       netOutwardKg,
@@ -188,8 +227,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       ratePerKg,
       charges: totalCharges,
       expectedReturn: jw.expectedReturn || '',
-      durationDays: jw.durationDays || 5,
-      inwardReceipts: jw.inwardReceipts || [],
+      durationDays: jw.durationDays || (jw.duration ? parseInt(String(jw.duration)) : 5),
+      inwardReceipts: jw.inwardReceipts || jw.inwardSlips || [],
       status: jw.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : jw.status === 'COMPLETED' ? 'FULLY RECEIVED' : jw.status || 'SENT'
     };
   });
@@ -256,24 +295,80 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const currentStatementParty = (statementParty && uniqueJwParties.includes(statementParty))
     ? statementParty
     : (uniqueJwParties[0] || 'All Parties');
-  const statementOrders = allJobWorkData.filter(j => 
-    (j.party || '').toLowerCase() === currentStatementParty.toLowerCase()
+
+  // Prior consignments for Opening Balance computation
+  const priorOrders = allJobWorkData.filter(j => 
+    (j.party || '').toLowerCase() === currentStatementParty.toLowerCase() &&
+    statementStartDate && j.date && j.date < statementStartDate
   );
+
+  const stmtOpeningWeight = priorOrders.reduce((s, o) => {
+    const netSent = (Number(o.inputQty) || 0) - (Number(o.bLossKg) || 0);
+    const rec = Number(o.receivedQty) || 0;
+    return s + Math.max(0, netSent - rec);
+  }, 0);
+
+  const stmtOpeningBora = priorOrders.reduce((s, o) => {
+    const sent = Number(o.boraCount) || 0;
+    const rec = Number(o.recBoraCount) || 0;
+    return s + Math.max(0, sent - rec);
+  }, 0);
+
+  // Active statement range orders
+  const statementOrders = allJobWorkData.filter(j => {
+    if ((j.party || '').toLowerCase() !== currentStatementParty.toLowerCase()) return false;
+    if (statementStartDate && j.date && j.date < statementStartDate) return false;
+    if (statementEndDate && j.date && j.date > statementEndDate) return false;
+    return true;
+  });
 
   const stmtOutwardNetSum = statementOrders.reduce((s, o) => s + (Number(o.inputQty) || 0), 0);
   const stmtBLossSum = statementOrders.reduce((s, o) => s + (Number(o.bLossKg) || 0), 0);
   const stmtOutwardAfterLoss = Math.max(0, stmtOutwardNetSum - stmtBLossSum);
   const stmtInwardSum = statementOrders.reduce((s, o) => s + (Number(o.receivedQty) || 0), 0);
-  const stmtClosingWeightBal = Math.max(0, stmtOutwardAfterLoss - stmtInwardSum);
+  const stmtClosingWeightBal = Math.max(0, stmtOpeningWeight + stmtOutwardAfterLoss - stmtInwardSum);
+  const stmtClosingValuation = (stmtClosingWeightBal * 17.5);
 
   const stmtBoraOutward = statementOrders.reduce((s, o) => s + (Number(o.boraCount) || 0), 0);
   const stmtBoraInward = statementOrders.reduce((s, o) => s + (Number(o.recBoraCount) || 0), 0);
-  const stmtBoraClosing = Math.max(0, stmtBoraOutward - stmtBoraInward);
+  const stmtBoraClosing = Math.max(0, stmtOpeningBora + stmtBoraOutward - stmtBoraInward);
+
+  // Theli and Labels tracking
+  const stmtTheliOpening = stmtOpeningBora * 5;
+  const stmtTheliClosing = stmtBoraClosing * 5;
+
+  // Extra cuttings / deductions linked directly to this Job Worker
+  const partyExtraCuttings = (liveExtraCuttings || []).filter(e => 
+    !currentStatementParty || (e.partyName || '').toLowerCase() === currentStatementParty.toLowerCase()
+  );
+  const stmtExtraCuttingTotal = partyExtraCuttings.reduce((sum, e) => {
+    const w = Number(e.weightKg !== undefined && e.weightKg !== null ? e.weightKg : (e.weight || 0)) || 0;
+    const r = Number(e.rate || 0) || 0;
+    const val = Number(e.totalAmount !== undefined && e.totalAmount !== null ? e.totalAmount : (e.total !== undefined ? e.total : (w * r))) || 0;
+    return sum + (isNaN(val) ? 0 : val);
+  }, 0);
+  const stmtDeductions = statementOrders.reduce((s, o) => s + (Number(o.rejectionQtyKg) * 100), 0) + stmtExtraCuttingTotal;
 
   const stmtTotalPayable = statementOrders.reduce((s, o) => s + (Number(o.charges) || (Number(o.receivedQty) * (Number(o.ratePerKg) || 17.5))), 0);
-  const stmtDeductions = statementOrders.reduce((s, o) => s + (Number(o.rejectionQtyKg) * 100), 0);
   const stmtTotalPaid = Math.round(stmtTotalPayable * 0.85); // Demo paid amount
   const stmtClosingFinBal = stmtTotalPayable - stmtDeductions - stmtTotalPaid;
+
+  // Extra Cutting search filter
+  const filteredExtraCuttings = (liveExtraCuttings || []).filter(e => 
+    (e.partyName || '').toLowerCase().includes(extraCuttingSearch.toLowerCase()) ||
+    (e.deductionDetails || '').toLowerCase().includes(extraCuttingSearch.toLowerCase()) ||
+    (e.remarks || '').toLowerCase().includes(extraCuttingSearch.toLowerCase())
+  );
+  const totalExtraCuttingKg = filteredExtraCuttings.reduce((s, e) => {
+    const w = Number(e.weightKg !== undefined && e.weightKg !== null ? e.weightKg : (e.weight || 0)) || 0;
+    return s + (isNaN(w) ? 0 : w);
+  }, 0);
+  const totalExtraCuttingVal = filteredExtraCuttings.reduce((s, e) => {
+    const w = Number(e.weightKg !== undefined && e.weightKg !== null ? e.weightKg : (e.weight || 0)) || 0;
+    const r = Number(e.rate || 0) || 0;
+    const val = Number(e.totalAmount !== undefined && e.totalAmount !== null ? e.totalAmount : (e.total !== undefined ? e.total : (w * r))) || 0;
+    return s + (isNaN(val) ? 0 : val);
+  }, 0);
 
   const computedVendorGroups = Object.values(
     allJobWorkData.reduce((acc, order) => {
@@ -496,6 +591,15 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           <Percent size={14} />
           Vendor Wastage &amp; Yield
         </button>
+
+        <button
+          className={`jw-tab-btn ${activeTab === 'extraCutting' ? 'active' : ''}`}
+          onClick={() => setActiveTab('extraCutting')}
+        >
+          <Scissors size={14} />
+          Extra Cutting / Deductions
+          <span className="jw-tab-badge">{liveExtraCuttings.length}</span>
+        </button>
       </div>
 
       {/* ── TAB 1: Job Work Ledger (Enhanced with Excel fields) ── */}
@@ -611,9 +715,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                       </div>
                     </td>
                     <td className="td-qty">{row.grossWeight ? row.grossWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}</td>
-                    <td className="td-qty">{row.boraCount ? `${row.boraCount} Bora` : '—'}</td>
-                    <td className="td-qty" style={{ fontWeight: 'bold' }}>{row.inputQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
-                    <td className="td-wastage">{row.bLossPct > 0 ? `${row.bLossPct}% (${row.bLossKg.toFixed(1)}k)` : '0%'}</td>
+                    <td className="td-qty">{row.boraCount > 0 ? `${row.boraCount} Bora` : '—'}</td>
+                    <td className="td-qty" style={{ fontWeight: 'bold' }}>{(row.netOutwardKg || row.inputQty || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+                    <td className="td-wastage">{row.bLossPct > 0 ? `${row.bLossPct}% (${row.bLossKg.toFixed(1)} KG)` : '0%'}</td>
                     <td className="td-qty">{row.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
                     <td className="td-qty">
                       {row.pendingQty > 0 ? (
@@ -646,11 +750,36 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                         )}
                         <button
                           className="jw-icon-action"
-                          title="Print Rule 55 Delivery Challan"
+                          title="Print Rule 55 Delivery Challan (Outward)"
                           onClick={() => printJobWorkChallan(row)}
                         >
                           <Printer size={14} />
                         </button>
+                        {Number(row.receivedQty || 0) > 0 && (
+                          <button
+                            className="jw-icon-action"
+                            style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                            title="Print Job Work Inward Delivery Slip (Sheet 22: Inward Slip)"
+                            onClick={() => {
+                              const recKg = Number(row.receivedQty || 0);
+                              const slip = (Array.isArray(row.inwardReceipts) && row.inwardReceipts.length > 0)
+                                ? row.inwardReceipts[0]
+                                : {
+                                    slipNo: `SLIP-${row.chNo || row.challan || row.id}`,
+                                    grossWeight: recKg + ((Number(row.boraCount) || 10) * 0.2),
+                                    boraCount: Number(row.boraCount) || 10,
+                                    articleWeight: (Number(row.boraCount) || 10) * 0.2,
+                                    netQtyKg: recKg,
+                                    receivedBy: 'RAMILBHAI',
+                                    ratePerKg: row.ratePerKg || row.charges || 16,
+                                    value: recKg * Number(row.ratePerKg || row.charges || 16)
+                                  };
+                              printInwardDeliverySlip(slip, row);
+                            }}
+                          >
+                            <Receipt size={14} />
+                          </button>
+                        )}
                         <button
                           className="jw-icon-action"
                           title="View Job Work Details"
@@ -735,15 +864,16 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               <thead>
                 <tr>
                   <th>DATE</th>
-                  <th>CHAL. NO.</th>
+                  <th>CHALLAN NO.</th>
                   <th>PARTY NAME</th>
-                  <th>B.LOSS %</th>
-                  <th>SUM N. WGHT (KG)</th>
-                  <th>SUM B. LOSS (KG)</th>
-                  <th>NET OUTWARD (KG)</th>
-                  <th>INWARD WEIGHT (KG)</th>
-                  <th>BALANCE WEIGHT (KG)</th>
+                  <th>B. LOSS %</th>
+                  <th>SUM NET WEIGHT</th>
+                  <th>SUM B. LOSS</th>
+                  <th>NET WEIGHT</th>
+                  <th>INWARD WEIGHT</th>
+                  <th>BALANCE WEIGHT</th>
                   <th>STATUS</th>
+                  <th style={{ textAlign: 'center' }}>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -763,6 +893,41 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                       </span>
                     </td>
                     <td className="td-status">{getStatusBadge(row.status)}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button
+                          className="jw-icon-action"
+                          title="Print Rule 55 Delivery Challan (Outward)"
+                          onClick={() => printJobWorkChallan(row)}
+                        >
+                          <Printer size={13} />
+                        </button>
+                        {row.receivedQty > 0 && (
+                          <button
+                            className="jw-icon-action"
+                            style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                            title="Print Job Work Inward Delivery Slip"
+                            onClick={() => {
+                              const slip = (Array.isArray(row.inwardReceipts) && row.inwardReceipts.length > 0)
+                                ? row.inwardReceipts[0]
+                                : {
+                                    slipNo: `SLIP-${row.challan || row.id}`,
+                                    grossWeight: row.receivedQty + ((Number(row.boraCount) || 10) * 0.2),
+                                    boraCount: Number(row.boraCount) || 10,
+                                    articleWeight: (Number(row.boraCount) || 10) * 0.2,
+                                    netQtyKg: row.receivedQty,
+                                    receivedBy: 'RAMILBHAI',
+                                    ratePerKg: row.ratePerKg || row.charges || 16,
+                                    value: row.receivedQty * Number(row.ratePerKg || row.charges || 16)
+                                  };
+                              printInwardDeliverySlip(slip, row);
+                            }}
+                          >
+                            <Receipt size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -822,27 +987,39 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             {/* 1. Weight Reconciliation */}
             <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '14px' }}>
               <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0369a1', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                ⚖️ Material Weight Reconciliation
+                ⚖️ Material Weight Reconciliation (Sheet: Statement)
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Opening Balance:</span>
-                <span style={{ fontWeight: 'bold' }}>0.0 KG</span>
+                <span style={{ color: '#475569' }}>Opening Balance (weight):</span>
+                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtOpeningWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Outward Sent:</span>
-                <span style={{ fontWeight: 'bold' }}>{stmtOutwardNetSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+                <span style={{ color: '#475569' }}>Opening Balance (value):</span>
+                <span style={{ fontWeight: '600', color: '#0369a1' }}>₹{(stmtOpeningWeight * 17.5).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Outward (-) B.Loss:</span>
+                <span style={{ color: '#475569' }}>Outward:</span>
+                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtOutwardNetSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Outward (− B. Loss):</span>
                 <span style={{ fontWeight: 'bold', color: '#0284c7' }}>{stmtOutwardAfterLoss.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Inward Received:</span>
+                <span style={{ color: '#475569' }}>Inward:</span>
                 <span style={{ fontWeight: 'bold', color: '#16a34a' }}>{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Consumption:</span>
+                <span style={{ fontWeight: 'bold', color: '#7c3aed' }}>{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '4px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
                 <span>Closing Balance:</span>
                 <span style={{ color: '#ea580c' }}>{stmtClosingWeightBal.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0 0', fontSize: '0.75rem', color: '#334155' }}>
+                <span>Closing Balance (value):</span>
+                <span style={{ fontWeight: '600', color: '#0369a1' }}>₹{stmtClosingValuation.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
             </div>
 
@@ -853,19 +1030,23 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
                 <span style={{ color: '#475569' }}>Bora Opening Balance:</span>
-                <span style={{ fontWeight: 'bold' }}>0 Bora</span>
+                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtOpeningBora} Bora</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Bora Outward Sent:</span>
-                <span style={{ fontWeight: 'bold' }}>{stmtBoraOutward} Bora</span>
+                <span style={{ color: '#475569' }}>Bora Outward:</span>
+                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtBoraOutward} Bora</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Bora Inward Received:</span>
+                <span style={{ color: '#475569' }}>Bora Inward:</span>
                 <span style={{ fontWeight: 'bold', color: '#16a34a' }}>{stmtBoraInward} Bora</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Theli &amp; Label Balance:</span>
-                <span style={{ fontWeight: 'bold' }}>0 Nos</span>
+                <span style={{ color: '#475569' }}>Theli &amp; Label Opening Balance:</span>
+                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtTheliOpening} Nos</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
+                <span style={{ color: '#475569' }}>Theli &amp; Label Closing Balance:</span>
+                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtTheliClosing} Nos</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '4px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
                 <span>Bora Closing Balance:</span>
@@ -879,25 +1060,26 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                 💳 Financial &amp; Payment Ledger
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Total Processing Payable:</span>
-                <span style={{ fontWeight: 'bold' }}>₹{stmtTotalPayable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                <span style={{ color: '#475569' }}>Total Payable:</span>
+                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>₹{stmtTotalPayable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Deductions / Extra Cutting:</span>
+                <span style={{ color: '#475569' }}>Deduction (Extra Cutting &amp; Scrap):</span>
                 <span style={{ fontWeight: 'bold', color: '#dc2626' }}>₹{stmtDeductions.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Total Paid to Worker:</span>
+                <span style={{ color: '#475569' }}>Total Paid:</span>
                 <span style={{ fontWeight: 'bold', color: '#16a34a' }}>₹{stmtTotalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '12px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
-                <span>Net Outstanding Balance:</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '8px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
+                <span>Closing Balance (value):</span>
                 <span style={{ color: stmtClosingFinBal > 0 ? '#15803d' : '#dc2626' }}>
                   ₹{stmtClosingFinBal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>
           </div>
+
 
           {/* Statement Detailed Table (Matching Outward & Inward rows from Excel Statement) */}
           <div className="jw-table-container" style={{ marginTop: '16px' }}>
@@ -984,7 +1166,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     </div>
                     <div className="jw-vcard-right">
                       <div className="jw-vcard-balance">
-                        <span className="balance-label">TOTAL PARTY BALANCE</span>
+                        <span className="balance-label">BALANCE WEIGHT</span>
                         <span className="balance-val">{vg.totalQty} <span className="balance-sub">({vg.totalVal})</span></span>
                       </div>
                       <button className="jw-btn-reminder">
@@ -1136,6 +1318,124 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
+      {/* ── TAB 6: Extra Cutting / Deductions Register (Module 11) ── */}
+      {activeTab === 'extraCutting' && (
+        <div className="jw-ledger-section">
+          <div className="jw-ledger-header">
+            <div className="jw-ledger-title-group">
+              <div className="jw-ledger-title-row">
+                <h2 className="jw-ledger-title">Extra Cutting &amp; Wastage Deductions Register</h2>
+                <span className="jw-badge-orange">{filteredExtraCuttings.length} Deductions</span>
+              </div>
+              <p className="jw-ledger-subtitle">
+                Track piece-rate weight deductions, batch trimming waste, and processing adjustments (Sheet: Extra Cutting).
+              </p>
+            </div>
+
+            <div className="jw-ledger-actions">
+              <button className="jw-btn-ghost" onClick={() => exportToCsv('Extra_Cutting_Register.csv', filteredExtraCuttings)} style={{ cursor: 'pointer' }}>
+                <Download size={14} /> Export CSV
+              </button>
+
+              <button className="jw-btn-dark-pill" onClick={() => setShowExtraCuttingModal(true)}>
+                <Plus size={14} /> Record Extra Cutting
+              </button>
+            </div>
+          </div>
+
+          {/* Filter & Metric Bar */}
+          <div className="jw-filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+            <div className="jw-search-input-wrap" style={{ flex: 1, minWidth: '240px' }}>
+              <Search size={14} className="jw-search-icon" />
+              <input
+                type="text"
+                placeholder="Search by party name, deduction reason, remarks..."
+                className="jw-filter-search"
+                value={extraCuttingSearch}
+                onChange={e => setExtraCuttingSearch(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700', color: '#b91c1c' }}>
+                Total Deduction: ₹{totalExtraCuttingVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              </div>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700', color: '#334155' }}>
+                Total Weight: {totalExtraCuttingKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG
+              </div>
+            </div>
+          </div>
+
+          <div className="jw-table-container" style={{ marginTop: '12px' }}>
+            <table className="jw-ledger-table">
+              <thead>
+                <tr>
+                  <th>DATE</th>
+                  <th>PARTY NAME</th>
+                  <th>DEDUCTION DETAILS</th>
+                  <th>WEIGHT</th>
+                  <th>RATE</th>
+                  <th>TOTAL</th>
+                  <th>REMARKS</th>
+                  <th style={{ textAlign: 'center' }}>ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredExtraCuttings.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                      No Extra Cutting deductions logged. Click <strong>"+ Record Extra Cutting"</strong> above to register one.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredExtraCuttings.map((ec, idx) => {
+                    const weightVal = Number(ec.weightKg !== undefined && ec.weightKg !== null ? ec.weightKg : (ec.weight !== undefined ? ec.weight : 0)) || 0;
+                    const rateVal = Number(ec.rate || 0) || 0;
+                    const totalVal = Number(ec.totalAmount !== undefined && ec.totalAmount !== null ? ec.totalAmount : (ec.total !== undefined ? ec.total : (weightVal * rateVal))) || 0;
+
+                    return (
+                    <tr key={ec.id || idx}>
+                      <td className="td-date">{ec.date}</td>
+                      <td className="td-party" style={{ fontWeight: 'bold' }}>{ec.partyName}</td>
+                      <td className="td-material-col">{ec.deductionDetails}</td>
+                      <td className="td-qty" style={{ color: '#dc2626', fontWeight: 'bold' }}>
+                        {weightVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG
+                      </td>
+                      <td className="td-qty">₹{rateVal.toFixed(2)}</td>
+                      <td className="td-charges" style={{ color: '#b91c1c', fontWeight: 'bold' }}>
+                        ₹{totalVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="td-material-col" style={{ fontSize: '0.75rem', color: '#64748b' }}>{ec.remarks || '—'}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          onClick={async () => {
+                            if (window.confirm(`Delete deduction record for ${ec.partyName}?`)) {
+                              await deleteExtraCutting(ec.id);
+                            }
+                          }}
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid #fecaca',
+                            color: '#dc2626',
+                            borderRadius: '4px',
+                            padding: '3px 8px',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── Internal Issue Modal ── */}
       {showIssueModal && (
         <NewJobWorkModal onClose={() => setShowIssueModal(false)} />
@@ -1149,6 +1449,15 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           onSave={handleSaveReceiveModal}
         />
       )}
+
+      {/* ── Extra Cutting Modal ── */}
+      {showExtraCuttingModal && (
+        <ExtraCuttingModal
+          prefillVendor={currentStatementParty !== 'All Parties' ? currentStatementParty : ''}
+          onClose={() => setShowExtraCuttingModal(false)}
+        />
+      )}
     </div>
   );
 }
+

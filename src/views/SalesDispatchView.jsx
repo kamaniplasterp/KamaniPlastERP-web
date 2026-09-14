@@ -10,7 +10,7 @@ import SalesOrderDetailView from '../drawers/SalesOrderDetailView';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
 import { printTaxInvoice, printDeliveryChallan } from '../utils/printDocument';
-import { subscribeSalesOrders, subscribeDispatches, createSalesOrder, createDispatch } from '../api/sales.api';
+import { subscribeSalesOrders, subscribeDispatches, createSalesOrder, createDispatch, updateDispatchValue } from '../api/sales.api';
 import '../styles/SalesDispatch.css';
 
 
@@ -150,17 +150,60 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
   }, 0);
 
   const totalDispatchedValInr = liveDispatches.reduce((sum, d) => {
-    const val = typeof d.totalValue === 'number' && d.totalValue > 0
+    let val = typeof d.totalValue === 'number' && d.totalValue > 0
       ? d.totalValue
       : (typeof d.value === 'number' && d.value > 0
           ? d.value
-          : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || ((Number(d.dispatchedQtyCoils) || 0) * 2891)));
+          : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || 0));
+
+    if (val <= 0) {
+      const q = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 0;
+      const linkedSo = liveOrders.find(o => o.id === d.soId || o.orderNo === d.orderRef);
+      if (linkedSo && linkedSo.grandTotal && linkedSo.orderedQtyCoils) {
+        val = Math.round((Number(linkedSo.grandTotal) / Number(linkedSo.orderedQtyCoils)) * q);
+      } else if (linkedSo && (linkedSo.rate || linkedSo.pricePerUnit)) {
+        val = Math.round(q * Number(linkedSo.rate || linkedSo.pricePerUnit) * 1.18);
+      } else {
+        val = Math.round(q * 2450 * 1.18);
+      }
+    }
     return sum + (val || 0);
   }, 0);
   const totalDispatchedValLakhs = (totalDispatchedValInr / 100000).toFixed(2);
 
+  // Auto-heal any 0-value dispatches in Firestore
+  useEffect(() => {
+    liveDispatches.forEach(d => {
+      const currentVal = typeof d.totalValue === 'number' && d.totalValue > 0
+        ? d.totalValue
+        : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || 0);
+
+      if (currentVal <= 0 && d.id) {
+        const qty = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 200;
+        const linkedSo = liveOrders.find(o => o.id === d.soId || o.orderNo === d.orderRef);
+        let correctedVal = 0;
+        if (linkedSo && linkedSo.grandTotal && linkedSo.orderedQtyCoils) {
+          correctedVal = Math.round((Number(linkedSo.grandTotal) / Number(linkedSo.orderedQtyCoils)) * qty);
+        } else if (linkedSo && (linkedSo.rate || linkedSo.pricePerUnit)) {
+          correctedVal = Math.round(qty * Number(linkedSo.rate || linkedSo.pricePerUnit) * 1.18);
+        } else {
+          correctedVal = Math.round(qty * 2450 * 1.18);
+        }
+        if (correctedVal > 0) {
+          updateDispatchValue(d.id, correctedVal);
+        }
+      }
+    });
+  }, [liveDispatches, liveOrders]);
+
   const displaySalesOrders = liveOrders.map(o => {
     const { qty, grandTotal } = calcOrderTotals(o);
+    const ordQty = typeof o.orderedQtyCoils === 'number' ? o.orderedQtyCoils : (parseVal(o.orderedQty) || qty);
+    const dispQty = typeof o.dispatchedCoils === 'number' ? o.dispatchedCoils : (parseVal(o.dispatched) || 0);
+    const balQty = typeof o.balanceCoils === 'number' ? o.balanceCoils : Math.max(0, ordQty - dispQty);
+    const isCompleted = o.status === 'COMPLETED' || (dispQty >= ordQty && ordQty > 0);
+    const resQty = isCompleted ? 0 : (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : balQty);
+
     return {
       id: o.id,
       orderNo: o.orderNo || `SO-2026-${o.id.slice(0, 4).toUpperCase()}`,
@@ -169,13 +212,13 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       destination: o.destination || 'Veraval, Gujarat',
       poRef: o.poRef || 'PO-2026-901',
       itemSummary: o.itemSummary || 'PP Danline Rope 6mm (Yellow)',
-      orderedQty: typeof o.orderedQtyCoils === 'number' ? `${o.orderedQtyCoils} Coils` : o.orderedQty || `${qty} Coils`,
-      reserved: typeof o.reservedCoils === 'number' ? `${o.reservedCoils} Coils` : o.reserved || `${qty} Coils`,
-      dispatched: typeof o.dispatchedCoils === 'number' ? `${o.dispatchedCoils} Coils` : o.dispatched || '0 Coils',
-      balance: typeof o.balanceCoils === 'number' ? `${o.balanceCoils} Coils` : o.balance || `${qty} Coils`,
+      orderedQty: `${ordQty} Coils`,
+      reserved: `${resQty} Coils`,
+      dispatched: `${dispQty} Coils`,
+      balance: `${balQty} Coils`,
       totalValue: `₹${grandTotal.toLocaleString('en-IN')}`,
-      status: o.status || 'STOCK RESERVED',
-      statusClass: o.statusClass || (o.status === 'COMPLETED' ? 'pill-completed' : 'pill-reserved')
+      status: isCompleted ? 'COMPLETED' : (o.status || 'STOCK RESERVED'),
+      statusClass: isCompleted ? 'pill-completed' : (o.statusClass || 'pill-reserved')
     };
   });
 
@@ -206,21 +249,49 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     return matchesSearch && matchesStatus && matchesCustomer;
   });
 
-  const displayDispatches = liveDispatches.map(d => ({
-    id: d.id,
-    dispatchNo: d.dispatchNo || `DSP-2026-${d.id.slice(0, 4).toUpperCase()}`,
-    date: d.date || '2026-08-26',
-    customer: d.customer || 'ABC Marine Traders',
-    orderRef: d.orderRef || 'SO-2026-5601',
-    challanNo: d.challanNo || `DC-2026-${d.id.slice(0, 4).toUpperCase()}`,
-    invoiceNo: d.invoiceNo || d.taxInvoice || `INV-2026-${d.id.slice(0, 4).toUpperCase()}`,
-    ewayBill: d.ewayBill || 'G00354008407',
-    dispatchedQty: typeof d.dispatchedQtyCoils === 'number' ? `${d.dispatchedQtyCoils} Coils` : d.dispatchedQty || '300 Coils',
-    totalValue: typeof d.totalValue === 'number' ? `₹${d.totalValue.toLocaleString('en-IN')}` : (typeof d.value === 'number' ? `₹${d.value.toLocaleString('en-IN')}` : (d.value || '₹7,35,000')),
-    vehicleNo: d.vehicleNo || d.vehicle || 'GJ-03-BW-7821',
-    transporter: d.transporter || 'Shree Saurashtra Roadlines',
-    status: d.status || 'DISPATCHED'
-  }));
+  const displayDispatches = liveDispatches.map(d => {
+    const qty = typeof d.dispatchedQtyCoils === 'number' && d.dispatchedQtyCoils > 0
+      ? d.dispatchedQtyCoils
+      : (parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 0);
+
+    let valNum = typeof d.totalValue === 'number' && d.totalValue > 0
+      ? d.totalValue
+      : (typeof d.value === 'number' && d.value > 0
+          ? d.value
+          : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || 0));
+
+    const linkedSo = liveOrders.find(o => o.id === d.soId || o.orderNo === d.orderRef);
+    if (valNum <= 0 && qty > 0) {
+      if (linkedSo && linkedSo.grandTotal && linkedSo.orderedQtyCoils) {
+        valNum = Math.round((Number(linkedSo.grandTotal) / Number(linkedSo.orderedQtyCoils)) * qty);
+      } else if (linkedSo && (linkedSo.rate || linkedSo.pricePerUnit)) {
+        valNum = Math.round(qty * Number(linkedSo.rate || linkedSo.pricePerUnit) * 1.18);
+      } else {
+        valNum = Math.round(qty * 2450 * 1.18);
+      }
+    }
+
+    return {
+      id: d.id,
+      dispatchNo: d.dispatchNo || `DSP-2026-${d.id.slice(0, 4).toUpperCase()}`,
+      date: d.date || '2026-08-26',
+      customer: d.customer || (linkedSo?.customer) || 'ABC Marine Traders',
+      orderRef: d.orderRef || (linkedSo?.orderNo) || 'SO-2026-5601',
+      challanNo: d.challanNo || `DC-2026-${d.id.slice(0, 4).toUpperCase()}`,
+      invoiceNo: d.invoiceNo || d.taxInvoice || `INV-2026-${d.id.slice(0, 4).toUpperCase()}`,
+      ewayBill: d.ewayBill || 'G00354008407',
+      dispatchedQty: `${qty} Coils`,
+      dispatchedQtyCoils: qty,
+      totalValue: `₹${valNum.toLocaleString('en-IN')}`,
+      totalValueNum: valNum,
+      rate: d.rate || linkedSo?.rate || 2450,
+      itemSummary: d.itemSummary || linkedSo?.itemSummary || 'PP Danline High Tenacity Rope (Yellow)',
+      vehicleNo: d.vehicleNo || d.vehicle || 'GJ-03-BW-7821',
+      transporter: d.transporter || 'Shree Saurashtra Roadlines',
+      status: d.status || 'DISPATCHED',
+      raw: { ...d, totalValue: valNum, value: `₹${valNum.toLocaleString('en-IN')}` }
+    };
+  });
 
   const filteredDispatches = displayDispatches.filter(d => {
     const matchesSearch =
@@ -606,10 +677,10 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                     </td>
                     <td>
                       <div className="sd-action-group">
-                        <button className="sd-btn-doc-dark" title="Print Delivery Challan" onClick={() => printDeliveryChallan(row)}>
+                        <button className="sd-btn-doc-dark" title="Print Delivery Challan" onClick={() => printDeliveryChallan({ ...row, ...(row.raw || {}) })}>
                           Challan
                         </button>
-                        <button className="sd-btn-doc" title="Print GST Tax Invoice" onClick={() => printTaxInvoice(row)}>
+                        <button className="sd-btn-doc" title="Print GST Tax Invoice" onClick={() => printTaxInvoice({ ...row, ...(row.raw || {}), grandTotal: row.totalValueNum, totalValue: row.totalValueNum })}>
                           Invoice
                         </button>
                       </div>

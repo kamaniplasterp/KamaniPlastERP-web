@@ -8,13 +8,27 @@ import {
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import SalesOrderModal from '../modals/SalesOrderModal';
 import AddRawMaterialModal from '../modals/AddRawMaterialModal';
+import RawMaterialInwardModal from '../modals/RawMaterialInwardModal';
+import IssueToFactoryModal from '../modals/IssueToFactoryModal';
 import AddProductSkuModal from '../modals/AddProductSkuModal';
 import MaterialDetailDrawer from '../drawers/MaterialDetailDrawer';
 import AddFinishedGoodsStockModal from '../modals/AddFinishedGoodsStockModal';
 import { useWorkflow } from '../context/WorkflowContext';
-import { subscribeRawMaterials, subscribeFinishedGoods, subscribeStockMovements, addRawMaterial, addFinishedGood, updateFgStock, logStockMovement } from '../api/inventory.api';
+import { 
+  subscribeRawMaterials, 
+  subscribeFinishedGoods, 
+  subscribeStockMovements, 
+  subscribeRmInwards,
+  subscribeRmFactoryIssues,
+  addRawMaterial, 
+  addFinishedGood, 
+  updateFgStock, 
+  logStockMovement 
+} from '../api/inventory.api';
 import { subscribeJobWorks } from '../api/jobwork.api';
-import { subscribeDispatches } from '../api/sales.api';
+import { subscribeSalesOrders, subscribeDispatches } from '../api/sales.api';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/firebase';
 import { exportToCsv } from '../utils/exportCsv';
 import '../styles/InventoryStock.css';
 
@@ -25,12 +39,16 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const navigate = useNavigate();
   const { rmStock, jobWorkStock, fgStock } = useWorkflow();
   const [activeTab, setActiveTab] = useState(location.state?.tab || 'rm');
+  const [rmSubView, setRmSubView] = useState('ledger'); // 'ledger' | 'inward' | 'issue'
 
   const [liveRmList, setLiveRmList] = useState([]);
   const [liveFgList, setLiveFgList] = useState([]);
   const [liveMovements, setLiveMovements] = useState([]);
   const [liveJobWorks, setLiveJobWorks] = useState([]);
   const [liveDispatches, setLiveDispatches] = useState([]);
+  const [liveOrders, setLiveOrders] = useState([]);
+  const [liveRmInwards, setLiveRmInwards] = useState([]);
+  const [liveRmIssues, setLiveRmIssues] = useState([]);
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -44,12 +62,18 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     const unsubMov = subscribeStockMovements(setLiveMovements);
     const unsubJw = subscribeJobWorks(setLiveJobWorks);
     const unsubDc = subscribeDispatches(setLiveDispatches);
+    const unsubSo = subscribeSalesOrders(setLiveOrders);
+    const unsubInw = subscribeRmInwards(setLiveRmInwards);
+    const unsubIss = subscribeRmFactoryIssues(setLiveRmIssues);
     return () => {
       unsubRm();
       unsubFg();
       unsubMov();
       unsubJw();
       unsubDc();
+      unsubSo();
+      unsubInw();
+      unsubIss();
     };
   }, []);
 
@@ -59,10 +83,12 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [fgCategoryFilter, setFgCategoryFilter] = useState('All');
   const [movementSearch, setMovementSearch] = useState('');
   const [movementTypeFilter, setMovementTypeFilter] = useState('All');
-  const [traceSearch, setTraceSearch] = useState('JW-2026-0024');
+  const [traceSearch, setTraceSearch] = useState('');
   const [showJWModal, setShowJWModal] = useState(false);
   const [showSalesModal, setShowSalesModal] = useState(false);
   const [showAddRmModal, setShowAddRmModal] = useState(false);
+  const [showRmInwardModal, setShowRmInwardModal] = useState(false);
+  const [showIssueFactoryModal, setShowIssueFactoryModal] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showAddFgStockModal, setShowAddFgStockModal] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState(null);
@@ -120,48 +146,105 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   };
 
   const handleSaveFgStockModal = async (stockData) => {
+    const qtyNum = Number(stockData.qty || 0);
+    if (qtyNum <= 0) {
+      alert('Please enter a valid inward quantity greater than 0.');
+      return;
+    }
+
     try {
-      if (selectedMaterial && selectedMaterial.id) {
-        await updateFgStock(selectedMaterial.id, Number(stockData.qty || 0), 0);
-        await logStockMovement({
-          type: 'Production',
-          typeBadge: 'inv-badge-prod',
-          icon: '⚙️',
-          ref: stockData.batchNo || 'BATCH-FG-INWARD',
-          item: selectedMaterial.name,
-          batch: stockData.batchNo || 'BATCH-FG-INWARD',
-          inward: `+${stockData.qty} Coils`,
-          outward: '0',
-          location: 'Finished Goods Bay',
-          remarks: stockData.notes || 'Inward stock from production'
-        });
+      const target = liveFgList.find(f => 
+        (selectedMaterial?.id && f.id === selectedMaterial.id) ||
+        (selectedMaterial?.code && f.code === selectedMaterial.code) ||
+        (selectedMaterial?.name && f.name === selectedMaterial.name)
+      );
+
+      const targetId = target?.id || selectedMaterial?.id;
+      const targetName = target?.name || selectedMaterial?.name || 'Finished Goods';
+
+      if (targetId) {
+        await updateFgStock(targetId, qtyNum, 0);
       } else {
         await addFinishedGood({
-          name: 'PP Danline Rope 6mm (Yellow)',
-          category: 'Danline Rope',
-          stockQty: Number(stockData.qty || 100),
-          rate: 2450
+          code: selectedMaterial?.code || `FG-${Math.floor(100 + Math.random() * 900)}`,
+          name: targetName,
+          category: selectedMaterial?.category || 'Danline Rope',
+          stockQty: qtyNum,
+          rate: Number(selectedMaterial?.rate || 245)
         });
       }
+
+      await logStockMovement({
+        type: 'Production',
+        typeBadge: 'inv-badge-prod',
+        icon: '⚙️',
+        ref: stockData.batchNo || `BATCH-FG-${Math.floor(Math.random() * 900 + 100)}`,
+        item: targetName,
+        batch: stockData.batchNo || 'BATCH-FG-INWARD',
+        inward: `+${qtyNum} Coils`,
+        outward: '0',
+        location: 'Finished Goods Bay',
+        remarks: stockData.notes || 'Inward stock from production'
+      });
+
+      alert(`Successfully added ${qtyNum} Coils for ${targetName}!`);
+      setShowAddFgStockModal(false);
+      setIsDrawerOpen(false);
     } catch (err) {
       console.error('Error adding finished goods stock:', err);
+      alert('Failed to update finished goods stock. Please try again.');
     }
   };
 
-  const displayRmList = liveRmList.map(rm => ({
-    id: rm.id,
-    code: rm.code || 'RM-SKU',
-    name: rm.name || 'Raw Material',
-    desc: rm.desc || `Polymer ${rm.category || 'Granules'}`,
-    brand: rm.brand || 'Generic',
-    grade: rm.grade || 'Standard',
-    availFactory: typeof rm.availFactory === 'number' ? `${rm.availFactory.toLocaleString()} KG` : rm.availFactory || '0 KG',
-    atJobWork: typeof rm.atJobWork === 'number' ? `${rm.atJobWork.toLocaleString()} KG` : rm.atJobWork || '0 KG',
-    totalBalance: `${((Number(rm.availFactory) || 0) + (Number(rm.atJobWork) || 0)).toLocaleString()} KG`,
-    rate: typeof rm.rate === 'number' ? `₹${rm.rate}` : rm.rate || '₹0',
-    valuation: `₹${(((Number(rm.availFactory) || 0) + (Number(rm.atJobWork) || 0)) * (Number(rm.rate) || 100)).toLocaleString()}`,
-    status: rm.status || (rm.availFactory > 1000 ? 'IN STOCK' : 'LOW STOCK')
-  }));
+  const displayRmList = liveRmList.map(rm => {
+    const rawName = rm.name || '';
+    const rawGrade = rm.grade || rm.brand || '';
+    
+    // Inward from GRNs
+    const matchingInwards = liveRmInwards.filter(inw => 
+      inw.itemName === rawName || 
+      inw.grade === rawGrade || 
+      (inw.itemName && rawName && inw.itemName.toLowerCase().includes(rawName.toLowerCase()))
+    );
+    const totalInwardKg = matchingInwards.reduce((sum, i) => sum + (Number(i.netWeight) || 0), 0) || (Number(rm.availFactory || 0) + Number(rm.atJobWork || 0));
+
+    // Outward at JW
+    const totalOutwardAtJw = Number(rm.atJobWork || 0);
+
+    // Factory issue
+    const matchingIssues = liveRmIssues.filter(iss => 
+      iss.rawMaterialId === rm.id || 
+      iss.itemName === rawName
+    );
+    const totalFactoryIssueKg = matchingIssues.reduce((sum, i) => sum + (Number(i.netWeight) || 0), 0);
+
+    const factoryBalanceKg = Number(rm.availFactory || 0);
+    const rateNum = Number(rm.rate) || 112;
+    const valuationNum = (factoryBalanceKg + totalOutwardAtJw) * rateNum;
+
+    return {
+      id: rm.id,
+      code: rm.code || 'RM-SKU',
+      name: rawName || 'Raw Material',
+      desc: rm.desc || `Polymer ${rm.category || 'Granules'}`,
+      brand: rm.brand || 'Generic',
+      grade: rawGrade || 'Standard',
+      inwardKg: `${totalInwardKg.toLocaleString()} KG`,
+      inwardKgNum: totalInwardKg,
+      outwardAtJw: `${totalOutwardAtJw.toLocaleString()} KG`,
+      outwardAtJwNum: totalOutwardAtJw,
+      factoryIssueKg: `${totalFactoryIssueKg.toLocaleString()} KG`,
+      factoryIssueKgNum: totalFactoryIssueKg,
+      availFactory: `${factoryBalanceKg.toLocaleString()} KG`,
+      availFactoryNum: factoryBalanceKg,
+      totalBalance: `${(factoryBalanceKg + totalOutwardAtJw).toLocaleString()} KG`,
+      rate: `₹${rateNum}`,
+      rateNum,
+      valuation: `₹${valuationNum.toLocaleString()}`,
+      valuationNum,
+      status: factoryBalanceKg > (Number(rm.reorderLevel) || 1000) ? 'IN STOCK' : factoryBalanceKg > 0 ? 'LOW STOCK' : 'OUT OF STOCK'
+    };
+  });
 
   const uniqueRmCategories = Array.from(new Set(liveRmList.map(r => r.category).filter(Boolean)));
   const uniqueFgCategories = Array.from(new Set(liveFgList.map(f => f.category).filter(Boolean)));
@@ -187,19 +270,185 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     return matchesQuery && matchesCategory;
   });
 
-  const displayFgList = liveFgList.map(fg => ({
-    id: fg.id,
-    code: fg.code || 'FG-SKU',
-    name: fg.name || 'Finished Good',
-    sub: fg.desc || `${fg.category || 'Danline Rope'} • Length: KG/Coil`,
-    diaColor: fg.diaColor || '6 mm • Bright Yellow',
-    physicalStock: typeof fg.stockQty === 'number' ? `${fg.stockQty.toLocaleString()} Coils` : fg.stockQty || '0 Coils',
-    reserved: typeof fg.reservedQty === 'number' ? `${fg.reservedQty.toLocaleString()} Coils` : fg.reservedQty || '0 Coils',
-    freeStock: `${Math.max(0, (Number(fg.stockQty) || 0) - (Number(fg.reservedQty) || 0)).toLocaleString()} Coils`,
-    rate: typeof fg.rate === 'number' ? `₹${fg.rate.toLocaleString()}` : fg.rate || '₹0',
-    valuation: `₹${((Number(fg.stockQty) || 0) * (Number(fg.rate) || 2450)).toLocaleString()}`,
-    status: (Number(fg.stockQty) || 0) >= (Number(fg.reorderLevel) || 50) ? 'IN STOCK' : ((Number(fg.stockQty) || 0) > 0 ? 'LOW STOCK' : 'OUT OF STOCK')
-  }));
+  const filteredRmInwards = liveRmInwards.filter(inw => {
+    const matchesQuery =
+      (inw.grnNo || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (inw.challanNo || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (inw.supplierName || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (inw.itemName || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (inw.grade || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (inw.receivedBy || '').toLowerCase().includes(activeRmQuery.toLowerCase());
+    return matchesQuery;
+  });
+
+  const filteredRmIssues = liveRmIssues.filter(iss => {
+    const matchesQuery =
+      (iss.slipNo || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (iss.itemName || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (iss.grade || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (iss.issuedBy || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (iss.remarks || '').toLowerCase().includes(activeRmQuery.toLowerCase());
+    return matchesQuery;
+  });
+
+  // RM Stock Comp (Module 13: Excel Sheet 'RM Stock Comp' Reconciliation)
+  const rmCompList = liveRmList.map(rm => {
+    const itemName = rm.name || '';
+    const grade = rm.grade || '';
+
+    // Inwards for this item
+    const matchingInwards = liveRmInwards.filter(inw => 
+      (inw.itemName || '').toLowerCase() === itemName.toLowerCase() ||
+      (inw.rawMaterialId && inw.rawMaterialId === rm.id)
+    );
+    const totalInwardKg = matchingInwards.reduce((s, inw) => s + (Number(inw.netWeight) || 0), 0);
+
+    // Factory issues for this item
+    const matchingIssues = liveRmIssues.filter(iss => 
+      (iss.itemName || '').toLowerCase() === itemName.toLowerCase() ||
+      (iss.rawMaterialId && iss.rawMaterialId === rm.id)
+    );
+    const totalIssueKg = matchingIssues.reduce((s, iss) => s + (Number(iss.netWeight) || 0), 0);
+
+    // Job work movements for this item
+    const matchingJobWorks = liveJobWorks.filter(jw => 
+      (jw.material || '').toLowerCase().includes(itemName.toLowerCase()) ||
+      (jw.rawMaterialId && jw.rawMaterialId === rm.id)
+    );
+    const jwOutwardKg = matchingJobWorks.reduce((s, jw) => s + (Number(jw.inputQty) || 0), 0);
+    const jwInwardKg = matchingJobWorks.reduce((s, jw) => s + (Number(jw.recQtyKg) || Number(jw.receivedQty) || 0), 0);
+
+    const initialStock = Number(rm.initialStock) || 0;
+    const computedBal = Math.max(0, initialStock + totalInwardKg - totalIssueKg - jwOutwardKg + jwInwardKg);
+    const ledgerBal = Number(rm.availFactory) || 0;
+    const variance = ledgerBal - computedBal;
+
+    return {
+      id: rm.id,
+      code: rm.code || 'RM',
+      name: itemName,
+      grade: grade,
+      category: rm.category || 'Polymer',
+      initialStock,
+      totalInwardKg,
+      totalIssueKg,
+      jwOutwardKg,
+      jwInwardKg,
+      computedBal,
+      ledgerBal,
+      variance
+    };
+  });
+
+  const filteredRmComp = rmCompList.filter(item => {
+    return (
+      (item.code || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (item.name || '').toLowerCase().includes(activeRmQuery.toLowerCase()) ||
+      (item.grade || '').toLowerCase().includes(activeRmQuery.toLowerCase())
+    );
+  });
+
+  // Auto-heal completed orders and FG reservations in Firestore
+  useEffect(() => {
+    if (!db) return;
+
+    // 1. If an order is fully dispatched or completed, ensure reservedCoils and balanceCoils are 0 in Firestore
+    liveOrders.forEach(async (o) => {
+      const ordered = Number(o.orderedQtyCoils) || 0;
+      const disp = Number(o.dispatchedCoils) || 0;
+      const isCompleted = o.status === 'COMPLETED' || (disp >= ordered && ordered > 0);
+      if (isCompleted && (Number(o.reservedCoils) > 0 || Number(o.balanceCoils) > 0)) {
+        try {
+          await updateDoc(doc(db, 'salesOrders', o.id), {
+            reserved: '0 Coils',
+            reservedCoils: 0,
+            balance: '0 Coils',
+            balanceCoils: 0,
+            status: 'COMPLETED',
+            statusClass: 'pill-completed',
+            updatedAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.warn('Error auto-healing completed SO in Firestore:', e);
+        }
+      }
+    });
+
+    // 2. If an FG SKU has no active open orders, ensure reservedQty in Firestore is 0
+    liveFgList.forEach(async (fg) => {
+      const hasOpenOrder = liveOrders.some(o => 
+        o.status !== 'COMPLETED' && 
+        o.status !== 'DELIVERED' && 
+        o.status !== 'DISPATCHED' && 
+        o.status !== 'CANCELLED' && 
+        (Number(o.balanceCoils) > 0 || (o.balanceCoils === undefined && (Number(o.orderedQtyCoils) - Number(o.dispatchedCoils || 0) > 0))) &&
+        (
+          (o.fgSkuId && (o.fgSkuId === fg.id || o.fgSkuId === fg.code)) || 
+          (o.fgSkuCode && (o.fgSkuCode === fg.code || o.fgSkuCode === fg.id)) || 
+          (o.itemSummary && fg.name && o.itemSummary.toLowerCase().trim() === fg.name.toLowerCase().trim())
+        )
+      );
+      if (!hasOpenOrder && Number(fg.reservedQty) > 0) {
+        try {
+          await updateDoc(doc(db, 'finishedGoods', fg.id), {
+            reservedQty: 0,
+            freeStockQty: Number(fg.stockQty) || 0,
+            updatedAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.warn('Error auto-healing FG reserved stock in Firestore:', e);
+        }
+      }
+    });
+  }, [liveOrders, liveFgList]);
+
+  const displayFgList = liveFgList.map(fg => {
+    // Dynamically match active, unfulfilled sales orders to this SKU
+    const matchingOrders = liveOrders.filter(o => 
+      o.status !== 'COMPLETED' && 
+      o.status !== 'DELIVERED' && 
+      o.status !== 'DISPATCHED' && 
+      o.status !== 'CANCELLED' && 
+      (Number(o.balanceCoils) > 0 || (o.balanceCoils === undefined && (Number(o.orderedQtyCoils) - Number(o.dispatchedCoils || 0) > 0))) &&
+      (
+        (o.fgSkuId && (o.fgSkuId === fg.id || o.fgSkuId === fg.code)) || 
+        (o.fgSkuCode && (o.fgSkuCode === fg.code || o.fgSkuCode === fg.id)) || 
+        (o.itemSummary && fg.name && o.itemSummary.toLowerCase().trim() === fg.name.toLowerCase().trim())
+      )
+    );
+
+    const calculatedReservedFromOrders = matchingOrders.reduce((sum, o) => {
+      const ordered = Number(o.orderedQtyCoils) || 0;
+      const disp = Number(o.dispatchedCoils) || 0;
+      const bal = typeof o.balanceCoils === 'number' ? o.balanceCoils : Math.max(0, ordered - disp);
+      const res = typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, bal) : bal;
+      return sum + Math.max(0, res);
+    }, 0);
+
+    // If no pending orders exist for this SKU, reservation is strictly 0
+    const finalReservedCoils = matchingOrders.length > 0 
+      ? Math.max(0, calculatedReservedFromOrders)
+      : 0;
+    const physicalQty = Number(fg.stockQty) || 0;
+    const freeQty = Math.max(0, physicalQty - finalReservedCoils);
+
+    return {
+      id: fg.id,
+      code: fg.code || 'FG-SKU',
+      name: fg.name || 'Finished Good',
+      sub: fg.desc || `${fg.category || 'Danline Rope'} • Length: KG/Coil`,
+      diaColor: fg.diaColor || '6 mm • Bright Yellow',
+      physicalStock: `${physicalQty.toLocaleString()} Coils`,
+      physicalStockNum: physicalQty,
+      reserved: `${finalReservedCoils.toLocaleString()} Coils`,
+      reservedNum: finalReservedCoils,
+      freeStock: `${freeQty.toLocaleString()} Coils`,
+      freeStockNum: freeQty,
+      rate: typeof fg.rate === 'number' ? `₹${fg.rate.toLocaleString()}` : fg.rate || '₹0',
+      valuation: `₹${(physicalQty * (Number(fg.rate) || 2450)).toLocaleString()}`,
+      status: physicalQty >= (Number(fg.reorderLevel) || 50) ? 'IN STOCK' : (physicalQty > 0 ? 'LOW STOCK' : 'OUT OF STOCK')
+    };
+  });
 
   const filteredFg = displayFgList.filter(item => {
     const matchesQuery =
@@ -388,17 +637,33 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           <div className="inv-section-header">
             <div className="inv-title-group">
               <div className="inv-title-row-inner">
-                <h2 className="inv-section-title">Raw Materials Inventory</h2>
+                <h2 className="inv-section-title">Raw Materials Inventory &amp; Registers</h2>
                 <span className="inv-badge-blue">{displayRmList.length} SKU Materials</span>
               </div>
               <p className="inv-section-subtitle">
-                Track polymer granules, masterbatches, and additive balances across factory silos and outside Job Worker holdings.
+                Excel-aligned Raw Material Inward (GRN), Factory Issue Consumption, and Job Worker Outward balance.
               </p>
             </div>
 
-            <button className="inv-btn-dark-pill" onClick={() => setShowAddRmModal(true)}>
-              <Plus size={14} /> Add Raw Material
-            </button>
+            {/* Quick Action Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button 
+                className="inv-btn-dark-pill" 
+                onClick={() => setShowRmInwardModal(true)}
+                style={{ background: '#16a34a', color: '#ffffff', borderColor: '#16a34a' }}
+                title="Record Raw Material Inward with Gross/Tare Deductions"
+              >
+                <Plus size={14} /> Inward RM (GRN)
+              </button>
+              <button 
+                className="inv-btn-dark-pill" 
+                onClick={() => setShowIssueFactoryModal(true)}
+                style={{ background: '#7c3aed', color: '#ffffff', borderColor: '#7c3aed' }}
+                title="Issue Material to Factory Extrusion Plant"
+              >
+                <Plus size={14} /> Issue to Factory
+              </button>
+            </div>
           </div>
 
           {/* 5 Summary KPI Row */}
@@ -449,90 +714,369 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             </div>
           </div>
 
+          {/* Sub-view Selector Tabs for RM Module */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+            <button
+              onClick={() => setRmSubView('ledger')}
+              style={{
+                background: rmSubView === 'ledger' ? '#0f172a' : '#f1f5f9',
+                color: rmSubView === 'ledger' ? '#ffffff' : '#475569',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              📊 RM Stock Ledger (Excel: RM Stock)
+            </button>
+            <button
+              onClick={() => setRmSubView('inward')}
+              style={{
+                background: rmSubView === 'inward' ? '#16a34a' : '#f1f5f9',
+                color: rmSubView === 'inward' ? '#ffffff' : '#475569',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              📥 Inward Register (GRN) ({liveRmInwards.length})
+            </button>
+            <button
+              onClick={() => setRmSubView('issue')}
+              style={{
+                background: rmSubView === 'issue' ? '#7c3aed' : '#f1f5f9',
+                color: rmSubView === 'issue' ? '#ffffff' : '#475569',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              🏭 Issue to Factory Register ({liveRmIssues.length})
+            </button>
+            <button
+              onClick={() => setRmSubView('comp')}
+              style={{
+                background: rmSubView === 'comp' ? '#ea580c' : '#f1f5f9',
+                color: rmSubView === 'comp' ? '#ffffff' : '#475569',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: '700',
+                cursor: 'pointer'
+              }}
+            >
+              ⚖️ Stock Reconciliation (Sheet: RM Stock Comp)
+            </button>
+          </div>
+
           {/* Filter Bar */}
           <div className="inv-filter-bar">
             <div className="inv-search-input-wrap">
               <Search size={14} className="inv-search-icon" />
               <input
                 type="text"
-                placeholder="Search Material Code, Grade, Brand, Description..."
+                placeholder="Search Item Name, Grade, Supplier, GRN No..."
                 className="inv-filter-search"
                 value={rmSearch}
                 onChange={e => setRmSearch(e.target.value)}
               />
             </div>
 
-            <select
-              className="inv-filter-select"
-              value={rmCategoryFilter}
-              onChange={e => setRmCategoryFilter(e.target.value)}
+            {rmSubView === 'ledger' && (
+              <select
+                className="inv-filter-select"
+                value={rmCategoryFilter}
+                onChange={e => setRmCategoryFilter(e.target.value)}
+              >
+                <option value="All">All Polymer Categories</option>
+                {uniqueRmCategories.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+
+            <button 
+              className="jw-btn-ghost" 
+              onClick={() => {
+                if (rmSubView === 'ledger') exportToCsv('RM_Stock_Ledger.csv', filteredRm);
+                else if (rmSubView === 'inward') exportToCsv('RM_Inward_Register.csv', filteredRmInwards);
+                else exportToCsv('RM_Factory_Issue_Register.csv', filteredRmIssues);
+              }}
+              style={{ cursor: 'pointer', marginLeft: 'auto' }}
             >
-              <option value="All">All Polymer Categories</option>
-              {uniqueRmCategories.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+              <Download size={13} /> Export CSV
+            </button>
           </div>
 
-          {/* Table */}
-          <div className="inv-table-container">
-            <table className="inv-table">
-              <thead>
-                <tr>
-                  <th>MATERIAL CODE</th>
-                  <th>NAME &amp; DESCRIPTION</th>
-                  <th>BRAND / GRADE</th>
-                  <th>AVAILABLE IN FACTORY</th>
-                  <th>AT JOB WORK</th>
-                  <th>TOTAL BALANCE</th>
-                  <th>RATE (₹)</th>
-                  <th>VALUATION (₹)</th>
-                  <th>STATUS</th>
-                  <th>ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRm.map(row => (
-                  <tr
-                    key={row.code}
-                    onClick={() => handleOpenDrawer(row)}
-                    style={{ cursor: 'pointer' }}
-                    title={`Click to open material side drawer for ${row.code}`}
-                  >
-                    <td className="td-code">{row.code}</td>
-                    <td>
-                      <div className="inv-item-name">{row.name}</div>
-                      <div className="inv-item-sub">{row.desc}</div>
-                    </td>
-                    <td>
-                      <div className="inv-brand-name">{row.brand}</div>
-                      <div className="inv-brand-sub">{row.grade}</div>
-                    </td>
-                    <td className="td-qty-green">{row.availFactory}</td>
-                    <td className="td-qty-orange">{row.atJobWork}</td>
-                    <td className="td-qty-blue">{row.totalBalance}</td>
-                    <td className="td-rate">{row.rate}</td>
-                    <td className="td-valuation">{row.valuation}</td>
-                    <td>
-                      <span className={`inv-status-badge ${row.status === 'LOW STOCK' ? 'inv-badge-lowstock' : 'inv-badge-instock'}`}>
-                        • {row.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="inv-action-group" onClick={e => e.stopPropagation()}>
-                        <button className="inv-btn-issue" onClick={triggerJWModal}>
-                          Issue JW
-                        </button>
-                        <button className="inv-icon-btn" onClick={() => handleOpenDrawer(row)} title="Details">
-                          <ArrowUpRight size={13} />
-                        </button>
-                      </div>
-                    </td>
+          {/* SUB-VIEW 1: RM Stock Balance Ledger (Sheets: RM Stock & RM stock comp) */}
+          {rmSubView === 'ledger' && (
+            <div className="inv-table-container">
+              <table className="inv-table">
+                <thead>
+                  <tr>
+                    <th>ITEM NAME</th>
+                    <th>GRADE</th>
+                    <th style={{ textAlign: 'right' }}>INWARD</th>
+                    <th style={{ textAlign: 'right' }}>OUTWARD</th>
+                    <th style={{ textAlign: 'right' }}>ISSUE</th>
+                    <th style={{ textAlign: 'right' }}>BALANCE</th>
+                    <th style={{ textAlign: 'right' }}>RATE</th>
+                    <th style={{ textAlign: 'right' }}>VALUATION</th>
+                    <th>STATUS</th>
+                    <th>ACTIONS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredRm.map(row => (
+                    <tr
+                      key={row.id || row.code}
+                      onClick={() => handleOpenDrawer(row)}
+                      style={{ cursor: 'pointer' }}
+                      title={`Click to open material side drawer for ${row.name} ^ ${row.grade}`}
+                    >
+                      <td>
+                        <div className="inv-item-name" style={{ fontWeight: '700' }}>{row.name}</div>
+                        <div className="inv-item-sub">{row.code} • {row.brand}</div>
+                      </td>
+                      <td>
+                        <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: '700', color: '#1e293b' }}>
+                          {row.grade}
+                        </span>
+                      </td>
+                      <td className="td-qty" style={{ textAlign: 'right', fontWeight: '600' }}>{row.inwardKg}</td>
+                      <td className="td-qty-orange" style={{ textAlign: 'right', fontWeight: '600' }}>{row.outwardAtJw}</td>
+                      <td className="td-qty" style={{ textAlign: 'right', color: '#7c3aed', fontWeight: '600' }}>{row.factoryIssueKg}</td>
+                      <td className="td-qty-green" style={{ textAlign: 'right', fontWeight: '700', fontSize: '0.92rem' }}>{row.availFactory}</td>
+                      <td className="td-rate" style={{ textAlign: 'right' }}>{row.rate}</td>
+                      <td className="td-valuation" style={{ textAlign: 'right', fontWeight: '700' }}>{row.valuation}</td>
+                      <td>
+                        <span className={`inv-status-badge ${row.status === 'LOW STOCK' ? 'inv-badge-lowstock' : (row.status === 'OUT OF STOCK' ? 'inv-badge-out' : 'inv-badge-instock')}`}>
+                          • {row.status}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="inv-action-group" onClick={e => e.stopPropagation()}>
+                          <button className="inv-btn-issue" onClick={triggerJWModal} title="Issue to Job Worker">
+                            Issue JW
+                          </button>
+                          <button 
+                            className="inv-btn-issue" 
+                            style={{ background: '#7c3aed', color: '#fff', borderColor: '#7c3aed' }} 
+                            onClick={() => setShowIssueFactoryModal(true)}
+                            title="Issue to Factory"
+                          >
+                            Issue Plant
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* SUB-VIEW 2: Raw Material Inward Register (Sheet: Raw Material Inward) */}
+          {rmSubView === 'inward' && (
+            <div className="inv-table-container">
+              <table className="inv-table">
+                <thead>
+                  <tr>
+                    <th>GRN NO.</th>
+                    <th>CHALLAN NO.</th>
+                    <th>DATE</th>
+                    <th>CHL. NO. @ PARTY NAME</th>
+                    <th>SUPPLIER NAME</th>
+                    <th>ITEM NAME</th>
+                    <th>GRADE</th>
+                    <th style={{ textAlign: 'right' }}>GROSS WEIGHT (G. WGHT.)</th>
+                    <th style={{ textAlign: 'right' }}>NO. OF ARTICLES</th>
+                    <th>ARTICLE TYPE</th>
+                    <th style={{ textAlign: 'right' }}>ARTICLE WEIGHT (ART. WGHT.)</th>
+                    <th style={{ textAlign: 'right' }}>NET WEIGHT (N. WGHT.)</th>
+                    <th>RECEIVED BY</th>
+                    <th>REMARKS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRmInwards.length === 0 ? (
+                    <tr>
+                      <td colSpan="14" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                        No Raw Material Inward records found. Click <strong>+ Inward RM (GRN)</strong> to record your first polymer receipt.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRmInwards.map((inw, idx) => (
+                      <tr key={inw.id || idx}>
+                        <td className="td-code" style={{ fontWeight: '700', color: '#16a34a' }}>{inw.grnNo}</td>
+                        <td>{inw.challanNo || '-'}</td>
+                        <td>{inw.date}</td>
+                        <td style={{ fontSize: '0.78rem', color: '#475569', fontWeight: '600' }}>
+                          {inw.challanNo ? `${inw.challanNo} @ ${inw.supplierName}` : `- @ ${inw.supplierName}`}
+                        </td>
+                        <td style={{ fontWeight: '600' }}>{inw.supplierName}</td>
+                        <td>{inw.itemName}</td>
+                        <td>
+                          <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600' }}>
+                            {inw.grade}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>{Number(inw.grossWeight || 0).toLocaleString()} KG</td>
+                        <td style={{ textAlign: 'right' }}>{inw.noOfArticles || 0}</td>
+                        <td>{inw.articleType || 'BORA'}</td>
+                        <td style={{ textAlign: 'right', color: '#dc2626' }}>-{inw.articleWeight || 0} KG</td>
+                        <td style={{ textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>
+                          {Number(inw.netWeight || 0).toLocaleString()} KG
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '0.75rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                            👤 {inw.receivedBy || 'SURESHBHAI'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{inw.remarks || '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* SUB-VIEW 3: Issue To Factory Register (Sheet: Issue To Factory) */}
+          {rmSubView === 'issue' && (
+            <div className="inv-table-container">
+              <table className="inv-table">
+                <thead>
+                  <tr>
+                    <th>SLIP NO.</th>
+                    <th>DATE</th>
+                    <th>ITEM NAME</th>
+                    <th style={{ textAlign: 'right' }}>GROSS WEIGHT</th>
+                    <th style={{ textAlign: 'right' }}>ARTICLE WEIGHT</th>
+                    <th style={{ textAlign: 'right' }}>NET WEIGHT</th>
+                    <th style={{ textAlign: 'right' }}>QUANTITY</th>
+                    <th>ISSUED BY</th>
+                    <th>REMARKS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRmIssues.length === 0 ? (
+                    <tr>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                        No Factory Issue records found. Click <strong>+ Issue to Factory</strong> to record internal extrusion consumption.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRmIssues.map((iss, idx) => (
+                      <tr key={iss.id || idx}>
+                        <td className="td-code" style={{ fontWeight: '700', color: '#7c3aed' }}>{iss.slipNo}</td>
+                        <td>{iss.date}</td>
+                        <td style={{ fontWeight: '600' }}>{iss.itemName} {iss.grade ? `^ ${iss.grade}` : ''}</td>
+                        <td style={{ textAlign: 'right' }}>{Number(iss.grossWeight || 0).toLocaleString()} KG</td>
+                        <td style={{ textAlign: 'right', color: '#dc2626' }}>-{iss.articleWeight || 0} KG</td>
+                        <td style={{ textAlign: 'right', fontWeight: '800', color: '#7c3aed' }}>
+                          {Number(iss.netWeight || 0).toLocaleString()} KG
+                        </td>
+                        <td style={{ textAlign: 'right' }}>{iss.quantity || 1}</td>
+                        <td>
+                          <span style={{ fontSize: '0.75rem', background: '#f5f3ff', color: '#6b21a8', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
+                            👤 {iss.issuedBy || 'SURESHBHAI'}
+                          </span>
+                        </td>
+                        <td>{iss.remarks || 'Plant Extrusion Line'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* SUB-VIEW 4: RM Stock Comp / Reconciliation (Sheet: RM Stock Comp) */}
+          {rmSubView === 'comp' && (
+            <div className="inv-table-container">
+              <table className="inv-table">
+                <thead>
+                  <tr>
+                    <th>RM CODE</th>
+                    <th>ITEM NAME</th>
+                    <th>GRADE / SPEC</th>
+                    <th style={{ textAlign: 'right' }}>INITIAL (KG)</th>
+                    <th style={{ textAlign: 'right' }}>TOTAL INWARD (KG)</th>
+                    <th style={{ textAlign: 'right' }}>TOTAL ISSUE (KG)</th>
+                    <th style={{ textAlign: 'right' }}>JW OUTWARD (KG)</th>
+                    <th style={{ textAlign: 'right' }}>JW INWARD (KG)</th>
+                    <th style={{ textAlign: 'right', background: '#f8fafc' }}>COMPUTED BAL</th>
+                    <th style={{ textAlign: 'right', background: '#f0f9ff' }}>LEDGER BAL</th>
+                    <th style={{ textAlign: 'right' }}>VARIANCE</th>
+                    <th style={{ textAlign: 'center' }}>AUDIT STATUS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRmComp.length === 0 ? (
+                    <tr>
+                      <td colSpan="12" style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
+                        No matching raw materials found for reconciliation.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRmComp.map((comp, idx) => {
+                      const isMatch = Math.abs(comp.variance) < 0.01;
+                      return (
+                        <tr key={comp.id || idx}>
+                          <td className="td-code" style={{ fontWeight: '700' }}>{comp.code}</td>
+                          <td style={{ fontWeight: '600' }}>{comp.name}</td>
+                          <td><span className="inv-badge-gray">{comp.grade || 'Standard'}</span></td>
+                          <td style={{ textAlign: 'right' }}>{comp.initialStock.toLocaleString()}</td>
+                          <td style={{ textAlign: 'right', color: '#16a34a', fontWeight: 'bold' }}>
+                            +{comp.totalInwardKg.toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'right', color: '#7c3aed', fontWeight: 'bold' }}>
+                            -{comp.totalIssueKg.toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'right', color: '#ea580c' }}>
+                            -{comp.jwOutwardKg.toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'right', color: '#0284c7' }}>
+                            +{comp.jwInwardKg.toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '800', background: '#f8fafc' }}>
+                            {comp.computedBal.toLocaleString()} KG
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '800', color: '#0284c7', background: '#f0f9ff' }}>
+                            {comp.ledgerBal.toLocaleString()} KG
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '800', color: isMatch ? '#16a34a' : '#dc2626' }}>
+                            {isMatch ? '0.00 KG' : `${comp.variance > 0 ? '+' : ''}${comp.variance.toLocaleString()} KG`}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {isMatch ? (
+                              <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}>
+                                ✓ BALANCED
+                              </span>
+                            ) : (
+                              <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}>
+                                ⚠ VARIANCE
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -570,7 +1114,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <div className="inv-skpi-title">RESERVED FOR ORDERS</div>
               <div className="inv-skpi-val-row">
                 <span className="inv-skpi-val inv-text-blue">
-                  {liveFgList.reduce((a, b) => a + (Number(b.reservedQty) || 0), 0).toLocaleString()}
+                  {displayFgList.reduce((a, b) => a + b.reservedNum, 0).toLocaleString()}
                 </span>
                 <span className="inv-skpi-unit">Units</span>
               </div>
@@ -581,7 +1125,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <div className="inv-skpi-title inv-skpi-title-green">AVAILABLE FREE STOCK</div>
               <div className="inv-skpi-val-row">
                 <span className="inv-skpi-val inv-text-green">
-                  {liveFgList.reduce((a, b) => a + Math.max(0, (Number(b.stockQty) || 0) - (Number(b.reservedQty) || 0)), 0).toLocaleString()}
+                  {displayFgList.reduce((a, b) => a + b.freeStockNum, 0).toLocaleString()}
                 </span>
                 <span className="inv-skpi-unit">Units</span>
               </div>
@@ -645,6 +1189,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                   <tr
                     key={row.code}
                     onClick={() => handleOpenDrawer({
+                      id: row.id,
                       type: 'fg',
                       code: row.code,
                       name: row.name,
@@ -678,7 +1223,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                         <button
                           className="inv-btn-ghost-sm"
                           onClick={() => {
-                            setSelectedMaterial({ type: 'fg', code: row.code, name: row.name, freeStock: row.freeStock });
+                            setSelectedMaterial({ id: row.id, type: 'fg', code: row.code, name: row.name, freeStock: row.freeStock });
                             setShowAddFgStockModal(true);
                           }}
                         >
@@ -968,6 +1513,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       {showJWModal && <NewJobWorkModal onClose={() => setShowJWModal(false)} />}
       {showSalesModal && <SalesOrderModal mode="sales" onClose={() => setShowSalesModal(false)} />}
       {showAddRmModal && <AddRawMaterialModal onClose={() => setShowAddRmModal(false)} onSave={handleSaveRmModal} />}
+      {showRmInwardModal && <RawMaterialInwardModal onClose={() => setShowRmInwardModal(false)} />}
+      {showIssueFactoryModal && <IssueToFactoryModal rmList={liveRmList} onClose={() => setShowIssueFactoryModal(false)} />}
       {showAddProductModal && <AddProductSkuModal onClose={() => setShowAddProductModal(false)} onSave={handleSaveProductModal} />}
       {showAddFgStockModal && (
         <AddFinishedGoodsStockModal
