@@ -747,78 +747,7 @@ export default function DirectorySettingsView() {
             </form>
           </div>
 
-          {/* 12 Lookup Master Categories from Excel Misc Master */}
-          <div className="ds-settings-card" style={{ gridColumn: 'span 2', marginTop: '10px' }}>
-            <div className="ds-card-header-inner">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Layers size={18} style={{ color: '#0284c7' }} />
-                <h2 className="ds-card-title">Misc Master Lookup Reference Catalog (12 Standard Tables)</h2>
-              </div>
-              <p className="ds-card-subtitle">Master dropdown &amp; lookup definitions matching Excel Sheet: Misc Master</p>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginTop: '14px' }}>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>1. Deduction Particulars</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Trimming, Wastage, Extra Cutting, Edge Loss, Coil Core</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>2. Division</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Danline Rope, Twine, Hank Yarn, Polymer Trading</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>3. UOM (Unit of Measure)</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Kgs, Pieces, Coils, Hanks, Bundles, Reels, Nos</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>4. Articles</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Secondary Packaging Bags, Bobbins, Cones, Liners</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>5. Nature</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Job Work Processing, Internal Extrusion, Scrap Salvage</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>6. Process</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>FISHING YARN, DANLINE YARN, HANK, TWISTING, ROPE</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>7. Item Description</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>PP Danline, HDPE Granules, Masterbatch, White Natural</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>8. Sample PCs.</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Standard 10 PCs / batch QA sampling protocol</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>9. Person Name</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>SURESHBHAI, RAMILBHAI, MANSUKHBHAI, RAJESHBHAI</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>10. Article Type</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>BORA, PLASTIC CONE, KHALI BAG, THELI, NONE</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>11. Bags Type</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>PP Woven 25kg, HDPE Woven 50kg, Laminated Sacks</div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
-                <div style={{ fontSize: '0.76rem', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>12. B. Loss % (Bag Loss %)</div>
-                <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Standard 0.00% – 5.00% allowable burning tare loss</div>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 

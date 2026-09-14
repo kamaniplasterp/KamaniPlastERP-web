@@ -729,7 +729,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 cursor: 'pointer'
               }}
             >
-              📊 RM Stock Ledger (Excel: RM Stock)
+              📊 RM Stock Ledger
             </button>
             <button
               onClick={() => setRmSubView('inward')}
@@ -774,7 +774,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 cursor: 'pointer'
               }}
             >
-              ⚖️ Stock Reconciliation (Sheet: RM Stock Comp)
+              ⚖️ Stock Reconciliation
             </button>
           </div>
 
@@ -1015,8 +1015,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     <th style={{ textAlign: 'right' }}>TOTAL ISSUE (KG)</th>
                     <th style={{ textAlign: 'right' }}>JW OUTWARD (KG)</th>
                     <th style={{ textAlign: 'right' }}>JW INWARD (KG)</th>
-                    <th style={{ textAlign: 'right', background: '#f8fafc' }}>COMPUTED BAL</th>
-                    <th style={{ textAlign: 'right', background: '#f0f9ff' }}>LEDGER BAL</th>
+                    <th style={{ textAlign: 'right' }}>COMPUTED BAL</th>
+                    <th style={{ textAlign: 'right' }}>LEDGER BAL</th>
                     <th style={{ textAlign: 'right' }}>VARIANCE</th>
                     <th style={{ textAlign: 'center' }}>AUDIT STATUS</th>
                   </tr>

@@ -255,10 +255,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                   <option value="Rope Laying">Rope Laying</option>
                 </select>
               </div>
-              <div className="mform-field">
-                <label className="mform-label">Status</label>
-                <input type="text" className="mform-input" value="SENT" readOnly style={{ background: '#f1f5f9', fontWeight: 'bold', color: '#ea580c' }} />
-              </div>
+
               <div className="mform-field">
                 <label className="mform-label">Work Order</label>
                 <input type="text" className="mform-input" value={form.workOrder} onChange={e => set('workOrder', e.target.value)} required />

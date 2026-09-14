@@ -186,29 +186,25 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
             </div>
             <div className="mform-field">
               <label className="mform-label">Item Name <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <input
+                type="text"
+                className="mform-input"
+                placeholder="e.g. GRANUALS-HDPE"
                 value={form.itemName}
                 onChange={e => set('itemName', e.target.value)}
                 required
-              >
-                {RM_ITEM_NAMES.map(item => (
-                  <option key={item} value={item}>{item}</option>
-                ))}
-              </select>
+              />
             </div>
             <div className="mform-field">
               <label className="mform-label">Grade <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <input
+                type="text"
+                className="mform-input"
+                placeholder="e.g. RIL H030SG"
                 value={form.grade}
                 onChange={e => set('grade', e.target.value)}
                 required
-              >
-                {RM_GRADES.map(g => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 
