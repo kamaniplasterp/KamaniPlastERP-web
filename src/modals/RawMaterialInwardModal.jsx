@@ -334,7 +334,7 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
             <button type="button" className="mfooter-btn cancel" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="mfooter-btn confirm" style={{ background: '#16a34a' }}>
+            <button type="submit" className="mfooter-btn confirm" style={{ background: '#16a34a', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <CheckCircle2 size={16} /> Record Inward (GRN)
             </button>
           </div>
