@@ -18,7 +18,7 @@ import '../styles/Dashboard.css';
 const kpiData = [
   {
     id: 'raw',
-    label: 'RAW MATERIAL STOCK',
+    label: 'Raw Material Stock',
     value: '0',
     unit: 'KG',
     trend: null,
@@ -29,7 +29,7 @@ const kpiData = [
   },
   {
     id: 'jw',
-    label: 'WITH JOB WORKERS',
+    label: 'With Job Workers',
     value: '0',
     unit: 'KG',
     trend: null,
@@ -42,7 +42,7 @@ const kpiData = [
   },
   {
     id: 'fg',
-    label: 'FINISHED GOODS',
+    label: 'Finished Goods',
     value: '0',
     unit: 'COILS',
     trend: null,
@@ -55,7 +55,7 @@ const kpiData = [
   },
   {
     id: 'dispatch',
-    label: 'READY FOR DISPATCH',
+    label: 'Ready for Dispatch',
     value: '0',
     unit: 'COILS',
     trend: null,
@@ -68,12 +68,12 @@ const kpiData = [
 ];
 
 const lifecycleStages = [
-  { id: 1, label: 'RAW MATERIAL', value: '0', unit: 'KG', color: 'blue', active: false },
-  { id: 2, label: 'AT JOB WORK', value: '0', unit: 'KG', color: 'orange', active: true, badge: 'OUT' },
-  { id: 3, label: 'IN PROCESS', value: '0', unit: 'KG', color: 'gray', active: false },
-  { id: 4, label: 'FINISHED STOCK', value: '0', unit: 'units', color: 'green', active: false },
-  { id: 5, label: 'SALES PIPELINE', value: '0', unit: 'Orders', color: 'gray', active: false },
-  { id: 6, label: 'DISPATCHES', value: '0', unit: 'Challans', color: 'gray', active: false },
+  { id: 1, label: 'Raw Material', value: '0', unit: 'KG', color: 'blue', active: false },
+  { id: 2, label: 'At Job Work', value: '0', unit: 'KG', color: 'orange', active: true, badge: 'OUT' },
+  { id: 3, label: 'In Process', value: '0', unit: 'KG', color: 'gray', active: false },
+  { id: 4, label: 'Finished Stock', value: '0', unit: 'units', color: 'green', active: false },
+  { id: 5, label: 'Sales Pipeline', value: '0', unit: 'Orders', color: 'gray', active: false },
+  { id: 6, label: 'Dispatches', value: '0', unit: 'Challans', color: 'gray', active: false },
 ];
 
 const jobWorkData = [];
@@ -548,10 +548,6 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
         <div className="page-header-left">
           <div className="page-title-row">
             <h1 className="page-title">Operations Dashboard</h1>
-            <span className="plant-badge">
-              <Circle size={7} fill="#22c55e" color="#22c55e" />
-              Plant 1 Active
-            </span>
           </div>
           <p className="page-subtitle">Real-time material flow, job worker balances, production stock, and sales dispatches.</p>
         </div>

@@ -1,0 +1,476 @@
+================================================================================
+           KAMANI PLASTIC INDUSTRIES — COMPLETE ERP USER GUIDE
+================================================================================
+
+Who is this guide for?
+Factory supervisors, store managers, weighbridge operators, billing clerks,
+and anyone at Kamani Plastic Industries who uses the computer system to run
+daily operations. No software engineering background is needed — this guide
+explains every step and field in clear, plain everyday language.
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1.  How to Log In
+2.  Understanding the Main Screen (Dashboard)
+3.  Inventory & Stock Hub
+    A. Material Arrives at Factory Gate (Raw Material Inward / GRN)
+    B. Issuing Raw Material to Machines (Factory Floor Extrusion)
+    C. Reading the Raw Material Ledger & Registers
+    D. Finished Goods Stock (Coils & Ropes)
+    E. Stock Movements Log (The Audit Trail)
+    F. Batch Traceability Explorer
+    G. Stock Reconciliation (Comparing Registers vs Physical Balances)
+4.  Job Work Hub (External Processors)
+    A. Sending Material Out to a Processor (Outward Challan)
+    B. Receiving Processed Goods Back (Inward Receipt / GRN)
+    C. Extra Cutting & Scrap Deductions
+    D. Vendor Statement, Ledger & Bora Account
+    E. Printing Job Work Delivery Challans (GST Rule 55)
+5.  Sales & Dispatch Hub
+    A. Booking a New Customer Sales Order
+    B. Checking Orders & Reserving Stock
+    C. Truck Loading & Generating Dispatch Challan
+    D. Printing Tax Invoices & Delivery Slips
+    E. Tracking Dispatches & Delivery History
+6.  Directory & Master Settings
+    A. Adding Job Work Vendors
+    B. Adding Customers (Buyers)
+    C. Setting Up Job Work Rates (Process Wise)
+    D. Setting Standard Tare Weights (Bora, Bags, Tubes)
+    E. Adding Staff & Supervisor Names
+    F. Updating Company Profile & GST Details
+7.  How to Export Any Report to Excel (CSV)
+8.  Status Badges & Colors Explained
+9.  Daily Routine Checklist for Factory Staff
+10. Troubleshooting & Common Mistake Fixes
+11. Factory Golden Rules (Do Not Break)
+
+
+================================================================================
+1. HOW TO LOG IN
+================================================================================
+
+1. Open Google Chrome or Microsoft Edge on your desktop or office laptop.
+2. Go to the ERP website link provided by your factory administrator.
+3. You will see the "Kamani Plastic Industries ERP Sign In" screen.
+4. Type in your registered Email Address and Password.
+5. Click "Sign In".
+6. The system connects to the live database in real-time. Once authenticated,
+   your plant workspace loads immediately.
+
+TIP: Bookmark the page in your browser by pressing Ctrl + D on your keyboard
+so you can open it with one click every morning.
+
+
+================================================================================
+2. UNDERSTANDING THE MAIN SCREEN (DASHBOARD)
+================================================================================
+
+The Dashboard is your factory command center. It gives you a real-time summary
+of the entire plant without clicking into separate menus.
+
+1. TOP 4 KPI CARDS:
+   -----------------
+   - RAW MATERIAL STOCK (IN FACTORY): Total kilograms (KG) of polymer granules,
+     yarn, and masterbatch sitting in the factory warehouse ready for use,
+     along with total valuation in Lakhs.
+   - WITH JOB WORKERS: Material (in KG) currently at outside vendors (twisting,
+     braiding) waiting to be processed and returned.
+   - FINISHED GOODS STOCK: Total units (Coils/Bundles) of finished ropes in the
+     warehouse, split into "Free Stock" and "Reserved Stock".
+   - READY FOR DISPATCH: Total coils allocated to confirmed sales orders
+     awaiting truck dispatch, with total sales value in Lakhs.
+   * Quick Action: Clicking any card jumps directly to that department screen!
+
+2. CONNECTED FACTORY LIFECYCLE STRIP:
+   ------------------------------------
+   Shows the live 6-stage material flow:
+   [1. Raw Material] -> [2. At Job Work] -> [3. In Process] ->
+   [4. Finished Stock] -> [5. Sales Pipeline] -> [6. Dispatches]
+
+3. ACTIVE JOB WORK LIFECYCLE TABLE:
+   ---------------------------------
+   Lists external orders currently in progress with vendor name, material,
+   quantity sent, quantity received back so far, and status (SENT, PARTIAL,
+   COMPLETED, OVERDUE).
+
+4. CHARTS:
+   -------
+   - Inventory Distribution Donut: Balance between Factory Raw Material,
+     Finished Goods, and Outside Job Work.
+   - Finished Goods Bar Chart: Shows top rope products with Free vs Reserved.
+
+5. REORDER ALERTS BANNER:
+   -----------------------
+   A red/orange warning banner automatically flashes at the bottom if any
+   essential raw material or rope SKU drops below its safe buffer level.
+
+
+================================================================================
+3. INVENTORY & STOCK HUB
+================================================================================
+
+Click "Inventory & Stock" on the left navigation bar.
+
+--------------------------------------------------------------------------------
+A. Material Arrives at Factory Gate (Raw Material Inward / GRN)
+--------------------------------------------------------------------------------
+WHEN TO USE: Whenever a supplier delivery truck arrives with polymer granules,
+raffia yarn, masterbatch, or filler.
+
+WHAT IS A GRN? A Goods Receipt Note (GRN) is official proof that stock was
+weighed, inspected, and added to the warehouse.
+
+STEPS:
+1. Click the "Raw Materials (RM)" tab.
+2. Click the green button: "+ Inward RM (GRN)".
+3. Fill in the popup form:
+   - Date: Today's date (auto-filled).
+   - GRN Number: Auto-generated (e.g. GRN-2026-0042).
+   - Supplier Name: Select or type vendor (e.g. Reliance Industries, IOCL).
+   - Challan / Invoice No.: Number printed on supplier delivery slip.
+   - Item Name & Grade: e.g. "PP Granules", Grade "H110FU".
+   - Gross Weight (KG): Total scale weight from weighbridge (including bags).
+   - No. of Articles (Bags): Count of bags (e.g. 100).
+   - Article Type: Packaging style (HDPE Bag, Bora, Paper Bag).
+   - Article Tare Weight (KG): Weight of one empty bag (e.g. 0.120 KG or 1.2 KG).
+   - Received By: Gatekeeper or store supervisor name.
+   - Vehicle Number: Truck registration (e.g. GJ-03-BW-4412).
+4. System Auto-Calculation:
+   Total Tare Weight = No. of Articles x Weight per Bag
+   Net Weight        = Gross Weight - Total Tare Weight
+5. Click "Record Inward Slip".
+   Factory stock immediately increases. Click the printer icon to print a copy.
+
+--------------------------------------------------------------------------------
+B. Issuing Raw Material to Machines (Factory Floor Extrusion)
+--------------------------------------------------------------------------------
+WHEN TO USE: When plant operators take bags of polymer granules from warehouse
+to extruder machine hoppers.
+
+STEPS:
+1. Under "Raw Materials (RM)" tab, click purple button: "+ Issue to Factory".
+2. Select raw material (e.g. PP Granules H110FU).
+3. Enter Gross Weight (KG), Number of Bags, and Bag Tare Weight.
+4. Select Machine/Plant Line (e.g. Extruder Line 1) and Issued By supervisor.
+5. Click "Issue to Factory Floor".
+   Net weight is instantly deducted from warehouse inventory and recorded.
+
+--------------------------------------------------------------------------------
+C. Reading the Raw Material Ledger & Registers
+--------------------------------------------------------------------------------
+Use the sub-buttons to switch views:
+1. RM Stock Ledger: Current balance, rate, valuation, and stock status.
+2. Inward Register (GRN): Full history of all supplier truck arrivals.
+3. Issue to Factory Register: Record of all raw material given to machines.
+4. Stock Reconciliation: Compares inward - issues - job work with ledger.
+
+--------------------------------------------------------------------------------
+D. Finished Goods Stock (Coils & Ropes)
+--------------------------------------------------------------------------------
+Click the "Finished Goods (FG)" tab.
+
+UNDERSTANDING THE 3 STOCK COLUMNS:
+- Physical Stock: Total coils sitting physically in warehouse.
+- Reserved Stock: Coils locked for confirmed customer orders (DO NOT SELL!).
+- Free Stock: Coils available to sell = Physical Stock - Reserved Stock.
+
+ADDING FINISHED GOODS STOCK:
+1. Click "+ Add Finished Goods Stock" (or click a product row).
+2. Enter coils produced, weight per coil, and batch number.
+3. Click "Save Stock".
+
+--------------------------------------------------------------------------------
+E. Stock Movements Log (The Audit Trail)
+--------------------------------------------------------------------------------
+Click the "Stock Movements Ledger" tab.
+Shows an unchangeable audit log of every movement (GRN, Issue, Production,
+Dispatch, Job Work) with date, reference voucher, item, and quantity.
+
+--------------------------------------------------------------------------------
+F. Batch Traceability Explorer
+--------------------------------------------------------------------------------
+Click the "Batch Traceability Explorer" tab.
+Type any Batch ID, Sales Order, or GRN Slip to view the complete history:
+Supplier GRN -> Job Work Sent -> Return Received -> Finished Coil -> Customer Dispatch.
+Used for answering customer quality complaints within seconds.
+
+--------------------------------------------------------------------------------
+G. Stock Reconciliation (Comparing Registers vs Physical Balances)
+--------------------------------------------------------------------------------
+Go to Raw Materials -> "Stock Reconciliation".
+Compares calculated balance vs ledger balance. Variance should be 0.
+If variance exists, check for missed GRNs or unrecorded machine issues.
+
+
+================================================================================
+4. JOB WORK HUB (EXTERNAL PROCESSORS)
+================================================================================
+
+Click "Job Work Hub" on the left navigation bar.
+Manages outside vendors who perform twisting, braiding, or cutting.
+
+--------------------------------------------------------------------------------
+A. Sending Material Out to a Processor (Outward Challan)
+--------------------------------------------------------------------------------
+WHEN TO USE: Loading a vehicle with raw yarn/granules to send to outside vendor.
+
+STEPS:
+1. In Job Work Hub, click "+ Issue Outward Challan".
+2. Fill in:
+   - Party Name: Select vendor (e.g. Galaxy Enterprise, Ramjibhai).
+   - Material & Grade: What you are sending (e.g. PP Danline Yarn 800D).
+   - Process Type: Twisting, Braiding, Hank Winding, etc.
+   - Gross Scale Weight (KG): Scale weight with bags.
+   - Number of Boras / Bags: Count of packaging bags.
+   - Burning Loss % (B.Loss): Allowed loss tolerance (e.g. 2.0%).
+   - Returnable KG is auto-calculated:
+     Returnable KG = Net Weight - (Net Weight x B.Loss % / 100)
+   - Vehicle Number, Driver, and Processing Rate (e.g. Rs 17.50 / KG).
+3. Click "Generate Outward Challan".
+4. Click "Print Challan" to print GST Rule 55 Delivery Challan (Original,
+   Duplicate, Triplicate). Never let vehicle leave without printed copies!
+
+--------------------------------------------------------------------------------
+B. Receiving Processed Goods Back (Inward Receipt / GRN)
+--------------------------------------------------------------------------------
+WHEN TO USE: When job worker truck returns with finished coils or twisted yarn.
+
+STEPS:
+1. In Job Work Hub -> Orders, find the outward challan row.
+2. Click the green "Receive Inward" button.
+3. Enter Gross Weight (KG) and packaging tare rows (Bora, Cones, Theli).
+4. Enter Accepted Net Quantity (KG), Rework (KG), Rejection (KG), Scrap (KG).
+5. System calculates remaining pending balance:
+   Remaining Balance KG = Original Sent KG - Total Received KG
+6. Click "Confirm Inward Receipt".
+   Vendor balance reduces and Finished Goods stock automatically increases!
+
+--------------------------------------------------------------------------------
+C. Extra Cutting & Scrap Deductions
+--------------------------------------------------------------------------------
+WHEN TO USE: When vendor returns material with trimmings, fluff, or end-cuts.
+1. Go to Job Work Hub -> "Extra Cutting" tab.
+2. Click "+ Add Extra Cutting".
+3. Select Party Name, enter deduction details, Weight (KG), and Rate (Rs/KG).
+4. Total deduction penalty is auto-calculated and added to vendor statement.
+
+--------------------------------------------------------------------------------
+D. Vendor Statement, Ledger & Bora Account
+--------------------------------------------------------------------------------
+Click "Job Worker Statement & Ledger" tab.
+Select vendor name and date range to see:
+- Material Sent vs Material Received
+- Burning Loss allowed vs actual
+- Bora/Bag Account (Bags sent vs bags returned)
+- Extra cutting deductions
+- Net processing charges payable
+- Click "Export CSV" to download an Excel sheet for payment clearance.
+
+--------------------------------------------------------------------------------
+E. Printing Job Work Delivery Challans (GST Rule 55)
+--------------------------------------------------------------------------------
+Click the printer icon on any challan row to generate standard legal Rule 55
+document with GSTIN, HSN codes, gross/net weight, and transport declaration.
+
+
+================================================================================
+5. SALES & DISPATCH HUB
+================================================================================
+
+Click "Sales & Orders" on the left navigation bar.
+Manages customer orders, stock reservations, truck loading, and billing.
+
+--------------------------------------------------------------------------------
+A. Booking a New Customer Sales Order
+--------------------------------------------------------------------------------
+WHEN TO USE: Customer confirms an order by phone, WhatsApp, or purchase order.
+
+STEPS:
+1. Click "+ New Sales Order".
+2. Select Customer Name, enter Customer PO Number, Delivery Date, Credit Terms.
+3. Add Product Lines:
+   - Select Product SKU (e.g. Danline Rope 6mm Yellow).
+   - Enter Quantity (Coils) and Rate (Rs per Coil).
+   - Click "+ Add Line" if customer is ordering multiple products.
+4. System calculates Taxable Amount, GST (18%), Freight, and Grand Total.
+5. Click "Save Order". Status will show PENDING.
+
+--------------------------------------------------------------------------------
+B. Checking Orders & Reserving Stock
+--------------------------------------------------------------------------------
+1. Open the order from the list to view Order Details.
+2. Check the Free Stock column.
+3. If stock is available, click "Reserve Stock".
+   Status becomes RESERVED. These coils are locked and cannot be sold to others.
+
+--------------------------------------------------------------------------------
+C. Truck Loading & Generating Dispatch Challan
+--------------------------------------------------------------------------------
+WHEN TO USE: Customer truck is at the factory loading dock.
+
+STEPS:
+1. From Order Details, click "Create Dispatch" (or "+ Dispatch Order").
+2. Select the sales order.
+3. Enter Dispatched Quantity (Coils actually loaded).
+   * Partial Delivery: If order is 500 coils but truck only fits 300 coils,
+     enter 300. The order keeps 200 coils balance for the next truck!
+4. Enter Vehicle Number, Driver Name, Mobile, and Freight (Rs).
+5. Click "Confirm Dispatch".
+   Finished goods inventory decreases and dispatch voucher is created.
+
+--------------------------------------------------------------------------------
+D. Printing Tax Invoices & Delivery Slips
+--------------------------------------------------------------------------------
+From dispatch record or order details:
+- Click "Print Tax Invoice": Full GST invoice with CGST/SGST/IGST breakdown.
+- Click "Print Delivery Challan": Warehouse dispatch slip for driver.
+
+--------------------------------------------------------------------------------
+E. Tracking Dispatches & Delivery History
+--------------------------------------------------------------------------------
+Click the "Dispatches" tab to see all historical shipments. When delivery is
+confirmed by customer, update status to DELIVERED.
+
+
+================================================================================
+6. DIRECTORY & MASTER SETTINGS
+================================================================================
+
+Click "Directory & Masters" on the left navigation bar.
+Master data configuration area for fast and error-free daily operation.
+
+A. ADDING JOB WORK VENDORS:
+   Go to "Vendors" -> "+ Add Vendor". Enter company name, phone, GSTIN,
+   process type, and standard rate per KG.
+
+B. ADDING CUSTOMERS (BUYERS):
+   Go to "Customers" -> "+ Add Customer". Enter company name, phone, GSTIN,
+   address, and credit terms.
+
+C. SETTING UP JOB WORK RATES:
+   Go to "JW Rate Master" -> "+ Add Rate". Pair Vendor + Process + Material
+   with Rate (Rs/KG). Pre-fills automatically on all challans!
+
+D. SETTING STANDARD TARE WEIGHTS:
+   Go to "Tare Standards". Review standard empty bag weights:
+   - Bora: 0.200 KG
+   - Plastic Cone: 0.025 KG
+   - Khali Bag: 0.120 KG
+   - Theli: 0.015 KG
+   Edit and save if packaging specifications change.
+
+E. ADDING STAFF & SUPERVISOR NAMES:
+   Go to "Personnel" -> Add supervisor and gatekeeper names. These appear in
+   all "Issued By" and "Received By" dropdown lists.
+
+F. UPDATING COMPANY PROFILE:
+   Go to "Company Profile". Enter factory name, registered address, GSTIN,
+   PAN, and phone. Appears automatically on all printed challans and invoices.
+
+
+================================================================================
+7. HOW TO EXPORT ANY REPORT TO EXCEL (CSV)
+================================================================================
+
+1. Look for the "Export CSV" or download button at top right of any table.
+2. Filter the table to the data you want (e.g. date range or specific vendor).
+3. Click "Export CSV".
+4. The spreadsheet file (.csv) downloads immediately.
+5. Open in Microsoft Excel, WPS Office, or Google Sheets to print or email.
+
+
+================================================================================
+8. STATUS BADGES & COLORS EXPLAINED
+================================================================================
+
+[GREEN]  IN STOCK    - Healthy stock level in warehouse.
+[GREEN]  COMPLETED   - Order fully received or dispatched.
+[GREEN]  DELIVERED   - Shipment successfully reached customer.
+[BLUE]   SENT        - Material out with external vendor.
+[BLUE]   DISPATCHED  - Delivery truck has left the factory gate.
+[AMBER]  PARTIAL     - Part of the material has returned; balance pending.
+[AMBER]  RESERVED    - Stock locked for specific customer order.
+[ORANGE] PENDING     - Order booked, awaiting stock or dispatch.
+[RED]    LOW STOCK   - Stock below safety buffer; re-order required!
+[RED]    OUT OF STOCK- Zero stock remaining; stop issuing immediately.
+[RED]    OVERDUE     - Vendor has exceeded promised return delivery date!
+
+
+================================================================================
+9. DAILY ROUTINE CHECKLIST FOR FACTORY STAFF
+================================================================================
+
+MORNING ROUTINE (08:30 AM - 09:30 AM):
+[ ] Open Operations Dashboard.
+[ ] Review Reorder Alerts banner — inform purchase team of low stock items.
+[ ] Check Active Job Work table for any OVERDUE vendors.
+[ ] Check Sales Pipeline for customer dispatches planned today.
+
+DURING THE DAY:
+[ ] Incoming Trucks: Record GRN in ERP before truck leaves gate.
+[ ] Extruder Issues: Record raw material issue immediately when bags leave store.
+[ ] Job Work Outward: Issue outward challan and print Rule 55 slips before truck moves.
+[ ] Job Work Inward: Weigh return coils and confirm inward receipt same day.
+[ ] Customer Dispatches: Reserve stock, create dispatch challan, print invoice.
+
+EVENING WRAP-UP (06:00 PM - 07:00 PM):
+[ ] Check Stock Movements Ledger to ensure all transactions were recorded.
+[ ] Ensure no unrecorded gate chits remain.
+[ ] Cross-check weighbridge register totals against ERP recorded totals.
+
+
+================================================================================
+10. TROUBLESHOOTING & COMMON MISTAKE FIXES
+================================================================================
+
+Q1: Finished goods shows 0 coils, but coils are sitting in warehouse!
+A1: Those coils are probably marked as "Reserved" on an open sales order.
+    Check open orders in Sales & Orders. If order was cancelled or changed,
+    update or delete line items to release coils back to Free Stock.
+
+Q2: System calculated a negative net weight on GRN!
+A2: Check Gross Weight and Tare Weight units. Gross weight must be in KG
+    (e.g. 5000 KG), and bag tare must be in decimals (e.g. 0.120 KG, not 120 KG).
+
+Q3: Cannot find vendor or customer in dropdown list!
+A3: Party has not been added to directory yet. Go to Directory & Masters ->
+    Vendors or Customers -> click "+ Add". Save, then return to your form.
+
+Q4: Printed challan has incorrect address or GSTIN!
+A4: Go to Directory & Masters -> Company Profile (or Vendors), correct details,
+    click Save, and reprint.
+
+Q5: Job work challan remains "SENT" after material came back!
+A5: Store staff forgot to record the inward receipt. Go to Job Work Hub ->
+    Orders -> find challan -> click green "Receive Inward" -> save.
+
+
+================================================================================
+11. FACTORY GOLDEN RULES (DO NOT BREAK)
+================================================================================
+
+1. RULE OF REAL-TIME ENTRY:
+   Never keep paper chits for tomorrow. Record every GRN, issue, and dispatch
+   at the exact moment scale readings are taken.
+
+2. ALWAYS DEDUCT TARE WEIGHTS:
+   Never enter scale gross weight as net weight. Always enter bag/bora count
+   so tare weight is deducted accurately.
+
+3. NO TRUCK LEAVES WITHOUT RULE 55 CHALLAN:
+   Every vehicle carrying company material must carry an ERP-generated challan.
+   Handwritten slips cause GST penalty issues during road transport inspection.
+
+4. RESERVE BEFORE DISPATCH:
+   Always reserve stock against an order before warehouse helpers load the truck.
+
+5. PROTECT MASTER DATA:
+   Never create duplicate entries for existing vendors or customers with
+   spelling differences. Search first before adding a new party.
+
+================================================================================
+Document Reference: Kamani Plastic Industries ERP Operations Manual
+Applicable for: All Plant, Store & Commercial Operations
+================================================================================

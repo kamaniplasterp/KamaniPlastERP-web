@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useWorkflow } from '../context/WorkflowContext';
 import {
   LayoutDashboard, Briefcase, Package, Truck, BookUser,
-  FlaskConical, ChevronLeft, ChevronRight, Circle, LogOut
+  FlaskConical, ChevronLeft, ChevronRight, Circle, LogOut, X
 } from 'lucide-react';
 
 const navItems = [
@@ -52,7 +52,7 @@ const navItems = [
 
 export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
   const { user, logout } = useAuth();
-  const { activeJobWorksCount, openOrdersCount, lowStockCount } = useWorkflow();
+  const { activeJobWorksCount, openOrdersCount, lowStockCount, mobileMenuOpen, setMobileMenuOpen } = useWorkflow();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const username = user?.displayName || user?.email?.split('@')[0] || 'Administrator';
@@ -61,14 +61,16 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
   const dynamicNavItems = navItems.map(sec => ({
     ...sec,
     items: sec.items.map(item => {
-      if (item.id === 'jobwork') return { ...item, badge: { count: activeJobWorksCount, type: 'active' } };
-      if (item.id === 'inventory') return { ...item, badge: { count: lowStockCount, type: 'low' } };
-      if (item.id === 'sales') return { ...item, badge: { count: openOrdersCount, type: 'orders' } };
-      return item;
+      // Only emphasize urgent actionable alerts (e.g. low stock warnings)
+      if (item.id === 'inventory' && lowStockCount > 0) {
+        return { ...item, badge: { count: lowStockCount, type: 'low', text: `${lowStockCount} Low` } };
+      }
+      return { ...item, badge: null };
     })
   }));
 
   const handleNavClick = (itemId) => {
+    if (setMobileMenuOpen) setMobileMenuOpen(false);
     if (itemId === 'simulator') {
       if (onOpenSimulator) onOpenSimulator();
       return;
@@ -90,38 +92,60 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
   };
 
   return (
-    <aside className={`erp-sidebar${collapsed ? ' collapsed' : ''}`}>
-      {/* Logo */}
-      <div
-        className="sidebar-logo"
-        onClick={() => {
-          if (collapsed) setCollapsed(false);
-          if (setActiveNav) setActiveNav('dashboard');
-          navigate('/dashboard');
-        }}
-        style={{ cursor: 'pointer' }}
-        title="Go to Operations Dashboard"
-      >
-        <div className="sidebar-logo-mark">
-          <span>K</span>
-        </div>
-        {!collapsed && (
-          <div className="sidebar-brand-text">
-            <span className="sidebar-brand-name">Kamani Plastic</span>
-            <span className="sidebar-brand-sub">INDUSTRIAL ERP</span>
-          </div>
-        )}
-        <button
-          className="sidebar-collapse-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            setCollapsed(c => !c);
+    <>
+      {/* Mobile Drawer Backdrop */}
+      {mobileMenuOpen && (
+        <div 
+          className="sidebar-mobile-backdrop" 
+          onClick={() => setMobileMenuOpen(false)} 
+        />
+      )}
+
+      <aside className={`erp-sidebar${collapsed ? ' collapsed' : ''}${mobileMenuOpen ? ' mobile-open' : ''}`}>
+        {/* Logo */}
+        <div
+          className="sidebar-logo"
+          onClick={() => {
+            if (setMobileMenuOpen) setMobileMenuOpen(false);
+            if (collapsed) setCollapsed(false);
+            if (setActiveNav) setActiveNav('dashboard');
+            navigate('/dashboard');
           }}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          style={{ cursor: 'pointer' }}
+          title="Go to Operations Dashboard"
         >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
-      </div>
+          <div className="sidebar-logo-mark">
+            <span>K</span>
+          </div>
+          {!collapsed && (
+            <div className="sidebar-brand-text">
+              <span className="sidebar-brand-name">Kamani Plastic</span>
+              <span className="sidebar-brand-sub">INDUSTRIAL ERP</span>
+            </div>
+          )}
+          <button
+            className="sidebar-collapse-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed(c => !c);
+            }}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+          
+          {/* Mobile Close Button */}
+          <button
+            className="sidebar-mobile-close-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (setMobileMenuOpen) setMobileMenuOpen(false);
+            }}
+            title="Close menu"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
       {/* Nav Sections */}
       <nav className="sidebar-nav">
@@ -161,43 +185,18 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
         ))}
       </nav>
 
-      {/* Admin Section */}
-      <div className="sidebar-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="sidebar-admin">
-          <div className="admin-avatar">{initials}</div>
-          {!collapsed && (
-            <div className="admin-info">
-              <span className="admin-name">{username}</span>
-              <span className="admin-status">
-                <Circle size={7} fill="#22c55e" color="#22c55e" />
-                Plant 1 Active
-              </span>
-            </div>
-          )}
-        </div>
-        {!collapsed && (
-          <button
-            onClick={logout}
-            title="Log Out"
-            style={{
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.25)',
-              color: '#f87171',
-              borderRadius: '6px',
-              padding: '6px 10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              fontSize: '0.78rem',
-              fontWeight: 500
-            }}
-          >
-            <LogOut size={14} />
-            <span>Logout</span>
-          </button>
+      {/* System Footer (Profile & Logout canonically housed in TopNav) */}
+      <div className="sidebar-footer">
+        {!collapsed ? (
+          <div className="sidebar-footer-info">
+            <span className="sidebar-footer-edition">Kamani Industrial ERP</span>
+            <span className="sidebar-footer-version">v2.4 • Online</span>
+          </div>
+        ) : (
+          <div className="sidebar-footer-collapsed-dot" title="Systems Online" />
         )}
       </div>
     </aside>
+    </>
   );
 }

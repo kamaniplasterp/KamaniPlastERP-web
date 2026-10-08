@@ -4,7 +4,8 @@ import {
   Plus, Search, Download, ArrowUpDown, Printer, ChevronRight,
   Package, Users, Briefcase, DollarSign, Percent, Filter, X,
   Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell,
-  FileSpreadsheet, Receipt, Layers, Calendar, Scissors
+  FileSpreadsheet, Receipt, Layers, Calendar, Scissors,
+  SlidersHorizontal, MoreVertical, Eye, RotateCcw, Columns
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
@@ -25,10 +26,24 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [statusFilter, setStatusFilter] = useState('All');
   const [partyFilter, setPartyFilter] = useState('All');
   const [materialFilter, setMaterialFilter] = useState('All');
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [showAuditColumns, setShowAuditColumns] = useState(false);
+  const [activeRowMenuId, setActiveRowMenuId] = useState(null);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [receivingRow, setReceivingRow] = useState(null);
   const [showExtraCuttingModal, setShowExtraCuttingModal] = useState(false);
   const [extraCuttingSearch, setExtraCuttingSearch] = useState('');
+  
+  // Close row overflow menu on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest('.jw-overflow-wrap')) {
+        setActiveRowMenuId(null);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, []);
   
   // Statement tab specific filters (dynamic FY range covering historical + current 2026 operations)
   const currentYear = new Date().getFullYear();
@@ -498,63 +513,187 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       <div className="jw-page-header">
         <div className="jw-header-left">
           <div className="jw-title-row">
-            <h1 className="jw-page-title">Job Work Operations &amp; Reconciliation Hub</h1>
+            <h1 className="jw-page-title">Job Work Operations</h1>
             <span className="jw-badge-orange">{activeJobWorksCount} Active Consignments</span>
           </div>
           <p className="jw-page-subtitle">
-            Rule 55 CGST Outward Challans, Inward Delivery Slips, Tare &amp; B.Loss calculations, and Job Worker Balance Statements.
+            Rule 55 CGST Outward Challans, Inward Delivery Slips, Tare &amp; B.Loss tracking, and Worker Ledger.
           </p>
         </div>
         <div className="jw-header-right">
           <button className="jw-btn-primary-blue" onClick={handleOpenModal}>
             <Plus size={15} />
-            New Outward Challan (Rule 55)
+            New Outward Challan
           </button>
         </div>
       </div>
 
-      {/* ── Top 4 KPI Cards Grid ── */}
+      {/* ── Contextual Metric Area (No Stacked Duplicates across Tabs) ── */}
       <div className="jw-top-kpis">
-        <div className="jw-kpi-card">
-          <div className="jw-kpi-title">ACTIVE JOB WORKS</div>
-          <div className="jw-kpi-val-row">
-            <span className="jw-kpi-num">{activeJobWorksCount}</span>
-            <span className="jw-kpi-sublabel">consignments</span>
-          </div>
-        </div>
-
-        <div className="jw-kpi-card jw-kpi-highlight">
-          <div className="jw-kpi-title jw-title-orange">MATERIAL WITH VENDORS</div>
-          <div className="jw-kpi-val-row">
-            <span className="jw-kpi-num jw-text-orange">{Math.max(0, totalPendingKg).toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
-            <span className="jw-kpi-sublabel">KG</span>
-          </div>
-        </div>
-
-        <div className="jw-kpi-card">
-          <div className="jw-kpi-title">VALUE WITH PROCESSORS</div>
-          <div className="jw-kpi-val-row">
-            <span className="jw-kpi-num">₹{totalValueWithProcessorsLakhs}L</span>
-          </div>
-        </div>
-
-        <div className="jw-kpi-card">
-          <div className="jw-kpi-title">AVG WASTAGE YIELD</div>
-          <div className="jw-kpi-val-row">
-            <span className="jw-kpi-num">{avgWastagePct}%</span>
-            <span className="jw-kpi-sublabel">scrap</span>
-          </div>
-        </div>
+        {activeTab === 'challanReport' ? (
+          <>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Total Dispatched (Net)</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{totalSentKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Total Inward Received</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-green">{totalReceivedKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG ({returnRatePct}%)</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card jw-kpi-highlight">
+              <div className="jw-kpi-title jw-title-orange">Outstanding Balance</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-orange">{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Total Burning Loss</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{allJobWorkData.reduce((s, c) => s + (Number(c.bLossKg) || 0), 0).toFixed(1)}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+          </>
+        ) : activeTab === 'statement' ? (
+          <>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Opening Balance</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{stmtOpeningWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Outward (− B.Loss)</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{stmtOutwardAfterLoss.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Inward Received</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-green">{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card jw-kpi-highlight">
+              <div className="jw-kpi-title jw-title-orange">Closing Balance</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-orange">{stmtClosingWeightBal.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+          </>
+        ) : activeTab === 'wastage' ? (
+          <>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Active Processors</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{computedVendorPerformance.length}</span>
+                <span className="jw-kpi-sublabel">vendors</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Total Dispatched</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{totalSentKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Actual Process Scrap</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-orange">{totalScrapKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Avg Wastage Yield</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{avgWastagePct}%</span>
+                <span className="jw-kpi-sublabel">scrap</span>
+              </div>
+            </div>
+          </>
+        ) : activeTab === 'extraCutting' ? (
+          <>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Total Records</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{filteredExtraCuttings.length}</span>
+                <span className="jw-kpi-sublabel">entries</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Total Deduction Weight</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{totalExtraCuttingKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card jw-kpi-highlight">
+              <div className="jw-kpi-title jw-title-orange">Total Deductions Value</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-orange">₹{totalExtraCuttingVal.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Active Parties</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{new Set(partyExtraCuttings.map(e => e.partyName)).size}</span>
+                <span className="jw-kpi-sublabel">parties</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Active Job Works</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{activeJobWorksCount}</span>
+                <span className="jw-kpi-sublabel">consignments</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card jw-kpi-highlight">
+              <div className="jw-kpi-title jw-title-orange">Material with Vendors</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-orange">{Math.max(0, totalPendingKg).toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Value with Processors</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">₹{totalValueWithProcessorsLakhs}L</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Avg Wastage Yield</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{avgWastagePct}%</span>
+                <span className="jw-kpi-sublabel">scrap</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* ── Segmented Tab Bar (5 Tabs matching Excel) ── */}
-      <div className="jw-tab-bar" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+      {/* ── Minimalist Underline Tab Bar ── */}
+      <div className="jw-tab-bar">
         <button
           className={`jw-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
           onClick={() => setActiveTab('orders')}
         >
           <Briefcase size={14} />
-          Job Work Orders &amp; Challans
+          <span>Orders &amp; Challans</span>
           <span className="jw-tab-badge">{allJobWorkData.length}</span>
         </button>
 
@@ -563,7 +702,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           onClick={() => setActiveTab('challanReport')}
         >
           <FileSpreadsheet size={14} />
-          Challan Balance Report
+          <span>Challan Balance Report</span>
           <span className="jw-tab-badge-orange">{allJobWorkData.filter(j => j.status !== 'FULLY RECEIVED').length} Open</span>
         </button>
 
@@ -572,7 +711,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           onClick={() => setActiveTab('statement')}
         >
           <Receipt size={14} />
-          Job Worker Statement &amp; Ledger
+          <span>Job Worker Statement &amp; Ledger</span>
         </button>
 
         <button
@@ -580,7 +719,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           onClick={() => setActiveTab('material')}
         >
           <Package size={14} />
-          Material at Outside Processors
+          <span>Material at Outside Processors</span>
           <span className="jw-tab-badge-orange">{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} KG</span>
         </button>
 
@@ -589,7 +728,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           onClick={() => setActiveTab('wastage')}
         >
           <Percent size={14} />
-          Vendor Wastage &amp; Yield
+          <span>Vendor Wastage &amp; Yield</span>
         </button>
 
         <button
@@ -597,100 +736,189 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           onClick={() => setActiveTab('extraCutting')}
         >
           <Scissors size={14} />
-          Extra Cutting / Deductions
+          <span>Extra Cutting / Deductions</span>
           <span className="jw-tab-badge">{liveExtraCuttings.length}</span>
         </button>
       </div>
 
-      {/* ── TAB 1: Job Work Ledger (Enhanced with Excel fields) ── */}
+      {/* ── TAB 1: Job Work Ledger ── */}
       {activeTab === 'orders' && (
         <div className="jw-ledger-section">
-          <div className="jw-ledger-header">
-            <div className="jw-ledger-title-group">
-              <div className="jw-ledger-title-row">
-                <h2 className="jw-ledger-title">Job Work Outward / Inward Register</h2>
-                <span className="jw-badge-orange">{allJobWorkData.length} Consignments</span>
-              </div>
-              <p className="jw-ledger-subtitle">
-                Track Gross &amp; Net weights, Bora counts, B.Loss % (Burning loss), Inward receipts, and issued personnel.
-              </p>
-            </div>
+          {/* Progressive Filter & Actions Bar */}
+          {(() => {
+            const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (partyFilter !== 'All' ? 1 : 0) + (materialFilter !== 'All' ? 1 : 0);
+            return (
+              <>
+                <div className="jw-filter-bar">
+                  <div className="jw-search-input-wrap">
+                    <Search size={14} className="jw-search-icon" />
+                    <input
+                      type="text"
+                      placeholder="Search Challan#, Party, Material, Process..."
+                      className="jw-filter-search"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                    />
+                    {searchQuery && (
+                      <button 
+                        type="button" 
+                        onClick={() => setSearchQuery('')}
+                        className="jw-filter-clear-icon"
+                        title="Clear search"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
 
-            <div className="jw-ledger-actions">
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('Job_Work_Register.csv', filteredData)} style={{ cursor: 'pointer' }}>
-                <Download size={14} />
-                Export CSV
-              </button>
-              <button className="jw-btn-dark-pill" onClick={handleOpenModal}>
-                <Plus size={14} /> Issue Outward Challan
-              </button>
-            </div>
-          </div>
+                  <button
+                    type="button"
+                    className={`jw-btn-ghost jw-filter-toggle-btn ${showFilterPanel || activeFilterCount > 0 ? 'active' : ''}`}
+                    onClick={() => setShowFilterPanel(!showFilterPanel)}
+                  >
+                    <SlidersHorizontal size={14} />
+                    <span>Filters</span>
+                    {activeFilterCount > 0 && <span className="jw-filter-count-badge">{activeFilterCount}</span>}
+                  </button>
 
-          {/* Filter Bar */}
-          <div className="jw-filter-bar">
-            <div className="jw-search-input-wrap">
-              <Search size={14} className="jw-search-icon" />
-              <input
-                type="text"
-                placeholder="Search Challan#, Party, Material, Process, Issued By..."
-                className="jw-filter-search"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-            </div>
+                  <button
+                    type="button"
+                    className={`jw-btn-ghost ${showAuditColumns ? 'active' : ''}`}
+                    onClick={() => setShowAuditColumns(!showAuditColumns)}
+                    title="Toggle secondary audit columns (Gross, Bora, B.Loss, Issued By)"
+                  >
+                    <Columns size={14} />
+                    <span>{showAuditColumns ? 'Standard Columns' : 'Audit Columns'}</span>
+                  </button>
 
-            <select
-              className="jw-filter-select"
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-            >
-              <option value="All">All Statuses ({allJobWorkData.length})</option>
-              <option value="SENT">SENT</option>
-              <option value="PARTIALLY RECEIVED">PARTIALLY RECEIVED</option>
-              <option value="FULLY RECEIVED">FULLY RECEIVED</option>
-            </select>
+                  <button
+                    className="jw-btn-ghost"
+                    onClick={() => exportToCsv('Job_Work_Register.csv', filteredData)}
+                    style={{ marginLeft: 'auto' }}
+                    title="Export filtered records to CSV"
+                  >
+                    <Download size={14} />
+                    Export CSV
+                  </button>
+                </div>
 
-            <select
-              className="jw-filter-select"
-              value={partyFilter}
-              onChange={e => setPartyFilter(e.target.value)}
-            >
-              <option value="All">All Job Work Parties</option>
-              {uniqueJwParties.map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+                {/* Expandable Filter Panel (Progressive Disclosure) */}
+                {showFilterPanel && (
+                  <div className="jw-expanded-filters-panel">
+                    <div className="jw-filter-field">
+                      <label>Status</label>
+                      <select
+                        className="jw-filter-select"
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value)}
+                      >
+                        <option value="All">All Statuses ({allJobWorkData.length})</option>
+                        <option value="SENT">SENT</option>
+                        <option value="PARTIALLY RECEIVED">PARTIALLY RECEIVED</option>
+                        <option value="FULLY RECEIVED">FULLY RECEIVED</option>
+                      </select>
+                    </div>
 
-            <select
-              className="jw-filter-select"
-              value={materialFilter}
-              onChange={e => setMaterialFilter(e.target.value)}
-            >
-              <option value="All">All Raw Materials</option>
-              {uniqueJwMaterials.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
+                    <div className="jw-filter-field">
+                      <label>Job Worker / Party</label>
+                      <select
+                        className="jw-filter-select"
+                        value={partyFilter}
+                        onChange={e => setPartyFilter(e.target.value)}
+                      >
+                        <option value="All">All Job Work Parties</option>
+                        {uniqueJwParties.map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
 
-          {/* Enhanced Table with Excel Columns */}
+                    <div className="jw-filter-field">
+                      <label>Raw Material</label>
+                      <select
+                        className="jw-filter-select"
+                        value={materialFilter}
+                        onChange={e => setMaterialFilter(e.target.value)}
+                      >
+                        <option value="All">All Raw Materials</option>
+                        {uniqueJwMaterials.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {activeFilterCount > 0 && (
+                      <button
+                        type="button"
+                        className="jw-btn-reset-filters"
+                        onClick={() => {
+                          setStatusFilter('All');
+                          setPartyFilter('All');
+                          setMaterialFilter('All');
+                        }}
+                      >
+                        <RotateCcw size={12} />
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Active Filter Chips */}
+                {activeFilterCount > 0 && (
+                  <div className="jw-active-chips-row">
+                    <span className="jw-active-chips-label">Active:</span>
+                    {statusFilter !== 'All' && (
+                      <span className="jw-filter-chip">
+                        Status: <strong>{statusFilter}</strong>
+                        <button type="button" onClick={() => setStatusFilter('All')}><X size={11} /></button>
+                      </span>
+                    )}
+                    {partyFilter !== 'All' && (
+                      <span className="jw-filter-chip">
+                        Party: <strong>{partyFilter}</strong>
+                        <button type="button" onClick={() => setPartyFilter('All')}><X size={11} /></button>
+                      </span>
+                    )}
+                    {materialFilter !== 'All' && (
+                      <span className="jw-filter-chip">
+                        Material: <strong>{materialFilter}</strong>
+                        <button type="button" onClick={() => setMaterialFilter('All')}><X size={11} /></button>
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="jw-clear-all-link"
+                      onClick={() => {
+                        setStatusFilter('All');
+                        setPartyFilter('All');
+                        setMaterialFilter('All');
+                      }}
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* Operational Focused Table (8 core columns by default, expanding with audit fields) */}
           <div className="jw-table-container">
             <table className="jw-ledger-table">
               <thead>
                 <tr>
                   <th>CHALLAN NO.</th>
                   <th>DATE</th>
-                  <th>PARTY NAME</th>
-                  <th>ITEM NAME &amp; PROCESS</th>
-                  <th>GROSS (KG)</th>
-                  <th>BORA</th>
-                  <th>NET OUTWARD (KG)</th>
-                  <th>B.LOSS</th>
-                  <th>INWARD (KG)</th>
-                  <th>BAL WEIGHT (KG)</th>
-                  <th>ISSUED BY</th>
+                  <th>PARTY</th>
+                  <th>ITEM / PROCESS</th>
+                  {showAuditColumns && <th>GROSS (KG)</th>}
+                  {showAuditColumns && <th>BORA</th>}
+                  {showAuditColumns && <th>B.LOSS</th>}
+                  <th className="th-right">NET OUTWARD (KG)</th>
+                  <th className="th-right">BALANCE (KG)</th>
                   <th>STATUS</th>
+                  {showAuditColumns && <th>ISSUED BY</th>}
                   <th>ACTION</th>
                 </tr>
               </thead>
@@ -714,20 +942,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                         {row.process} • <span className="jw-batch-text">{row.batch}</span>
                       </div>
                     </td>
-                    <td className="td-qty">{row.grossWeight ? row.grossWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}</td>
-                    <td className="td-qty">{row.boraCount > 0 ? `${row.boraCount} Bora` : '—'}</td>
-                    <td className="td-qty" style={{ fontWeight: 'bold' }}>{(row.netOutwardKg || row.inputQty || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
-                    <td className="td-wastage">{row.bLossPct > 0 ? `${row.bLossPct}% (${row.bLossKg.toFixed(1)} KG)` : '0%'}</td>
-                    <td className="td-qty">{row.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
-                    <td className="td-qty">
+                    {showAuditColumns && (
+                      <td className="td-qty-right">{row.grossWeight ? row.grossWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}</td>
+                    )}
+                    {showAuditColumns && (
+                      <td className="td-qty">{row.boraCount > 0 ? `${row.boraCount} Bora` : '—'}</td>
+                    )}
+                    {showAuditColumns && (
+                      <td className="td-wastage">{row.bLossPct > 0 ? `${row.bLossPct}% (${row.bLossKg.toFixed(1)} KG)` : '0%'}</td>
+                    )}
+                    <td className="td-qty td-qty-right" style={{ fontWeight: 'bold' }}>
+                      {(row.netOutwardKg || row.inputQty || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG
+                    </td>
+                    <td className="td-qty td-qty-right">
                       {row.pendingQty > 0 ? (
                         <span className="pending-orange-bold">{row.pendingQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
                       ) : (
                         <span style={{ color: '#16a34a' }}>0 KG</span>
                       )}
                     </td>
-                    <td className="td-date" style={{ fontSize: '0.72rem', color: '#475569' }}>{row.issuedBy}</td>
                     <td className="td-status">{getStatusBadge(row.status)}</td>
+                    {showAuditColumns && (
+                      <td className="td-date" style={{ fontSize: '0.72rem', color: '#475569' }}>{row.issuedBy}</td>
+                    )}
                     <td className="td-actions" onClick={e => e.stopPropagation()}>
                       <div className="jw-action-group">
                         {row.status === 'COMPLETED' || row.status === 'FULLY RECEIVED' || Number(row.pendingQty) <= 0 ? (
@@ -748,45 +985,76 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                             Inward
                           </button>
                         )}
-                        <button
-                          className="jw-icon-action"
-                          title="Print Rule 55 Delivery Challan (Outward)"
-                          onClick={() => printJobWorkChallan(row)}
-                        >
-                          <Printer size={14} />
-                        </button>
-                        {Number(row.receivedQty || 0) > 0 && (
+
+                        {/* Overflow Menu [•••] */}
+                        <div className="jw-overflow-wrap">
                           <button
-                            className="jw-icon-action"
-                            style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}
-                            title="Print Job Work Inward Delivery Slip (Sheet 22: Inward Slip)"
-                            onClick={() => {
-                              const recKg = Number(row.receivedQty || 0);
-                              const slip = (Array.isArray(row.inwardReceipts) && row.inwardReceipts.length > 0)
-                                ? row.inwardReceipts[0]
-                                : {
-                                    slipNo: `SLIP-${row.chNo || row.challan || row.id}`,
-                                    grossWeight: recKg + ((Number(row.boraCount) || 10) * 0.2),
-                                    boraCount: Number(row.boraCount) || 10,
-                                    articleWeight: (Number(row.boraCount) || 10) * 0.2,
-                                    netQtyKg: recKg,
-                                    receivedBy: 'RAMILBHAI',
-                                    ratePerKg: row.ratePerKg || row.charges || 16,
-                                    value: recKg * Number(row.ratePerKg || row.charges || 16)
-                                  };
-                              printInwardDeliverySlip(slip, row);
-                            }}
+                            type="button"
+                            className={`jw-icon-action ${activeRowMenuId === row.id ? 'active' : ''}`}
+                            title="More actions"
+                            onClick={() => setActiveRowMenuId(activeRowMenuId === row.id ? null : row.id)}
                           >
-                            <Receipt size={14} />
+                            <MoreVertical size={14} />
                           </button>
-                        )}
-                        <button
-                          className="jw-icon-action"
-                          title="View Job Work Details"
-                          onClick={() => setSelectedJwId(row.id)}
-                        >
-                          <ChevronRight size={15} />
-                        </button>
+
+                          {activeRowMenuId === row.id && (
+                            <div className="jw-overflow-menu" onClick={e => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                className="jw-menu-item"
+                                onClick={() => {
+                                  setActiveRowMenuId(null);
+                                  setSelectedJwId(row.id);
+                                }}
+                              >
+                                <Eye size={13} />
+                                <span>View Details</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="jw-menu-item"
+                                onClick={() => {
+                                  setActiveRowMenuId(null);
+                                  printJobWorkChallan(row);
+                                }}
+                              >
+                                <Printer size={13} />
+                                <span>Print Rule 55 Challan</span>
+                              </button>
+                              {Number(row.receivedQty || 0) > 0 ? (
+                                <button
+                                  type="button"
+                                  className="jw-menu-item"
+                                  onClick={() => {
+                                    setActiveRowMenuId(null);
+                                    const recKg = Number(row.receivedQty || 0);
+                                    const slip = (Array.isArray(row.inwardReceipts) && row.inwardReceipts.length > 0)
+                                      ? row.inwardReceipts[0]
+                                      : {
+                                          slipNo: `SLIP-${row.chNo || row.challan || row.id}`,
+                                          grossWeight: recKg + ((Number(row.boraCount) || 10) * 0.2),
+                                          boraCount: Number(row.boraCount) || 10,
+                                          articleWeight: (Number(row.boraCount) || 10) * 0.2,
+                                          netQtyKg: recKg,
+                                          receivedBy: 'RAMILBHAI',
+                                          ratePerKg: row.ratePerKg || row.charges || 16,
+                                          value: recKg * Number(row.ratePerKg || row.charges || 16)
+                                        };
+                                    printInwardDeliverySlip(slip, row);
+                                  }}
+                                >
+                                  <Receipt size={13} />
+                                  <span>Print Inward Slip</span>
+                                </button>
+                              ) : (
+                                <div className="jw-menu-item disabled" title="No inward receipts yet">
+                                  <Receipt size={13} />
+                                  <span>Inward Slip (No Inward Yet)</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -797,7 +1065,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {/* ── TAB 2: Challan Balance Report (Matching Excel 'Pending Challan' & 'Challan Wise Co.') ── */}
+      {/* ── TAB 2: Challan Balance Report ── */}
       {activeTab === 'challanReport' && (
         <div className="jw-ledger-section">
           <div className="jw-ledger-header">
@@ -819,47 +1087,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             </div>
           </div>
 
-          {/* Challan Balance Summary Grid */}
-          <div className="jw-ledger-kpi-grid">
-            <div className="jw-lkpi-card">
-              <div className="jw-lkpi-title">TOTAL SUM NET WEIGHT</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val">{totalSentKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub">Total dispatched across challans</div>
-            </div>
-
-            <div className="jw-lkpi-card">
-              <div className="jw-lkpi-title">TOTAL BURNING LOSS (B.LOSS)</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val">{allJobWorkData.reduce((s, c) => s + (Number(c.bLossKg) || 0), 0).toFixed(1)}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub">Process loss deduction</div>
-            </div>
-
-            <div className="jw-lkpi-card">
-              <div className="jw-lkpi-title">TOTAL INWARD WEIGHT</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val jw-text-green">{totalReceivedKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub">{returnRatePct}% Inward yield</div>
-            </div>
-
-            <div className="jw-lkpi-card jw-lkpi-highlight">
-              <div className="jw-lkpi-title jw-title-orange">OUTSTANDING BALANCE WEIGHT</div>
-              <div className="jw-lkpi-val-row">
-                <span className="jw-lkpi-val jw-text-orange">{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
-                <span className="jw-lkpi-unit">KG</span>
-              </div>
-              <div className="jw-lkpi-sub">Pending with processors</div>
-            </div>
-          </div>
-
-          {/* Challan Wise Table */}
-          <div className="jw-table-container" style={{ marginTop: '14px' }}>
+          {/* Challan Wise Table (Stacked KPI grid eliminated; contextual metrics displayed in Top Area) */}
+          <div className="jw-table-container">
             <table className="jw-ledger-table">
               <thead>
                 <tr>
@@ -982,97 +1211,97 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             </div>
           </div>
 
-          {/* Statement 3-Category Summary Block (Weight, Bora, Financial) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginTop: '14px' }}>
+          {/* Statement 3-Category Summary Block (Calm Enterprise Design) */}
+          <div className="jw-stmt-summary-grid">
             {/* 1. Weight Reconciliation */}
-            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '14px' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0369a1', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                ⚖️ Material Weight Reconciliation (Sheet: Statement)
+            <div className="jw-stmt-box">
+              <div className="jw-stmt-box-header">
+                ⚖️ Material Weight Reconciliation
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Opening Balance (weight):</span>
-                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtOpeningWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Opening Balance (weight):</span>
+                <span className="jw-stmt-row-val">{stmtOpeningWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Opening Balance (value):</span>
-                <span style={{ fontWeight: '600', color: '#0369a1' }}>₹{(stmtOpeningWeight * 17.5).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Opening Balance (value):</span>
+                <span className="jw-stmt-row-val" style={{ color: '#0369a1' }}>₹{(stmtOpeningWeight * 17.5).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Outward:</span>
-                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtOutwardNetSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Outward Dispatched:</span>
+                <span className="jw-stmt-row-val">{stmtOutwardNetSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Outward (− B. Loss):</span>
-                <span style={{ fontWeight: 'bold', color: '#0284c7' }}>{stmtOutwardAfterLoss.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Outward (− B. Loss):</span>
+                <span className="jw-stmt-row-val" style={{ color: '#0284c7' }}>{stmtOutwardAfterLoss.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Inward:</span>
-                <span style={{ fontWeight: 'bold', color: '#16a34a' }}>{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Inward Received:</span>
+                <span className="jw-stmt-row-val" style={{ color: '#16a34a' }}>{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #e0f2fe', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Consumption:</span>
-                <span style={{ fontWeight: 'bold', color: '#7c3aed' }}>{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Consumption:</span>
+                <span className="jw-stmt-row-val">{stmtInwardSum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '4px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
+              <div className="jw-stmt-closing-row">
                 <span>Closing Balance:</span>
                 <span style={{ color: '#ea580c' }}>{stmtClosingWeightBal.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0 0', fontSize: '0.75rem', color: '#334155' }}>
-                <span>Closing Balance (value):</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0 0', fontSize: '0.74rem', color: '#64748b' }}>
+                <span>Closing Balance (val):</span>
                 <span style={{ fontWeight: '600', color: '#0369a1' }}>₹{stmtClosingValuation.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
             </div>
 
             {/* 2. Packaging & Bora Reconciliation */}
-            <div style={{ background: '#fefce8', border: '1px solid #fef08a', borderRadius: '8px', padding: '14px' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#a16207', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                📦 Packaging &amp; Bora Reconciliation
+            <div className="jw-stmt-box">
+              <div className="jw-stmt-box-header">
+                📦 Packaging &amp; Bora Balance
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Bora Opening Balance:</span>
-                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtOpeningBora} Bora</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Bora Opening Balance:</span>
+                <span className="jw-stmt-row-val">{stmtOpeningBora} Bora</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Bora Outward:</span>
-                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtBoraOutward} Bora</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Bora Outward:</span>
+                <span className="jw-stmt-row-val">{stmtBoraOutward} Bora</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Bora Inward:</span>
-                <span style={{ fontWeight: 'bold', color: '#16a34a' }}>{stmtBoraInward} Bora</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Bora Inward:</span>
+                <span className="jw-stmt-row-val" style={{ color: '#16a34a' }}>{stmtBoraInward} Bora</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Theli &amp; Label Opening Balance:</span>
-                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtTheliOpening} Nos</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Theli &amp; Label Opening:</span>
+                <span className="jw-stmt-row-val">{stmtTheliOpening} Nos</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #fef9c3', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Theli &amp; Label Closing Balance:</span>
-                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{stmtTheliClosing} Nos</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Theli &amp; Label Closing:</span>
+                <span className="jw-stmt-row-val">{stmtTheliClosing} Nos</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '4px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
+              <div className="jw-stmt-closing-row">
                 <span>Bora Closing Balance:</span>
-                <span style={{ color: '#ca8a04' }}>{stmtBoraClosing} Bora</span>
+                <span style={{ color: '#d97706' }}>{stmtBoraClosing} Bora</span>
               </div>
             </div>
 
             {/* 3. Financial Ledger Reconciliation */}
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '14px' }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#15803d', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <div className="jw-stmt-box">
+              <div className="jw-stmt-box-header">
                 💳 Financial &amp; Payment Ledger
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Total Payable:</span>
-                <span style={{ fontWeight: 'bold', color: '#0f172a' }}>₹{stmtTotalPayable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Total Payable:</span>
+                <span className="jw-stmt-row-val">₹{stmtTotalPayable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Deduction (Extra Cutting &amp; Scrap):</span>
-                <span style={{ fontWeight: 'bold', color: '#dc2626' }}>₹{stmtDeductions.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Deduction (Extra Cutting &amp; Scrap):</span>
+                <span className="jw-stmt-row-val" style={{ color: '#dc2626' }}>₹{stmtDeductions.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #dcfce7', fontSize: '0.78rem' }}>
-                <span style={{ color: '#475569' }}>Total Paid:</span>
-                <span style={{ fontWeight: 'bold', color: '#16a34a' }}>₹{stmtTotalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Total Paid:</span>
+                <span className="jw-stmt-row-val" style={{ color: '#16a34a' }}>₹{stmtTotalPaid.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0 0', marginTop: '8px', fontSize: '0.85rem', fontWeight: 'bold', color: '#0f172a' }}>
-                <span>Closing Balance (value):</span>
+              <div className="jw-stmt-closing-row">
+                <span>Closing Balance:</span>
                 <span style={{ color: stmtClosingFinBal > 0 ? '#15803d' : '#dc2626' }}>
                   ₹{stmtClosingFinBal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </span>
@@ -1182,9 +1411,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                           <th>JW Number</th>
                           <th>Challan Date</th>
                           <th>Material &amp; Batch</th>
-                          <th>Sent Qty</th>
-                          <th>Received Qty</th>
-                          <th>Pending Qty</th>
+                          <th className="th-right">Sent Qty</th>
+                          <th className="th-right">Received Qty</th>
+                          <th className="th-right">Pending Qty</th>
                           <th>Expected Return</th>
                           <th>Status</th>
                           <th>Action</th>
@@ -1201,9 +1430,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                               <div className="jw-mat-name">{ord.material}</div>
                               <div className="jw-mat-sub">{ord.process} • <span className="jw-batch-text">Batch: {ord.batch}</span></div>
                             </td>
-                            <td className="td-qty">{ord.sentQty}</td>
-                            <td className="td-qty">{ord.recdQty}</td>
-                            <td className="td-qty">
+                            <td className="td-qty td-qty-right">{ord.sentQty}</td>
+                            <td className="td-qty td-qty-right">{ord.recdQty}</td>
+                            <td className="td-qty td-qty-right">
                               <span className="pending-orange-bold">{ord.pendingQty}</span>
                             </td>
                             <td className="td-exp-date">{ord.expReturn}</td>
@@ -1280,13 +1509,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     <tr>
                       <th>VENDOR NAME &amp; CITY</th>
                       <th>SPECIALIZATION</th>
-                      <th>TOTAL SENT (KG)</th>
-                      <th>RECEIVED (KG)</th>
-                      <th>ACTUAL WASTAGE (KG)</th>
-                      <th>ALLOWED WASTAGE %</th>
-                      <th>ACTUAL WASTAGE %</th>
-                      <th>PERFORMANCE RATING</th>
-                      <th>TOTAL JOB CHARGES</th>
+                      <th className="th-right">TOTAL SENT (KG)</th>
+                      <th className="th-right">RECEIVED (KG)</th>
+                      <th className="th-right">ACTUAL WASTAGE (KG)</th>
+                      <th className="th-right">ALLOWED %</th>
+                      <th className="th-right">ACTUAL %</th>
+                      <th>PERFORMANCE</th>
+                      <th className="th-right">TOTAL CHARGES</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1297,17 +1526,17 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                           <span className="jw-challan-sub">{vp.city}</span>
                         </td>
                         <td className="td-material-col">{vp.spec}</td>
-                        <td className="td-qty">{vp.sent}</td>
-                        <td className="td-qty">{vp.recd}</td>
-                        <td className="td-wastage jw-text-red">{vp.actualWastageKg}</td>
-                        <td className="td-qty">{vp.allowedWastagePct}</td>
-                        <td className="td-qty">
+                        <td className="td-qty td-qty-right">{vp.sent}</td>
+                        <td className="td-qty td-qty-right">{vp.recd}</td>
+                        <td className="td-wastage td-qty-right jw-text-red">{vp.actualWastageKg}</td>
+                        <td className="td-qty td-qty-right">{vp.allowedWastagePct}</td>
+                        <td className="td-qty td-qty-right">
                           <span className="badge-green-sm">{vp.actualWastagePct}</span>
                         </td>
                         <td className="td-status">
                           <span className="jw-status-pill pill-completed">✓ {vp.rating}</span>
                         </td>
-                        <td className="td-charges">{vp.charges}</td>
+                        <td className="td-charges td-qty-right">{vp.charges}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1373,9 +1602,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                   <th>DATE</th>
                   <th>PARTY NAME</th>
                   <th>DEDUCTION DETAILS</th>
-                  <th>WEIGHT</th>
-                  <th>RATE</th>
-                  <th>TOTAL</th>
+                  <th className="th-right">WEIGHT</th>
+                  <th className="th-right">RATE</th>
+                  <th className="th-right">TOTAL</th>
                   <th>REMARKS</th>
                   <th style={{ textAlign: 'center' }}>ACTION</th>
                 </tr>
@@ -1398,11 +1627,11 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                       <td className="td-date">{ec.date}</td>
                       <td className="td-party" style={{ fontWeight: 'bold' }}>{ec.partyName}</td>
                       <td className="td-material-col">{ec.deductionDetails}</td>
-                      <td className="td-qty" style={{ color: '#dc2626', fontWeight: 'bold' }}>
+                      <td className="td-qty td-qty-right" style={{ color: '#dc2626', fontWeight: 'bold' }}>
                         {weightVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG
                       </td>
-                      <td className="td-qty">₹{rateVal.toFixed(2)}</td>
-                      <td className="td-charges" style={{ color: '#b91c1c', fontWeight: 'bold' }}>
+                      <td className="td-qty td-qty-right">₹{rateVal.toFixed(2)}</td>
+                      <td className="td-charges td-qty-right" style={{ color: '#b91c1c', fontWeight: 'bold' }}>
                         ₹{totalVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                       </td>
                       <td className="td-material-col" style={{ fontSize: '0.75rem', color: '#64748b' }}>{ec.remarks || '—'}</td>

@@ -17,7 +17,7 @@ import '../styles/SalesDispatch.css';
 
 export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModal }) {
   const location = useLocation();
-  const { openOrdersCount } = useWorkflow();
+  const { openOrdersCount, globalSearch } = useWorkflow();
   const [activeTab, setActiveTab] = useState(location.state?.tab || 'orders');
   const [selectedOrderId, setSelectedOrderId] = useState(location.state?.selectedOrderId || null);
 
@@ -41,6 +41,31 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       unsubDc();
     };
   }, []);
+
+  // Auto-heal any 0-value dispatches in Firestore
+  useEffect(() => {
+    liveDispatches.forEach(d => {
+      const currentVal = typeof d.totalValue === 'number' && d.totalValue > 0
+        ? d.totalValue
+        : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || 0);
+
+      if (currentVal <= 0 && d.id) {
+        const qty = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 200;
+        const linkedSo = liveOrders.find(o => o.id === d.soId || o.orderNo === d.orderRef);
+        let correctedVal = 0;
+        if (linkedSo && linkedSo.grandTotal && linkedSo.orderedQtyCoils) {
+          correctedVal = Math.round((Number(linkedSo.grandTotal) / Number(linkedSo.orderedQtyCoils)) * qty);
+        } else if (linkedSo && (linkedSo.rate || linkedSo.pricePerUnit)) {
+          correctedVal = Math.round(qty * Number(linkedSo.rate || linkedSo.pricePerUnit) * 1.18);
+        } else {
+          correctedVal = Math.round(qty * 2450 * 1.18);
+        }
+        if (correctedVal > 0) {
+          updateDispatchValue(d.id, correctedVal);
+        }
+      }
+    });
+  }, [liveDispatches, liveOrders]);
 
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('All');
@@ -97,30 +122,6 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     }
   };
 
-  if (selectedOrderId) {
-    return (
-      <div className="sd-hub-container">
-        <SalesOrderDetailView
-          orderId={selectedOrderId}
-          onBack={() => {
-            setSelectedOrderId(null);
-            if (window.history.replaceState) {
-              window.history.replaceState({}, document.title, window.location.pathname);
-            }
-          }}
-          onCreateDispatch={() => {
-            setShowDispatchChallanModal(true);
-          }}
-        />
-        {showDispatchChallanModal && (
-          <DispatchChallanModal
-            defaultOrderId={selectedOrderId}
-            onClose={() => setShowDispatchChallanModal(false)}
-          />
-        )}
-      </div>
-    );
-  }
 
   const parseVal = (v) => {
     if (typeof v === 'number') return v;
@@ -178,30 +179,6 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
   }, 0);
   const totalDispatchedValLakhs = (totalDispatchedValInr / 100000).toFixed(2);
 
-  // Auto-heal any 0-value dispatches in Firestore
-  useEffect(() => {
-    liveDispatches.forEach(d => {
-      const currentVal = typeof d.totalValue === 'number' && d.totalValue > 0
-        ? d.totalValue
-        : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || 0);
-
-      if (currentVal <= 0 && d.id) {
-        const qty = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 200;
-        const linkedSo = liveOrders.find(o => o.id === d.soId || o.orderNo === d.orderRef);
-        let correctedVal = 0;
-        if (linkedSo && linkedSo.grandTotal && linkedSo.orderedQtyCoils) {
-          correctedVal = Math.round((Number(linkedSo.grandTotal) / Number(linkedSo.orderedQtyCoils)) * qty);
-        } else if (linkedSo && (linkedSo.rate || linkedSo.pricePerUnit)) {
-          correctedVal = Math.round(qty * Number(linkedSo.rate || linkedSo.pricePerUnit) * 1.18);
-        } else {
-          correctedVal = Math.round(qty * 2450 * 1.18);
-        }
-        if (correctedVal > 0) {
-          updateDispatchValue(d.id, correctedVal);
-        }
-      }
-    });
-  }, [liveDispatches, liveOrders]);
 
   const displaySalesOrders = liveOrders.map(o => {
     const { qty, grandTotal } = calcOrderTotals(o);
@@ -214,19 +191,28 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : (parseVal(o.reserved) || balQty))
     );
 
+    const orderDateStr = o.date || o.orderDate || (o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toISOString().split('T')[0] : '2026-08-26');
+    const expDateStr = o.expDate || (o.deliveryDate ? `Exp: ${o.deliveryDate}` : '');
+    const formattedVal = o.orderValue && typeof o.orderValue === 'string' && o.orderValue.startsWith('₹') 
+      ? o.orderValue 
+      : `₹${grandTotal.toLocaleString('en-IN')}`;
+
     return {
       id: o.id,
       orderNo: o.orderNo || `SO-2026-${o.id.slice(0, 4).toUpperCase()}`,
-      orderDate: o.orderDate || o.date || '2026-08-26',
+      date: orderDateStr,
+      orderDate: orderDateStr,
       customer: o.customer || 'ABC Marine Traders',
       destination: o.destination || 'Veraval, Gujarat',
       poRef: o.poRef || 'PO-2026-901',
+      expDate: expDateStr,
       itemSummary: o.itemSummary || 'PP Danline Rope 6mm (Yellow)',
       orderedQty: `${ordQty} Coils`,
       reserved: `${resQty} Coils`,
       dispatched: `${dispQty} Coils`,
       balance: `${balQty} Coils`,
-      totalValue: `₹${grandTotal.toLocaleString('en-IN')}`,
+      orderValue: formattedVal,
+      totalValue: formattedVal,
       status: isCompleted ? 'COMPLETED' : (o.status || 'STOCK RESERVED'),
       statusClass: isCompleted ? 'pill-completed' : (o.statusClass || 'pill-reserved')
     };
@@ -234,7 +220,6 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
 
   const uniqueCustomers = Array.from(new Set(displaySalesOrders.map(o => o.customer).filter(Boolean)));
 
-  const { globalSearch } = useWorkflow();
   const activeOrderQuery = orderSearch || globalSearch || '';
   const activeDispatchQuery = dispatchSearch || globalSearch || '';
 
@@ -316,17 +301,42 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     return matchesSearch && matchesStatus;
   });
 
+  if (selectedOrderId) {
+    return (
+      <div className="sd-hub-container">
+        <SalesOrderDetailView
+          orderId={selectedOrderId}
+          onBack={() => {
+            setSelectedOrderId(null);
+            if (window.history.replaceState) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          }}
+          onCreateDispatch={() => {
+            setShowDispatchChallanModal(true);
+          }}
+        />
+        {showDispatchChallanModal && (
+          <DispatchChallanModal
+            defaultOrderId={selectedOrderId}
+            onClose={() => setShowDispatchChallanModal(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="sd-hub-container">
       {/* ── Page Header ── */}
       <div className="sd-page-header">
         <div className="sd-header-left">
           <div className="sd-title-row">
-            <h1 className="sd-page-title">Sales &amp; Dispatch Logistics Hub</h1>
+            <h1 className="sd-page-title">Sales &amp; Dispatch</h1>
             <span className="sd-badge-blue">{liveOrders.length} Open Orders</span>
           </div>
           <p className="sd-page-subtitle">
-            End-to-end sales booking, inventory allocation, delivery challan generation, and dispatch tracking.
+            Sales booking, inventory allocation, delivery challan generation, and dispatch tracking.
           </p>
         </div>
 
@@ -340,47 +350,85 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
         </div>
       </div>
 
-      {/* ── Top 4 KPI Cards Grid ── */}
+      {/* ── Contextual Metric Area (No Stacked Duplicates) ── */}
       <div className="sd-top-kpis">
-        <div className="sd-kpi-card">
-          <span className="sd-kpi-title">TOTAL BOOKED REVENUE</span>
-          <div className="sd-kpi-val-row">
-            <span className="sd-kpi-num">₹{totalBookedRevenueLakhs}L</span>
-          </div>
-        </div>
+        {activeTab === 'dispatches' ? (
+          <>
+            <div className="sd-kpi-card">
+              <span className="sd-kpi-title">Executed Dispatches</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num">{liveDispatches.length}</span>
+                <span className="sd-kpi-sublabel">shipments</span>
+              </div>
+            </div>
 
-        <div className="sd-kpi-card">
-          <span className="sd-kpi-title">READY FOR DISPATCH</span>
-          <div className="sd-kpi-val-row">
-            <span className="sd-kpi-num">{totalReadyCoils.toLocaleString()}</span>
-            <span className="sd-kpi-sublabel">Coils</span>
-          </div>
-        </div>
+            <div className="sd-kpi-card sd-kpi-highlight">
+              <span className="sd-kpi-title" style={{ color: '#16a34a' }}>Quantity Delivered</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num" style={{ color: '#16a34a' }}>
+                  {liveDispatches.reduce((sum, d) => sum + (Number(d.qty) || Number(d.dispatchedQtyCoils) || 0), 0).toLocaleString()}
+                </span>
+                <span className="sd-kpi-sublabel">Coils</span>
+              </div>
+            </div>
 
-        <div className="sd-kpi-card">
-          <span className="sd-kpi-title">COMPLETED DISPATCHES</span>
-          <div className="sd-kpi-val-row">
-            <span className="sd-kpi-num">{liveDispatches.length}</span>
-            <span className="sd-kpi-sublabel">shipments</span>
-          </div>
-        </div>
+            <div className="sd-kpi-card">
+              <span className="sd-kpi-title">Dispatched Value</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num">₹{totalDispatchedValLakhs}L</span>
+              </div>
+            </div>
 
-        <div className="sd-kpi-card">
-          <span className="sd-kpi-title">DISPATCHED VALUE</span>
-          <div className="sd-kpi-val-row">
-            <span className="sd-kpi-num">₹{totalDispatchedValLakhs}L</span>
-          </div>
-        </div>
+            <div className="sd-kpi-card">
+              <span className="sd-kpi-title">Total Invoiced Revenue</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num" style={{ fontSize: '1.25rem' }}>₹{totalDispatchedValInr.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="sd-kpi-card">
+              <span className="sd-kpi-title">Booked Revenue</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num">₹{totalBookedRevenueLakhs}L</span>
+              </div>
+            </div>
+
+            <div className="sd-kpi-card">
+              <span className="sd-kpi-title">Open Orders</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num">{liveOrders.filter(o => o.status !== 'COMPLETED').length}</span>
+                <span className="sd-kpi-sublabel">pending</span>
+              </div>
+            </div>
+
+            <div className="sd-kpi-card sd-kpi-highlight">
+              <span className="sd-kpi-title" style={{ color: '#16a34a' }}>Ready for Dispatch</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num" style={{ color: '#16a34a' }}>{totalReadyCoils.toLocaleString()}</span>
+                <span className="sd-kpi-sublabel">Coils</span>
+              </div>
+            </div>
+
+            <div className="sd-kpi-card">
+              <span className="sd-kpi-title">Total Order Pipeline</span>
+              <div className="sd-kpi-val-row">
+                <span className="sd-kpi-num" style={{ fontSize: '1.25rem' }}>₹{totalBookedRevenueInr.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* ── Segmented Tab Bar ── */}
+      {/* ── Modern Underline Tab Bar ── */}
       <div className="sd-tab-bar">
         <button
           className={`sd-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
           onClick={() => setActiveTab('orders')}
         >
           <ShoppingCart size={14} />
-          Sales Orders &amp; Stock Allocation
+          <span>Sales Orders &amp; Stock Allocation</span>
           <span className="sd-tab-badge">{liveOrders.length}</span>
         </button>
 
@@ -389,7 +437,7 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
           onClick={() => setActiveTab('dispatches')}
         >
           <Truck size={14} />
-          Dispatches &amp; Delivery Challans
+          <span>Dispatches &amp; Delivery Challans</span>
           <span className="sd-tab-badge">{liveDispatches.length}</span>
         </button>
       </div>
@@ -397,73 +445,9 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       {/* ── TAB 1: Sales Orders & Stock Allocation ── */}
       {activeTab === 'orders' && (
         <div className="sd-section-card">
-          <div className="sd-section-header">
-            <div className="sd-title-group">
-              <div className="sd-title-row-inner">
-                <h2 className="sd-section-title">Sales Orders Ledger</h2>
-                <span className="sd-badge-purple">{liveOrders.length} Booked Orders</span>
-              </div>
-              <p className="sd-section-subtitle">
-                Manage customer POs, finished goods stock reservations, partial dispatches, and delivery status.
-              </p>
-            </div>
-
-            <div className="sd-header-right">
-              <button className="sd-btn-ghost" onClick={() => exportToCsv('Sales_Orders_Ledger.csv', filteredOrders)} style={{ cursor: 'pointer' }}>
-                <Download size={14} /> Export CSV
-              </button>
-              <button className="sd-btn-dark-pill" onClick={openNewSalesOrder}>
-                <Plus size={14} /> New Sales Order
-              </button>
-            </div>
-          </div>
-
-          {/* 4 Summary KPI Cards Row */}
-          <div className="sd-summary-kpi-grid">
-            <div className="sd-skpi-card">
-              <div className="sd-skpi-title">TOTAL BOOKED ORDERS</div>
-              <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val">{liveOrders.length}</span>
-              </div>
-              <div className="sd-skpi-sub">Value: ₹{totalBookedRevenueLakhs} Lakhs</div>
-            </div>
-
-            <div className="sd-skpi-card">
-              <div className="sd-skpi-title">OPEN PENDING ORDERS</div>
-              <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val sd-text-blue">{liveOrders.filter(o => o.status !== 'COMPLETED').length}</span>
-              </div>
-              <div className="sd-skpi-sub">Awaiting fulfillment / dispatch</div>
-            </div>
-
-            <div className="sd-skpi-card sd-skpi-green">
-              <div className="sd-skpi-title sd-skpi-title-green">READY TO DISPATCH</div>
-              <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val sd-text-green">
-                  {liveOrders.filter(o => {
-                    const ordQty = typeof o.orderedQtyCoils === 'number' ? o.orderedQtyCoils : (parseVal(o.orderedQty) || 0);
-                    const dispQty = typeof o.dispatchedCoils === 'number' ? o.dispatchedCoils : (typeof o.dispatchedQtyCoils === 'number' ? o.dispatchedQtyCoils : (parseVal(o.dispatched) || 0));
-                    if (o.status === 'COMPLETED' || (dispQty >= ordQty && ordQty > 0)) return false;
-                    const balQty = Math.max(0, ordQty - dispQty);
-                    const res = typeof o.reservedQtyCoils === 'number' ? Math.min(o.reservedQtyCoils, balQty) : (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : (parseVal(o.reserved) || balQty));
-                    return Number(res) > 0;
-                  }).length}
-                </span>
-              </div>
-              <div className="sd-skpi-sub">Stock reserved &amp; ready</div>
-            </div>
-
-            <div className="sd-skpi-card">
-              <div className="sd-skpi-title">TOTAL ORDER PIPELINE</div>
-              <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val">₹{totalBookedRevenueInr.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="sd-skpi-sub">Gross commercial bookings</div>
-            </div>
-          </div>
-
           {/* Filter Bar */}
           <div className="sd-filter-bar">
+
             <div className="sd-search-input-wrap">
               <Search size={14} className="sd-search-icon" />
               <input
@@ -481,11 +465,10 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
               onChange={e => setOrderStatusFilter(e.target.value)}
             >
               <option value="All">All Order Statuses</option>
-              <option value="Confirmed">Confirmed</option>
-              <option value="Reserved">Stock Reserved</option>
-              <option value="Ready">Ready to Dispatch</option>
-              <option value="Completed">Completed</option>
+              <option value="Confirmed">Confirmed / Reserved</option>
+              <option value="Ready">Ready for Dispatch</option>
               <option value="Partially">Partially Dispatched</option>
+              <option value="Completed">Completed / Dispatched</option>
             </select>
 
             <select
@@ -498,6 +481,10 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
+
+            <button className="sd-btn-ghost" onClick={() => exportToCsv('Sales_Orders_Ledger.csv', filteredOrders)} style={{ cursor: 'pointer', marginLeft: 'auto' }}>
+              <Download size={14} /> Export CSV
+            </button>
           </div>
 
           {/* Dark Header Table */}
@@ -509,11 +496,11 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                   <th>ORDER DATE ↕</th>
                   <th>CUSTOMER &amp; DESTINATION</th>
                   <th>ITEMS SUMMARY</th>
-                  <th>ORDERED QTY</th>
-                  <th>RESERVED</th>
-                  <th>DISPATCHED</th>
-                  <th>BALANCE</th>
-                  <th>ORDER VALUE ↕</th>
+                  <th style={{ textAlign: 'right' }}>ORDERED QTY</th>
+                  <th style={{ textAlign: 'right' }}>RESERVED</th>
+                  <th style={{ textAlign: 'right' }}>DISPATCHED</th>
+                  <th style={{ textAlign: 'right' }}>BALANCE</th>
+                  <th style={{ textAlign: 'right' }}>ORDER VALUE ↕</th>
                   <th>STATUS</th>
                   <th>ACTION</th>
                 </tr>
@@ -530,20 +517,20 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                       <span className="sd-id-link">{row.orderNo}</span>
                       <span className="sd-po-sub">{row.poRef}</span>
                     </td>
-                    <td className="td-date">{row.date}</td>
+                    <td className="td-date">{row.date || row.orderDate || '—'}</td>
                     <td>
                       <div className="td-cust-name">{row.customer}</div>
-                      <div className="sd-po-sub">{row.expDate}</div>
+                      {row.expDate && <div className="sd-po-sub">{row.expDate}</div>}
                     </td>
                     <td className="td-items-col">
                       <div className="sd-item-main">{row.itemSummary}</div>
                       {row.moreItems && <div className="sd-items-more">{row.moreItems}</div>}
                     </td>
-                    <td className="td-qty-bold">{row.orderedQty}</td>
-                    <td className="td-qty-blue">{row.reserved}</td>
-                    <td className="td-qty-green">{row.dispatched}</td>
-                    <td className="td-qty-orange">{row.balance}</td>
-                    <td className="td-order-val">{row.orderValue}</td>
+                    <td className="td-qty-bold" style={{ textAlign: 'right' }}>{row.orderedQty}</td>
+                    <td className="td-qty-blue" style={{ textAlign: 'right' }}>{row.reserved}</td>
+                    <td className="td-qty-green" style={{ textAlign: 'right' }}>{row.dispatched}</td>
+                    <td className="td-qty-orange" style={{ textAlign: 'right' }}>{row.balance}</td>
+                    <td className="td-order-val" style={{ textAlign: 'right' }}>{row.orderValue || row.totalValue || '—'}</td>
                     <td>
                       <span className={`sd-status-pill ${row.statusClass}`}>
                         • {row.status}
@@ -574,59 +561,6 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       {/* ── TAB 2: Dispatches & Delivery Challans ── */}
       {activeTab === 'dispatches' && (
         <div className="sd-section-card">
-          <div className="sd-section-header">
-            <div className="sd-title-group">
-              <div className="sd-title-row-inner">
-                <h2 className="sd-section-title">Dispatch &amp; Delivery Challan Registry</h2>
-                <span className="sd-badge-green">{liveDispatches.length} Outward Consignments</span>
-              </div>
-              <p className="sd-section-subtitle">
-                Generate delivery challans, GST tax invoices, E-Way bills, and transport vehicle gate passes for customer deliveries.
-              </p>
-            </div>
-
-            <div className="sd-header-right">
-              <button className="sd-btn-ghost" onClick={() => exportToCsv('Delivery_Dispatches_Ledger.csv', filteredDispatches)} style={{ cursor: 'pointer' }}>
-                <Download size={14} /> Export CSV
-              </button>
-              <button className="sd-btn-dark-pill" onClick={openDispatchChallan}>
-                <Plus size={14} /> New Dispatch Challan
-              </button>
-            </div>
-          </div>
-
-          {/* 3 Summary KPI Cards Row */}
-          <div className="sd-summary-kpi-grid">
-            <div className="sd-skpi-card">
-              <div className="sd-skpi-title">TOTAL DISPATCHES EXECUTED</div>
-              <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val">{liveDispatches.length}</span>
-              </div>
-              <div className="sd-skpi-sub">With full statutory compliance</div>
-            </div>
-
-            <div className="sd-skpi-card sd-skpi-green">
-              <div className="sd-skpi-title sd-skpi-title-green">TOTAL QUANTITY DELIVERED</div>
-              <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val sd-text-green">
-                  {liveDispatches.reduce((sum, d) => sum + (Number(d.qty) || Number(d.dispatchedQtyCoils) || 0), 0)}
-                </span>
-                <span className="sd-skpi-unit">Coils</span>
-              </div>
-              <div className="sd-skpi-sub">Dispatched to customer docks</div>
-            </div>
-
-            <div className="sd-skpi-card">
-              <div className="sd-skpi-title">TOTAL DISPATCHED VALUE</div>
-              <div className="sd-skpi-val-row">
-                <span className="sd-skpi-val">
-                  ₹{totalDispatchedValInr.toLocaleString('en-IN')}
-                </span>
-              </div>
-              <div className="sd-skpi-sub">Invoiced customer revenue</div>
-            </div>
-          </div>
-
           {/* Filter Bar */}
           <div className="sd-filter-bar">
             <div className="sd-search-input-wrap">
@@ -650,9 +584,13 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
               <option value="In Transit">In Transit</option>
               <option value="Delivered">Delivered</option>
             </select>
+
+            <button className="sd-btn-ghost" onClick={() => exportToCsv('Delivery_Dispatches_Ledger.csv', filteredDispatches)} style={{ cursor: 'pointer', marginLeft: 'auto' }}>
+              <Download size={14} /> Export CSV
+            </button>
           </div>
 
-          {/* Dark Header Table */}
+          {/* Minimalist Light Table */}
           <div className="sd-table-container">
             <table className="sd-table">
               <thead>
@@ -662,8 +600,8 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                   <th>CUSTOMER &amp; ORDER REF</th>
                   <th>DELIVERY CHALLAN</th>
                   <th>TAX INVOICE</th>
-                  <th>DISPATCHED QTY</th>
-                  <th>VALUE (₹)</th>
+                  <th style={{ textAlign: 'right' }}>DISPATCHED QTY</th>
+                  <th style={{ textAlign: 'right' }}>VALUE (₹)</th>
                   <th>TRANSPORTER &amp; VEHICLE</th>
                   <th>STATUS</th>
                   <th>PRINT DOCUMENTS</th>
@@ -683,8 +621,8 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                       <div className="inv-item-name">{row.invoiceNo || row.taxInvoice || 'INV-2026-549'}</div>
                       <div className="sd-po-sub">{row.ewayBill}</div>
                     </td>
-                    <td className="td-qty-green">{row.dispatchedQty}</td>
-                    <td className="td-order-val">{row.totalValue || row.value}</td>
+                    <td className="td-qty-green" style={{ textAlign: 'right' }}>{row.dispatchedQty}</td>
+                    <td className="td-order-val" style={{ textAlign: 'right' }}>{row.totalValue || row.value}</td>
                     <td>
                       <div className="sd-item-main">{row.vehicleNo || row.vehicle}</div>
                       <div className="sd-po-sub">{row.transporter}</div>

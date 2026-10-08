@@ -6,8 +6,8 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.68);
-  backdrop-filter: blur(3px);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,29 +24,30 @@
 .modal-dialog {
   background: #ffffff;
   border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   max-height: 90vh;
   overflow: hidden;
-  animation: dialog-in 0.2s cubic-bezier(0.34, 1.4, 0.64, 1);
+  animation: dialog-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
 }
 @keyframes dialog-in {
-  from { transform: scale(0.94) translateY(10px); opacity: 0; }
+  from { transform: scale(0.96) translateY(8px); opacity: 0; }
   to   { transform: scale(1) translateY(0); opacity: 1; }
 }
 .modal-lg { max-width: 780px; }
 .modal-md { max-width: 700px; }
 
-/* ─── Dark Header ─── */
+/* ─── Light / Modern Header ─── */
 .modal-header-dark {
-  background: #0f172a;
-  padding: 18px 22px 16px;
+  background: #ffffff;
+  padding: 20px 24px 16px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  border-bottom: 1px solid #f1f5f9;
   border-radius: 14px 14px 0 0;
   flex-shrink: 0;
 }
@@ -56,12 +57,12 @@
   gap: 12px;
 }
 .modal-header-icon {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
-  background: rgba(251, 191, 36, 0.2);
-  border: 1px solid rgba(251, 191, 36, 0.3);
-  color: #fbbf24;
+  background: #fff7ed;
+  border: 1px solid #ffedd5;
+  color: #ea580c;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -69,34 +70,37 @@
   margin-top: 2px;
 }
 .modal-title {
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #0f172a;
   margin: 0;
   line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 .modal-subtitle {
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   color: #64748b;
   margin-top: 3px;
 }
 .modal-close-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #94a3b8;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s;
+  font-size: 0.95rem;
+  transition: all 0.15s ease;
 }
 .modal-close-btn:hover {
-  background: rgba(255, 255, 255, 0.16);
-  color: #f1f5f9;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #0f172a;
 }
 
 /* ─── Modal Body ─── */
@@ -146,12 +150,12 @@
 .mform-select,
 .mform-textarea {
   width: 100%;
-  padding: 8px 11px;
-  border: 1px solid #d1d5db;
-  border-radius: 7px;
-  font-size: 0.82rem;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.8125rem;
   font-family: var(--font, 'Inter', sans-serif);
-  color: #111827;
+  color: #0f172a;
   background: #ffffff;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -161,7 +165,7 @@
 .mform-select:focus,
 .mform-textarea:focus {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 .mform-input-sm,
 .mform-select-sm {
@@ -341,25 +345,25 @@
   margin-top: 4px;
 }
 .mfooter-btn {
-  padding: 9px 20px;
-  border-radius: 7px;
-  font-size: 0.82rem;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
   border: none;
   font-family: var(--font, 'Inter', sans-serif);
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
 .mfooter-btn.cancel {
   background: transparent;
-  color: #6b7280;
+  color: #64748b;
   border: 1px solid #e2e8f0;
 }
-.mfooter-btn.cancel:hover { background: #f8fafc; color: #374151; }
-.mfooter-btn.confirm { background: #0f172a; color: #f8fafc; }
+.mfooter-btn.cancel:hover { background: #f8fafc; color: #0f172a; border-color: #cbd5e1; }
+.mfooter-btn.confirm { background: #0f172a; color: #ffffff; }
 .mfooter-btn.confirm:hover { background: #1e293b; }
-.mfooter-btn.green-btn { background: #059669; color: #ffffff; }
-.mfooter-btn.green-btn:hover { background: #047857; }
+.mfooter-btn.green-btn { background: #16a34a; color: #ffffff; }
+.mfooter-btn.green-btn:hover { background: #15803d; }
 
 /* Dispatch Challan Item Box */
 .dispatch-items-box {
@@ -432,15 +436,34 @@
 
 /* Modal Responsive */
 @media (max-width: 680px) {
-  .modal-overlay { padding: 10px; align-items: flex-end; }
-  .modal-dialog  { border-radius: 14px 14px 0 0; max-height: 92vh; }
-  .mform-col-3 { grid-template-columns: 1fr 1fr; }
+  .modal-overlay {
+    padding: 8px;
+    align-items: flex-end;
+  }
+  .modal-dialog {
+    border-radius: 16px 16px 0 0;
+    max-height: 94vh;
+    width: 100%;
+  }
+  .modal-header-dark {
+    padding: 16px 18px 12px;
+  }
+  .modal-body {
+    padding: 16px 18px;
+    gap: 12px;
+  }
+  .mform-col-3 { grid-template-columns: 1fr; }
   .mform-col-2 { grid-template-columns: 1fr; }
   .mform-col-2-auto { grid-template-columns: 1fr; }
-  .mform-line-grid { grid-template-columns: 1fr 1fr; }
-  .mform-summary-box { min-width: unset; }
-}
-@media (max-width: 480px) {
-  .mform-col-3 { grid-template-columns: 1fr; }
   .mform-line-grid { grid-template-columns: 1fr; }
+  .mform-summary-box { min-width: unset; width: 100%; }
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .mfooter-btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
 }

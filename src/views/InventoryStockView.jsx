@@ -521,87 +521,223 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       </div>
 
-      {/* ── Top 4 KPI Cards Grid ── */}
+      {/* ── Contextual Metric Area (No Stacked Duplicates) ── */}
       <div className="inv-top-kpis">
-        <div
-          className={`inv-kpi-card ${activeTab === 'rm' ? 'active-kpi' : ''}`}
-          onClick={() => setActiveTab('rm')}
-          style={{ cursor: 'pointer' }}
-          title="Switch to Raw Materials tab"
-        >
-          <div className="inv-kpi-card-header">
-            <span className="inv-kpi-title">RAW MATERIAL (IN FACTORY)</span>
-            <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
-          </div>
-          <div className="inv-kpi-val-row">
-            <span className="inv-kpi-num">{rmStock.toLocaleString()}</span>
-            <span className="inv-kpi-sublabel">KG</span>
-          </div>
-          <div className="inv-kpi-sub">₹{totalRmValuationLakhs}L Value</div>
-        </div>
+        {activeTab === 'fg' ? (
+          <>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Total Physical Stock</span>
+                <div className="inv-kpi-icon inv-icon-green"><Package size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">{fgStock.toLocaleString()}</span>
+                <span className="inv-kpi-sublabel">Units</span>
+              </div>
+              <div className="inv-kpi-sub">Stored in warehouse</div>
+            </div>
 
-        <div
-          className={`inv-kpi-card ${activeTab === 'fg' ? 'active-kpi' : ''}`}
-          onClick={() => setActiveTab('fg')}
-          style={{ cursor: 'pointer' }}
-          title="Switch to Finished Goods tab"
-        >
-          <div className="inv-kpi-card-header">
-            <span className="inv-kpi-title">FINISHED GOODS STOCK</span>
-            <div className="inv-kpi-icon inv-icon-green"><Package size={16} /></div>
-          </div>
-          <div className="inv-kpi-val-row">
-            <span className="inv-kpi-num">{fgStock.toLocaleString()}</span>
-            <span className="inv-kpi-sublabel">Units</span>
-          </div>
-          <div className="inv-kpi-sub inv-text-green">
-            {liveFgList.reduce((a, b) => a + Math.max(0, (Number(b.stockQty) || 0) - (Number(b.reservedQty) || 0)), 0)} Free / {liveFgList.reduce((a, b) => a + (Number(b.reservedQty) || 0), 0)} Reserved
-          </div>
-        </div>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Reserved for Orders</span>
+                <div className="inv-kpi-icon inv-icon-blue"><Package size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-blue">
+                  {displayFgList.reduce((a, b) => a + b.reservedNum, 0).toLocaleString()}
+                </span>
+                <span className="inv-kpi-sublabel">Units</span>
+              </div>
+              <div className="inv-kpi-sub">Committed for customer POs</div>
+            </div>
 
-        <div
-          className={`inv-kpi-card ${activeTab === 'movements' ? 'active-kpi' : ''}`}
-          onClick={() => setActiveTab('movements')}
-          style={{ cursor: 'pointer' }}
-          title="Switch to Stock Movements Log tab"
-        >
-          <div className="inv-kpi-card-header">
-            <span className="inv-kpi-title">STOCK MOVEMENTS LOG</span>
-            <div className="inv-kpi-icon inv-icon-purple"><History size={16} /></div>
-          </div>
-          <div className="inv-kpi-val-row">
-            <span className="inv-kpi-num">{liveMovements.length}</span>
-            <span className="inv-kpi-sublabel">entries</span>
-          </div>
-          <div className="inv-kpi-sub">Audit Trail Active</div>
-        </div>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Available Free Stock</span>
+                <div className="inv-kpi-icon inv-icon-green"><Package size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-green">
+                  {displayFgList.reduce((a, b) => a + b.freeStockNum, 0).toLocaleString()}
+                </span>
+                <span className="inv-kpi-sublabel">Units</span>
+              </div>
+              <div className="inv-kpi-sub inv-text-green">Ready to sell immediately</div>
+            </div>
 
-        <div
-          className={`inv-kpi-card ${activeTab === 'traceability' ? 'active-kpi' : ''}`}
-          onClick={() => setActiveTab('traceability')}
-          style={{ cursor: 'pointer' }}
-          title="Switch to Batch Traceability tab"
-        >
-          <div className="inv-kpi-card-header">
-            <span className="inv-kpi-title">BATCH TRACEABILITY</span>
-            <div className="inv-kpi-icon inv-icon-indigo"><GitBranch size={16} /></div>
-          </div>
-          <div className="inv-kpi-val-row">
-            <span className="inv-kpi-num">100%</span>
-            <span className="inv-kpi-sublabel">traceable</span>
-          </div>
-          <div className="inv-kpi-sub inv-text-blue">End-to-End Genealogy</div>
-        </div>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Inventory Valuation</span>
+                <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">₹{totalFgValuationLakhs}L</span>
+              </div>
+              <div className="inv-kpi-sub">₹{totalFgValuationInr.toLocaleString()}</div>
+            </div>
+          </>
+        ) : activeTab === 'movements' ? (
+          <>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Stock Movements Log</span>
+                <div className="inv-kpi-icon inv-icon-purple"><History size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">{liveMovements.length}</span>
+                <span className="inv-kpi-sublabel">entries</span>
+              </div>
+              <div className="inv-kpi-sub">Audit trail active</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Production Inwards</span>
+                <div className="inv-kpi-icon inv-icon-green"><Package size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-green">
+                  {liveMovements.filter(m => m.type === 'Production' || m.inward).length}
+                </span>
+                <span className="inv-kpi-sublabel">events</span>
+              </div>
+              <div className="inv-kpi-sub">Manufacturing receipts</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Dispatch Outwards</span>
+                <div className="inv-kpi-icon inv-icon-orange"><Truck size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-orange">
+                  {liveMovements.filter(m => m.type === 'Dispatch' || m.outward).length}
+                </span>
+                <span className="inv-kpi-sublabel">events</span>
+              </div>
+              <div className="inv-kpi-sub">Customer deliveries</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Audit Status</span>
+                <div className="inv-kpi-icon inv-icon-blue"><CheckCircle2 size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">100%</span>
+                <span className="inv-kpi-sublabel">logged</span>
+              </div>
+              <div className="inv-kpi-sub inv-text-green">Real-time ledger synced</div>
+            </div>
+          </>
+        ) : activeTab === 'traceability' ? (
+          <>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Batch Genealogy</span>
+                <div className="inv-kpi-icon inv-icon-indigo"><GitBranch size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">100%</span>
+                <span className="inv-kpi-sublabel">traceable</span>
+              </div>
+              <div className="inv-kpi-sub inv-text-blue">End-to-End Genealogy</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Active SKU Pipeline</span>
+                <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">{displayRmList.length + displayFgList.length}</span>
+                <span className="inv-kpi-sublabel">SKUs</span>
+              </div>
+              <div className="inv-kpi-sub">RM + Finished Goods</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Statutory Compliance</span>
+                <div className="inv-kpi-icon inv-icon-green"><CheckCircle2 size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num" style={{ fontSize: '1.25rem' }}>Rule 55</span>
+              </div>
+              <div className="inv-kpi-sub">CGST Job Work Verified</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Total Valuation</span>
+                <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">₹{overallValuationLakhs}L</span>
+              </div>
+              <div className="inv-kpi-sub">Factory inventory asset</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Available in Factory</span>
+                <div className="inv-kpi-icon inv-icon-green"><Layers size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-green">{rmStock.toLocaleString()}</span>
+                <span className="inv-kpi-sublabel">KG</span>
+              </div>
+              <div className="inv-kpi-sub">Ready for extrusion / JW</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Outside at Job Work</span>
+                <div className="inv-kpi-icon inv-icon-orange"><Package size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-orange">{jobWorkStock.toLocaleString()}</span>
+                <span className="inv-kpi-sublabel">KG</span>
+              </div>
+              <div className="inv-kpi-sub">In process at vendor plants</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Total Material Balance</span>
+                <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">{(rmStock + jobWorkStock).toLocaleString()}</span>
+                <span className="inv-kpi-sublabel">KG</span>
+              </div>
+              <div className="inv-kpi-sub">Physical + Outside</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Total Valuation</span>
+                <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">₹{totalRmValuationLakhs}L</span>
+              </div>
+              <div className="inv-kpi-sub">₹{totalRmValuationInr.toLocaleString()}</div>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* ── Segmented Tab Bar ── */}
+      {/* ── Modern Underline Tab Bar ── */}
       <div className="inv-tab-bar">
         <button
           className={`inv-tab-btn ${activeTab === 'rm' ? 'active' : ''}`}
           onClick={() => setActiveTab('rm')}
         >
           <Layers size={14} />
-          Raw Materials (RM)
+          <span>Raw Materials (RM)</span>
           <span className="inv-tab-badge">{displayRmList.length}</span>
         </button>
 
@@ -610,7 +746,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           onClick={() => setActiveTab('fg')}
         >
           <Package size={14} />
-          Finished Goods (FG)
+          <span>Finished Goods (FG)</span>
           <span className="inv-tab-badge-green">{displayFgList.length}</span>
         </button>
 
@@ -619,7 +755,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           onClick={() => setActiveTab('movements')}
         >
           <History size={14} />
-          Stock Movements Ledger
+          <span>Stock Movements</span>
         </button>
 
         <button
@@ -627,7 +763,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           onClick={() => setActiveTab('traceability')}
         >
           <GitBranch size={14} />
-          Batch Traceability Explorer
+          <span>Batch Traceability</span>
         </button>
       </div>
 
@@ -648,17 +784,17 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             {/* Quick Action Buttons */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <button 
-                className="inv-btn-dark-pill" 
+                className="inv-btn-dark" 
                 onClick={() => setShowRmInwardModal(true)}
-                style={{ background: '#16a34a', color: '#ffffff', borderColor: '#16a34a' }}
+                style={{ background: '#16a34a', color: '#ffffff' }}
                 title="Record Raw Material Inward with Gross/Tare Deductions"
               >
                 <Plus size={14} /> Inward RM (GRN)
               </button>
               <button 
-                className="inv-btn-dark-pill" 
+                className="inv-btn-dark" 
                 onClick={() => setShowIssueFactoryModal(true)}
-                style={{ background: '#7c3aed', color: '#ffffff', borderColor: '#7c3aed' }}
+                style={{ background: '#7c3aed', color: '#ffffff' }}
                 title="Issue Material to Factory Extrusion Plant"
               >
                 <Plus size={14} /> Issue to Factory
@@ -666,115 +802,75 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             </div>
           </div>
 
-          {/* 5 Summary KPI Row */}
-          <div className="inv-summary-kpi-grid">
-            <div className="inv-skpi-card">
-              <div className="inv-skpi-title">TOTAL MATERIAL BALANCE</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val">{(rmStock + jobWorkStock).toLocaleString()}</span>
-                <span className="inv-skpi-unit">KG</span>
-              </div>
-              <div className="inv-skpi-sub">Physical + Outside</div>
-            </div>
-
-            <div className="inv-skpi-card inv-skpi-green">
-              <div className="inv-skpi-title inv-skpi-title-green">AVAILABLE IN FACTORY</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val inv-text-green">{rmStock.toLocaleString()}</span>
-                <span className="inv-skpi-unit">KG</span>
-              </div>
-              <div className="inv-skpi-sub">Ready for Extrusion / JW</div>
-            </div>
-
-            <div className="inv-skpi-card inv-skpi-orange">
-              <div className="inv-skpi-title inv-skpi-title-orange">OUTSIDE AT JOB WORK</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val inv-text-orange">{jobWorkStock.toLocaleString()}</span>
-                <span className="inv-skpi-unit">KG</span>
-              </div>
-              <div className="inv-skpi-sub">In process at vendor plants</div>
-            </div>
-
-            <div className="inv-skpi-card">
-              <div className="inv-skpi-title">TOTAL INVENTORY VALUATION</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val">₹{totalRmValuationLakhs}</span>
-                <span className="inv-skpi-unit">Lakhs</span>
-              </div>
-              <div className="inv-skpi-sub">₹{totalRmValuationInr.toLocaleString()}</div>
-            </div>
-
-            <div className="inv-skpi-card">
-              <div className="inv-skpi-title">LOW STOCK REORDER ALERTS</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val inv-text-red">{liveRmList.filter(r => (Number(r.availFactory) || 0) <= 1000).length}</span>
-                <span className="inv-skpi-unit">Items</span>
-              </div>
-              <div className="inv-skpi-sub inv-text-red">Below buffer safety limits</div>
-            </div>
-          </div>
-
           {/* Sub-view Selector Tabs for RM Module */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0 10px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', margin: '14px 0 10px 0', background: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <button
               onClick={() => setRmSubView('ledger')}
               style={{
-                background: rmSubView === 'ledger' ? '#0f172a' : '#f1f5f9',
-                color: rmSubView === 'ledger' ? '#ffffff' : '#475569',
+                background: rmSubView === 'ledger' ? '#ffffff' : 'transparent',
+                color: rmSubView === 'ledger' ? '#0f172a' : '#64748b',
                 border: 'none',
                 borderRadius: '6px',
                 padding: '6px 14px',
                 fontSize: '0.8rem',
-                fontWeight: '700',
-                cursor: 'pointer'
+                fontWeight: rmSubView === 'ledger' ? '600' : '500',
+                boxShadow: rmSubView === 'ledger' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
               }}
             >
-              📊 RM Stock Ledger
+              RM Stock Ledger
             </button>
             <button
               onClick={() => setRmSubView('inward')}
               style={{
-                background: rmSubView === 'inward' ? '#16a34a' : '#f1f5f9',
-                color: rmSubView === 'inward' ? '#ffffff' : '#475569',
+                background: rmSubView === 'inward' ? '#ffffff' : 'transparent',
+                color: rmSubView === 'inward' ? '#16a34a' : '#64748b',
                 border: 'none',
                 borderRadius: '6px',
                 padding: '6px 14px',
                 fontSize: '0.8rem',
-                fontWeight: '700',
-                cursor: 'pointer'
+                fontWeight: rmSubView === 'inward' ? '600' : '500',
+                boxShadow: rmSubView === 'inward' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
               }}
             >
-              📥 Inward Register (GRN) ({liveRmInwards.length})
+              Inward Register ({liveRmInwards.length})
             </button>
             <button
               onClick={() => setRmSubView('issue')}
               style={{
-                background: rmSubView === 'issue' ? '#7c3aed' : '#f1f5f9',
-                color: rmSubView === 'issue' ? '#ffffff' : '#475569',
+                background: rmSubView === 'issue' ? '#ffffff' : 'transparent',
+                color: rmSubView === 'issue' ? '#7c3aed' : '#64748b',
                 border: 'none',
                 borderRadius: '6px',
                 padding: '6px 14px',
                 fontSize: '0.8rem',
-                fontWeight: '700',
-                cursor: 'pointer'
+                fontWeight: rmSubView === 'issue' ? '600' : '500',
+                boxShadow: rmSubView === 'issue' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
               }}
             >
-              🏭 Issue to Factory Register ({liveRmIssues.length})
+              Factory Issues ({liveRmIssues.length})
             </button>
             <button
               onClick={() => setRmSubView('comp')}
               style={{
-                background: rmSubView === 'comp' ? '#ea580c' : '#f1f5f9',
-                color: rmSubView === 'comp' ? '#ffffff' : '#475569',
+                background: rmSubView === 'comp' ? '#ffffff' : 'transparent',
+                color: rmSubView === 'comp' ? '#ea580c' : '#64748b',
                 border: 'none',
                 borderRadius: '6px',
                 padding: '6px 14px',
                 fontSize: '0.8rem',
-                fontWeight: '700',
-                cursor: 'pointer'
+                fontWeight: rmSubView === 'comp' ? '600' : '500',
+                boxShadow: rmSubView === 'comp' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
               }}
             >
-              ⚖️ Stock Reconciliation
+              Stock Reconciliation
             </button>
           </div>
 
@@ -894,15 +990,14 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     <th>GRN NO.</th>
                     <th>CHALLAN NO.</th>
                     <th>DATE</th>
-                    <th>CHL. NO. @ PARTY NAME</th>
                     <th>SUPPLIER NAME</th>
                     <th>ITEM NAME</th>
                     <th>GRADE</th>
-                    <th style={{ textAlign: 'right' }}>GROSS WEIGHT (G. WGHT.)</th>
+                    <th style={{ textAlign: 'right' }}>GROSS WEIGHT</th>
                     <th style={{ textAlign: 'right' }}>NO. OF ARTICLES</th>
                     <th>ARTICLE TYPE</th>
-                    <th style={{ textAlign: 'right' }}>ARTICLE WEIGHT (ART. WGHT.)</th>
-                    <th style={{ textAlign: 'right' }}>NET WEIGHT (N. WGHT.)</th>
+                    <th style={{ textAlign: 'right' }}>ARTICLE WEIGHT</th>
+                    <th style={{ textAlign: 'right' }}>NET WEIGHT</th>
                     <th>RECEIVED BY</th>
                     <th>REMARKS</th>
                   </tr>
@@ -910,7 +1005,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 <tbody>
                   {filteredRmInwards.length === 0 ? (
                     <tr>
-                      <td colSpan="14" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                      <td colSpan="13" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                         No Raw Material Inward records found. Click <strong>+ Inward RM (GRN)</strong> to record your first polymer receipt.
                       </td>
                     </tr>
@@ -920,9 +1015,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                         <td className="td-code" style={{ fontWeight: '700', color: '#16a34a' }}>{inw.grnNo}</td>
                         <td>{inw.challanNo || '-'}</td>
                         <td>{inw.date}</td>
-                        <td style={{ fontSize: '0.78rem', color: '#475569', fontWeight: '600' }}>
-                          {inw.challanNo ? `${inw.challanNo} @ ${inw.supplierName}` : `- @ ${inw.supplierName}`}
-                        </td>
                         <td style={{ fontWeight: '600' }}>{inw.supplierName}</td>
                         <td>{inw.itemName}</td>
                         <td>
@@ -1094,52 +1186,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               </p>
             </div>
 
-            <button className="inv-btn-dark-pill" onClick={() => setShowAddProductModal(true)}>
-              <Plus size={14} /> Add New Product SKU
+            <button className="inv-btn-dark" onClick={() => setShowAddProductModal(true)}>
+              <Plus size={14} /> Add Product SKU
             </button>
-          </div>
-
-          {/* 4 Summary Cards Row */}
-          <div className="inv-summary-kpi-grid">
-            <div className="inv-skpi-card">
-              <div className="inv-skpi-title">TOTAL PHYSICAL STOCK</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val">{fgStock.toLocaleString()}</span>
-                <span className="inv-skpi-unit">Units</span>
-              </div>
-              <div className="inv-skpi-sub">Stored in factory warehouse</div>
-            </div>
-
-            <div className="inv-skpi-card">
-              <div className="inv-skpi-title">RESERVED FOR ORDERS</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val inv-text-blue">
-                  {displayFgList.reduce((a, b) => a + b.reservedNum, 0).toLocaleString()}
-                </span>
-                <span className="inv-skpi-unit">Units</span>
-              </div>
-              <div className="inv-skpi-sub">Committed against Sales Orders</div>
-            </div>
-
-            <div className="inv-skpi-card inv-skpi-green">
-              <div className="inv-skpi-title inv-skpi-title-green">AVAILABLE FREE STOCK</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val inv-text-green">
-                  {displayFgList.reduce((a, b) => a + b.freeStockNum, 0).toLocaleString()}
-                </span>
-                <span className="inv-skpi-unit">Units</span>
-              </div>
-              <div className="inv-skpi-sub">Available to sell immediately</div>
-            </div>
-
-            <div className="inv-skpi-card">
-              <div className="inv-skpi-title">INVENTORY VALUATION</div>
-              <div className="inv-skpi-val-row">
-                <span className="inv-skpi-val">₹{totalFgValuationLakhs}</span>
-                <span className="inv-skpi-unit">Lakhs</span>
-              </div>
-              <div className="inv-skpi-sub">₹{totalFgValuationInr.toLocaleString()}</div>
-            </div>
           </div>
 
           {/* Filter Bar */}

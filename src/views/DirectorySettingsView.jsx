@@ -249,51 +249,61 @@ export default function DirectorySettingsView() {
       {/* ── Page Header ── */}
       <div className="ds-page-header">
         <div>
-          <h1 className="ds-page-title">Directory, Rate Masters &amp; System Configuration</h1>
+          <h1 className="ds-page-title">Directory &amp; Master Configuration</h1>
           <p className="ds-page-subtitle">
-            Maintain Job Work Rate Masters, JW Value Masters, packaging tare standards, vendors, wholesale customers, and company profile.
+            Maintain supplier rates, valuation codes, tare standards, contacts directory, and plant profile.
           </p>
         </div>
+      </div>
 
-        {/* Tab Navigation */}
-        <div className="ds-tabs-row">
-          <button
-            className={`ds-tab-btn ${activeTab === 'vendors' ? 'active' : ''}`}
-            onClick={() => setActiveTab('vendors')}
-          >
-            Supplier Master (Vendors)
-          </button>
-          <button
-            className={`ds-tab-btn ${activeTab === 'rateMaster' ? 'active' : ''}`}
-            onClick={() => setActiveTab('rateMaster')}
-          >
-            JW Rate Master
-          </button>
-          <button
-            className={`ds-tab-btn ${activeTab === 'valueMaster' ? 'active' : ''}`}
-            onClick={() => setActiveTab('valueMaster')}
-          >
-            JW Value Master
-          </button>
-          <button
-            className={`ds-tab-btn ${activeTab === 'miscMaster' ? 'active' : ''}`}
-            onClick={() => setActiveTab('miscMaster')}
-          >
-            Misc Master (Tare &amp; Personnel)
-          </button>
-          <button
-            className={`ds-tab-btn ${activeTab === 'customers' ? 'active' : ''}`}
-            onClick={() => setActiveTab('customers')}
-          >
-            Customers
-          </button>
-          <button
-            className={`ds-tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            ERP Settings
-          </button>
-        </div>
+      {/* ── Tabs Bar ── */}
+      <div className="ds-tabs-bar">
+        <button
+          className={`ds-tab-btn ${activeTab === 'vendors' ? 'active' : ''}`}
+          onClick={() => setActiveTab('vendors')}
+        >
+          <Building size={14} />
+          Supplier Master
+          <span className="ds-tab-count">{filteredVendors.length}</span>
+        </button>
+        <button
+          className={`ds-tab-btn ${activeTab === 'rateMaster' ? 'active' : ''}`}
+          onClick={() => setActiveTab('rateMaster')}
+        >
+          <Tag size={14} />
+          JW Rate Master
+          <span className="ds-tab-count">{filteredRates.length}</span>
+        </button>
+        <button
+          className={`ds-tab-btn ${activeTab === 'valueMaster' ? 'active' : ''}`}
+          onClick={() => setActiveTab('valueMaster')}
+        >
+          <DollarSign size={14} />
+          JW Value Master
+          <span className="ds-tab-count">{filteredValueMasters.length}</span>
+        </button>
+        <button
+          className={`ds-tab-btn ${activeTab === 'miscMaster' ? 'active' : ''}`}
+          onClick={() => setActiveTab('miscMaster')}
+        >
+          <Package size={14} />
+          Tare &amp; Signatories
+        </button>
+        <button
+          className={`ds-tab-btn ${activeTab === 'customers' ? 'active' : ''}`}
+          onClick={() => setActiveTab('customers')}
+        >
+          <Users size={14} />
+          Customers
+          <span className="ds-tab-count">{filteredCustomers.length}</span>
+        </button>
+        <button
+          className={`ds-tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          <ShieldCheck size={14} />
+          ERP Settings
+        </button>
       </div>
 
       {/* ── TAB 1: Processing Vendors ── */}
@@ -310,13 +320,13 @@ export default function DirectorySettingsView() {
                 onChange={e => setVendorSearch(e.target.value)}
               />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span className="ds-records-count">Showing {filteredVendors.length} records</span>
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('Vendors_Directory.csv', filteredVendors)} style={{ cursor: 'pointer' }}>
-                <Download size={14} /> Export CSV
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="ds-records-count">{filteredVendors.length} records</span>
+              <button className="ds-btn-ghost" onClick={() => exportToCsv('Vendors_Directory.csv', filteredVendors)}>
+                <Download size={13} /> Export CSV
               </button>
-              <button className="inv-btn-dark-pill" onClick={() => setShowAddVendorModal(true)}>
-                <Plus size={14} /> Add New Vendor
+              <button className="ds-btn-primary" onClick={() => setShowAddVendorModal(true)}>
+                <Plus size={13} /> Add Vendor
               </button>
             </div>
           </div>
@@ -376,13 +386,13 @@ export default function DirectorySettingsView() {
                 onChange={e => setRateSearch(e.target.value)}
               />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span className="ds-records-count">Showing {filteredRates.length} rates</span>
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('JW_Rate_Master.csv', filteredRates)} style={{ cursor: 'pointer' }}>
-                <Download size={14} /> Export CSV
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="ds-records-count">{filteredRates.length} rates</span>
+              <button className="ds-btn-ghost" onClick={() => exportToCsv('JW_Rate_Master.csv', filteredRates)}>
+                <Download size={13} /> Export CSV
               </button>
-              <button className="inv-btn-dark-pill" onClick={() => setShowAddRateModal(true)}>
-                <Plus size={14} /> Add Rate Contract
+              <button className="ds-btn-primary" onClick={() => setShowAddRateModal(true)}>
+                <Plus size={13} /> Add Rate Contract
               </button>
             </div>
           </div>
@@ -444,13 +454,13 @@ export default function DirectorySettingsView() {
                 onChange={e => setValueSearch(e.target.value)}
               />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span className="ds-records-count">Showing {filteredValueMasters.length} valuation entries</span>
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('JW_Value_Master.csv', filteredValueMasters)} style={{ cursor: 'pointer' }}>
-                <Download size={14} /> Export CSV
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="ds-records-count">{filteredValueMasters.length} valuation entries</span>
+              <button className="ds-btn-ghost" onClick={() => exportToCsv('JW_Value_Master.csv', filteredValueMasters)}>
+                <Download size={13} /> Export CSV
               </button>
-              <button className="inv-btn-dark-pill" onClick={() => setShowAddValueModal(true)}>
-                <Plus size={14} /> Add Valuation Entry
+              <button className="ds-btn-primary" onClick={() => setShowAddValueModal(true)}>
+                <Plus size={13} /> Add Valuation Entry
               </button>
             </div>
           </div>
@@ -765,13 +775,13 @@ export default function DirectorySettingsView() {
                 onChange={e => setCustomerSearch(e.target.value)}
               />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span className="ds-records-count">Showing {filteredCustomers.length} records</span>
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('Customers_Directory.csv', filteredCustomers)} style={{ cursor: 'pointer' }}>
-                <Download size={14} /> Export CSV
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="ds-records-count">{filteredCustomers.length} records</span>
+              <button className="ds-btn-ghost" onClick={() => exportToCsv('Customers_Directory.csv', filteredCustomers)}>
+                <Download size={13} /> Export CSV
               </button>
-              <button className="inv-btn-dark-pill" onClick={() => setShowAddCustomerModal(true)}>
-                <Plus size={14} /> Add New Customer
+              <button className="ds-btn-primary" onClick={() => setShowAddCustomerModal(true)}>
+                <Plus size={13} /> Add Customer
               </button>
             </div>
           </div>

@@ -29,6 +29,7 @@ export function WorkflowProvider({ children }) {
   const [completedSteps, setCompletedSteps] = useState([]);
   const [lastActionLog, setLastActionLog] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Firestore live state snapshots
   const [rmList, setRmList] = useState([]);
@@ -309,6 +310,8 @@ export function WorkflowProvider({ children }) {
         simulatedDispatches: dispatchList,
         globalSearch,
         setGlobalSearch,
+        mobileMenuOpen,
+        setMobileMenuOpen,
         executeStep,
         runFullLifecycle,
         resetState

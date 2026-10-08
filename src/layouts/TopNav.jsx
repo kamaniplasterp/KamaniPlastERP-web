@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useWorkflow } from '../context/WorkflowContext';
 import {
-  Search, RotateCcw, FlaskConical, Plus, Bell, LogOut
+  Search, RotateCcw, FlaskConical, Plus, Bell, LogOut, Menu
 } from 'lucide-react';
 
 export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) {
   const { user, logout } = useAuth();
-  const { globalSearch, setGlobalSearch } = useWorkflow();
+  const { globalSearch, setGlobalSearch, setMobileMenuOpen } = useWorkflow();
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
   const username = user?.displayName || user?.email?.split('@')[0] || 'Administrator';
@@ -47,6 +47,17 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
   return (
     <header className="erp-topnav">
+      {/* Mobile Hamburger Toggle Button */}
+      <button 
+        type="button"
+        className="topnav-mobile-menu-btn" 
+        onClick={() => setMobileMenuOpen && setMobileMenuOpen(true)}
+        title="Open navigation menu"
+        aria-label="Open menu"
+      >
+        <Menu size={18} />
+      </button>
+
       {/* Search */}
       <div className="topnav-search">
         <Search size={14} className="search-icon" />
@@ -64,17 +75,13 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
       {/* Right Actions */}
       <div className="topnav-actions">
-        <button className="tnav-btn primary" onClick={onNewJobWork}>
-          <Plus size={14} />
-          <span>New Job Work</span>
-        </button>
+        {/* Workspace / Plant Indicator */}
+        <div className="topnav-plant-pill" title="Connected Manufacturing Plant: Rajkot GIDC">
+          <span className="plant-live-dot" />
+          <span className="plant-pill-name">Plant 1 (Rajkot GIDC)</span>
+        </div>
 
-        <button className="tnav-btn dark" onClick={onSalesOrder}>
-          <Plus size={14} />
-          <span>Sales Order</span>
-        </button>
-
-        <button className="tnav-icon-btn notif-btn">
+        <button className="tnav-icon-btn notif-btn" title="System Notifications">
           <Bell size={16} />
           <span className="notif-dot" />
         </button>
@@ -85,7 +92,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
             <span className="profile-role">Administrator</span>
           </div>
           <div className="profile-avatar">{initials}</div>
-          <LogOut size={14} style={{ color: '#ef4444', marginLeft: '4px' }} />
+          <LogOut size={14} style={{ color: '#94a3b8', marginLeft: '4px' }} />
         </button>
       </div>
     </header>

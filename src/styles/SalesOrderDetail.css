@@ -116,10 +116,10 @@
 }
 .so-kpi-card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 16px 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  border: 1px solid #f1f5f9;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -247,21 +247,21 @@
 .so-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.76rem;
+  font-size: 0.8125rem;
 }
 .so-table th {
   text-align: left;
-  font-size: 0.64rem;
-  font-weight: 800;
+  font-size: 0.68rem;
+  font-weight: 600;
   letter-spacing: 0.05em;
   color: #64748b;
   text-transform: uppercase;
-  padding: 8px 12px 8px 0;
-  border-bottom: 1px solid #e2e8f0;
+  padding: 12px 14px 12px 0;
+  border-bottom: 1px solid #f1f5f9;
 }
 .so-table td {
-  padding: 12px 12px 12px 0;
-  border-bottom: 1px solid #f8fafc;
+  padding: 14px 14px 14px 0;
+  border-bottom: 1px solid #f1f5f9;
   color: #334155;
   vertical-align: middle;
 }
