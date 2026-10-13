@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react';
 import { X, Package, Calculator, Truck, FileText, CheckCircle2 } from 'lucide-react';
-import { RM_ITEM_NAMES, RM_GRADES, RM_SUPPLIERS, recordRmInward } from '../api/inventory.api';
+import { 
+  RM_ITEM_NAMES, 
+  RM_GRADES, 
+  RM_SUPPLIERS, 
+  recordRmInward,
+  subscribeRawMaterials 
+} from '../api/inventory.api';
 import { ARTICLE_TARE_DEFAULTS } from '../api/jobwork.api';
 import { 
   subscribePersonnel, 
   subscribeTareStandards, 
+  subscribeVendors,
   DEFAULT_PERSONNEL, 
   DEFAULT_TARE_STANDARDS 
 } from '../api/directory.api';
@@ -17,13 +24,19 @@ function today() {
 export default function RawMaterialInwardModal({ onClose, onSaved }) {
   const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
+  const [liveVendors, setLiveVendors] = useState([]);
+  const [liveMaterials, setLiveMaterials] = useState([]);
 
   useEffect(() => {
     const unsubP = subscribePersonnel(setPersonnelList);
     const unsubT = subscribeTareStandards(setTareStandards);
+    const unsubV = subscribeVendors(setLiveVendors);
+    const unsubM = subscribeRawMaterials(setLiveMaterials);
     return () => {
       unsubP();
       unsubT();
+      unsubV();
+      unsubM();
     };
   }, []);
 
@@ -179,9 +192,15 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
                 onChange={e => set('supplierName', e.target.value)}
                 required
               >
-                {RM_SUPPLIERS.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+                {liveVendors.length > 0 ? (
+                  liveVendors.map(v => (
+                    <option key={v.id || v.name} value={v.name || v.id}>{v.name || v.id}</option>
+                  ))
+                ) : (
+                  RM_SUPPLIERS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))
+                )}
               </select>
             </div>
             <div className="mform-field">
@@ -189,11 +208,20 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
               <input
                 type="text"
                 className="mform-input"
+                list="live-rm-items-list"
                 placeholder="e.g. GRANUALS-HDPE"
                 value={form.itemName}
                 onChange={e => set('itemName', e.target.value)}
                 required
               />
+              <datalist id="live-rm-items-list">
+                {liveMaterials.map(m => (
+                  <option key={m.id || m.name} value={m.name || m.itemCode || ''} />
+                ))}
+                {RM_ITEM_NAMES.map(name => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </div>
             <div className="mform-field">
               <label className="mform-label">Grade <span className="req">*</span></label>

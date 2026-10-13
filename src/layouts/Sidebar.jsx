@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useWorkflow } from '../context/WorkflowContext';
 import {
   LayoutDashboard, Briefcase, Package, Truck, BookUser,
-  FlaskConical, ChevronLeft, ChevronRight, Circle, LogOut, X
+  FlaskConical, ChevronLeft, ChevronRight, Circle, LogOut, X, Cog
 } from 'lucide-react';
 
 const navItems = [
@@ -38,6 +38,13 @@ const navItems = [
         sublabel: 'Orders, Allocation & Challans',
         icon: Truck,
         badge: { count: 0, type: 'orders' },
+      },
+      {
+        id: 'processMasters',
+        label: 'Process & Plant Masters',
+        sublabel: 'Processes, Godowns & Matrix',
+        icon: Cog,
+        badge: null,
       },
       {
         id: 'directory',
@@ -86,6 +93,8 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
       navigate('/inventory');
     } else if (itemId === 'sales') {
       navigate('/sales');
+    } else if (itemId === 'processMasters') {
+      navigate('/process-masters');
     } else if (itemId === 'directory') {
       navigate('/directory');
     }

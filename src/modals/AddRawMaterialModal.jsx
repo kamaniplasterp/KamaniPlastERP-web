@@ -1,15 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Layers } from 'lucide-react';
-import { RM_ITEM_NAMES, RM_GRADES } from '../api/inventory.api';
+import { RM_ITEM_NAMES, RM_GRADES, subscribeRawMaterials } from '../api/inventory.api';
 import '../styles/Modals.css';
 
 export default function AddRawMaterialModal({ onClose, onSave }) {
+  const [liveMaterials, setLiveMaterials] = useState([]);
+
+  useEffect(() => {
+    const unsub = subscribeRawMaterials(setLiveMaterials);
+    return () => unsub();
+  }, []);
+
   const [formData, setFormData] = useState({
     code: `RM-${Math.floor(1000 + Math.random() * 9000)}`,
     category: 'PP Granules',
-    name: RM_ITEM_NAMES[0],
+    name: RM_ITEM_NAMES[0] || 'HDPE Granules',
     brand: 'Reliance Polymers',
-    grade: RM_GRADES[0],
+    grade: RM_GRADES[0] || 'RIL H030SG',
     openingStock: '0',
     rate: '112',
     reorderLevel: '1000'
@@ -88,16 +95,23 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
           {/* Row 2: Material Item Name (Sub Item) */}
           <div className="mform-field">
             <label className="mform-label">Item Name <span className="req">*</span></label>
-            <select
-              className="mform-select"
+            <input
+              type="text"
+              className="mform-input"
+              list="raw-materials-datalist"
+              placeholder="e.g. GRANUALS-HDPE, PP Granules"
               value={formData.name}
               onChange={e => handleChange('name', e.target.value)}
               required
-            >
-              {RM_ITEM_NAMES.map(item => (
-                <option key={item} value={item}>{item}</option>
+            />
+            <datalist id="raw-materials-datalist">
+              {liveMaterials.map(m => (
+                <option key={m.id || m.name} value={m.name || m.code || ''} />
               ))}
-            </select>
+              {RM_ITEM_NAMES.map(item => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
           </div>
 
           {/* Row 3: Brand & Grade */}

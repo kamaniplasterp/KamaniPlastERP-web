@@ -8,6 +8,7 @@ import JobWorkHub from './pages/JobWorkHub';
 import InventoryStock from './pages/InventoryStock';
 import SalesDispatch from './pages/SalesDispatch';
 import DirectorySettings from './pages/DirectorySettings';
+import ProcessMasters from './pages/ProcessMasters';
 
 function App() {
   return (
@@ -45,6 +46,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <SalesDispatch />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/process-masters" 
+              element={
+                <ProtectedRoute>
+                  <ProcessMasters />
                 </ProtectedRoute>
               } 
             />

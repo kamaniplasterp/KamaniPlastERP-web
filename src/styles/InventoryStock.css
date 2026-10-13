@@ -151,15 +151,32 @@
 .inv-tab-bar {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
   background: transparent;
   border: none;
   border-bottom: 1px solid #e2e8f0;
   border-radius: 0;
-  padding: 0 4px;
+  padding: 0 4px 6px 4px;
   box-shadow: none;
   margin-top: 2px;
   overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+.inv-tab-bar::-webkit-scrollbar {
+  height: 6px;
+}
+.inv-tab-bar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 10px;
+}
+.inv-tab-bar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+.inv-tab-bar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 .inv-tab-btn {
   display: flex;
@@ -804,4 +821,295 @@
 @media (max-width: 540px) {
   .inv-top-kpis { grid-template-columns: 1fr; }
   .inv-summary-kpi-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── Ghost Buttons & Bag Dual Stock Styles ─── */
+.inv-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  font-family: var(--font, 'Inter', sans-serif);
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.inv-btn-ghost:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.inv-btn-ghost-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  font-family: var(--font, 'Inter', sans-serif);
+  transition: all 0.15s ease;
+}
+.inv-btn-ghost-sm:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.inv-bag-variant-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 0 0;
+}
+
+.inv-bag-variant-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: all 0.15s ease;
+}
+.inv-bag-variant-card:hover {
+  border-color: #cbd5e1;
+}
+
+/* ─── GROUPED LOT REGISTER TABLE STYLES ─── */
+.inv-diary-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.inv-diary-lot-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+.inv-diary-lot-card:hover {
+  border-color: #cbd5e1;
+}
+
+.inv-lot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inv-lot-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.inv-lot-bracket-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #0f172a;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+
+.inv-lot-specs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.inv-lot-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.inv-lot-pill-blue { background: #eff6ff; color: #1d4ed8; }
+.inv-lot-pill-purple { background: #faf5ff; color: #7e22ce; }
+.inv-lot-pill-green { background: #f0fdf4; color: #15803d; }
+.inv-lot-pill-amber { background: #fffbeb; color: #b45309; }
+
+.inv-lot-summary-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.78rem;
+}
+
+.inv-lot-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.inv-lot-stat-label { color: #64748b; font-weight: 500; }
+.inv-lot-stat-val { font-weight: 700; color: #0f172a; }
+
+.inv-diary-table-wrap {
+  position: relative;
+  overflow-x: auto;
+}
+
+.inv-diary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-family: var(--font, 'Inter', sans-serif);
+}
+
+.inv-diary-table thead th {
+  background: #ffffff;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 12px;
+  border-bottom: 2px solid #e2e8f0;
+  text-align: left;
+}
+
+.inv-diary-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.1s ease;
+}
+.inv-diary-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.inv-diary-table td {
+  padding: 8px 12px;
+  color: #334155;
+  vertical-align: middle;
+}
+
+.bag-num-pill {
+  display: inline-block;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  min-width: 48px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.ditto-mark {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.1em;
+  user-select: none;
+}
+
+.act-wt-cell {
+  font-weight: 800;
+  color: #0f172a;
+  font-size: 0.86rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.act-wt-editable {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+.act-wt-editable:hover {
+  background: #e2e8f0;
+}
+
+.var-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.72rem;
+}
+.var-badge-exact { background: #f0fdf4; color: #16a34a; }
+.var-badge-plus { background: #ecfdf5; color: #059669; }
+.var-badge-minus { background: #fef2f2; color: #dc2626; }
+
+.inv-lot-footer-row {
+  background: #f8fafc;
+  border-top: 2px solid #e2e8f0;
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: #1e293b;
+}
+.inv-lot-footer-row td {
+  padding: 9px 12px;
+}
+
+/* View Switcher: Diary vs Flat View */
+.inv-view-toggle-wrap {
+  display: inline-flex;
+  align-items: center;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  gap: 2px;
+}
+
+.inv-view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.inv-view-toggle-btn:hover {
+  color: #1e293b;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.inv-view-toggle-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }

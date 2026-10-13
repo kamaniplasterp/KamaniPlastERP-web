@@ -152,15 +152,32 @@
 .jw-tab-bar {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
   background: transparent;
   border: none;
   border-bottom: 1px solid #e2e8f0;
   border-radius: 0;
-  padding: 0 4px;
+  padding: 0 4px 6px 4px;
   box-shadow: none;
   margin-top: 2px;
   overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+.jw-tab-bar::-webkit-scrollbar {
+  height: 6px;
+}
+.jw-tab-bar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 10px;
+}
+.jw-tab-bar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+.jw-tab-bar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 .jw-tab-btn {
   display: flex;
@@ -1394,4 +1411,94 @@ th.th-right {
   font-weight: 700;
   color: #0f172a;
 }
+
+/* ─── Month-End Scrap Settlement Modern Card & Form Styles ─── */
+.jw-settlement-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.jw-settlement-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.jw-settlement-grid {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1fr 1.5fr;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+@media (max-width: 900px) {
+  .jw-settlement-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 580px) {
+  .jw-settlement-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.jw-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.jw-field-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jw-field-input,
+.jw-field-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  outline: none;
+  font-family: var(--font, 'Inter', sans-serif);
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.jw-field-input:focus,
+.jw-field-select:focus {
+  background: #ffffff;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.jw-btn-primary-blue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font, 'Inter', sans-serif);
+  transition: background 0.15s ease;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+.jw-btn-primary-blue:hover {
+  background: #1d4ed8;
+}
+
 

@@ -5,7 +5,7 @@ import {
   Package, Users, Briefcase, DollarSign, Percent, Filter, X,
   Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell,
   FileSpreadsheet, Receipt, Layers, Calendar, Scissors,
-  SlidersHorizontal, MoreVertical, Eye, RotateCcw, Columns
+  SlidersHorizontal, MoreVertical, Eye, RotateCcw, Columns, Scale
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
@@ -33,6 +33,14 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [receivingRow, setReceivingRow] = useState(null);
   const [showExtraCuttingModal, setShowExtraCuttingModal] = useState(false);
   const [extraCuttingSearch, setExtraCuttingSearch] = useState('');
+
+  // Month-End Scrap Settlement state
+  const todayMonth = new Date().toISOString().slice(0, 7);
+  const [settlementVendor, setSettlementVendor] = useState('All');
+  const [settlementMonth, setSettlementMonth] = useState(todayMonth);
+  const [settlementScrapRate, setSettlementScrapRate] = useState(70);
+  const [manualScrapKg, setManualScrapKg] = useState('');
+  const [settlementSearch, setSettlementSearch] = useState('');
   
   // Close row overflow menu on outside click
   useEffect(() => {
@@ -100,7 +108,15 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         sampleWeight: grnData.sampleWeight,
         rawMaterialId: receivingRow.rawMaterialId,
         itemLabel: grnData.itemLabel || receivingRow.material,
-        remarks: grnData.notes || `Inward Slip ${grnData.inwardSlipNo} recorded`
+        remarks: grnData.notes || `Inward Slip ${grnData.inwardSlipNo} recorded`,
+        spoolsRemainingKg: grnData.spoolsRemainingKg,
+        ldBagsRemainingKg: grnData.ldBagsRemainingKg,
+        outerBagsRemainingCount: grnData.outerBagsRemainingCount,
+        rawMaterialRemainingKg: grnData.rawMaterialRemainingKg,
+        scrapRatePerKg: grnData.scrapRatePerKg,
+        targetGodown: grnData.targetGodown,
+        bagsList: grnData.bagsList,
+        lineItems: grnData.lineItems || []
       });
 
       setReceivingRow(null);
@@ -244,6 +260,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       expectedReturn: jw.expectedReturn || '',
       durationDays: jw.durationDays || (jw.duration ? parseInt(String(jw.duration)) : 5),
       inwardReceipts: jw.inwardReceipts || jw.inwardSlips || [],
+      // Routing & Accessories (Gaps 4 & 6)
+      sourceLocation: jw.sourceLocation || 'KPI Godown',
+      isDoubleJobWork: Boolean(jw.isDoubleJobWork),
+      spoolsCount: Number(jw.spoolsCount || 0),
+      spoolsQtyKg: Number(jw.spoolsQtyKg || 0),
+      ldBagsQtyKg: Number(jw.ldBagsQtyKg || 0),
+      outerBagsCount: Number(jw.outerBagsCount || 0),
       status: jw.status === 'PARTIAL' ? 'PARTIALLY RECEIVED' : jw.status === 'COMPLETED' ? 'FULLY RECEIVED' : jw.status || 'SENT'
     };
   });
@@ -365,7 +388,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const stmtDeductions = statementOrders.reduce((s, o) => s + (Number(o.rejectionQtyKg) * 100), 0) + stmtExtraCuttingTotal;
 
   const stmtTotalPayable = statementOrders.reduce((s, o) => s + (Number(o.charges) || (Number(o.receivedQty) * (Number(o.ratePerKg) || 17.5))), 0);
-  const stmtTotalPaid = Math.round(stmtTotalPayable * 0.85); // Demo paid amount
+  const stmtTotalPaid = statementOrders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0);
   const stmtClosingFinBal = stmtTotalPayable - stmtDeductions - stmtTotalPaid;
 
   // Extra Cutting search filter
@@ -388,12 +411,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const computedVendorGroups = Object.values(
     allJobWorkData.reduce((acc, order) => {
       const vName = order.party || 'Job Worker';
+      const liveV = liveVendors.find(v => (v.name || '').toLowerCase() === vName.toLowerCase());
       if (!acc[vName]) {
         acc[vName] = {
           vendor: vName,
-          gst: '24AAAAA0000A1Z5',
-          address: 'GIDC Industrial Estate, Gujarat',
-          contact: 'Factory Contact',
+          gst: liveV?.gst || '-',
+          address: liveV?.location || liveV?.address || '-',
+          contact: liveV?.phone || liveV?.contact || '-',
           totalQty: '0 KG',
           totalVal: '₹0',
           orders: [],
@@ -476,19 +500,17 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
   const dispatchFulfillmentData = (simulatedSalesOrders && simulatedSalesOrders.length > 0)
     ? simulatedSalesOrders.map(so => {
-        const ordered = Number(so.orderedQtyCoils || 300);
-        const dispatched = Number(so.dispatchedQtyCoils || 300);
-        const pct = ordered > 0 ? Math.round((dispatched / ordered) * 100) : 100;
+        const ordered = Number(so.orderedQtyCoils || so.totalQty || 0);
+        const dispatched = Number(so.dispatchedQtyCoils || so.dispatchedQty || 0);
+        const pct = ordered > 0 ? Math.round((dispatched / ordered) * 100) : 0;
         return {
-          ref: so.orderNo || 'SO-2026-5601',
-          customer: so.customer || 'ABC Marine Traders',
+          ref: so.orderNo || so.id || '-',
+          customer: so.customer || '-',
           status: `${pct}% Fulfilled`,
           pct
         };
       })
-    : [
-        { ref: 'SO-2026-5601', customer: 'ABC Marine Traders', status: '100% Fulfilled', pct: 100 }
-      ];
+    : [];
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -506,6 +528,44 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         return <span className="jw-status-pill">{status}</span>;
     }
   };
+
+  // Month-End Consolidated Scrap Settlement Logic
+  const allJobWorkersList = Array.from(
+    new Set([
+      ...liveVendors.map(v => v.name),
+      ...allJobWorkData.map(j => j.party)
+    ].filter(Boolean))
+  );
+
+  const monthSettlementOrders = allJobWorkData.filter(order => {
+    const orderDate = order.date || order.createdAt || '';
+    const matchesMonth = !settlementMonth || orderDate.startsWith(settlementMonth);
+    const matchesVendor = settlementVendor === 'All' || (order.party || '').toLowerCase() === settlementVendor.toLowerCase();
+    return matchesMonth && matchesVendor;
+  });
+
+  const monthTotalSentKg = monthSettlementOrders.reduce((s, o) => s + (Number(o.inputQty) || 0), 0);
+  const monthTotalRecKg = monthSettlementOrders.reduce((s, o) => s + (Number(o.receivedQty) || 0), 0);
+  const monthTotalBLossKg = monthSettlementOrders.reduce((s, o) => s + (Number(o.bLossKg) || 0), 0);
+  const monthExpectedScrapKg = Math.max(0, monthTotalSentKg - monthTotalRecKg - monthTotalBLossKg);
+  const monthActualScrapKg = manualScrapKg !== '' ? Number(manualScrapKg) : monthExpectedScrapKg;
+  const monthScrapCreditInr = monthActualScrapKg * Number(settlementScrapRate || 70);
+  const monthGrossCharges = monthSettlementOrders.reduce((s, o) => s + (Number(o.charges) || (Number(o.receivedQty) * (Number(o.ratePerKg) || 17.5))), 0);
+
+  const monthExtraCuttings = (liveExtraCuttings || []).filter(e => {
+    const dateStr = e.date || '';
+    const matchesMonth = !settlementMonth || dateStr.startsWith(settlementMonth);
+    const matchesVendor = settlementVendor === 'All' || (e.partyName || '').toLowerCase() === settlementVendor.toLowerCase();
+    return matchesMonth && matchesVendor;
+  });
+  const monthExtraCuttingTotal = monthExtraCuttings.reduce((sum, e) => {
+    const w = Number(e.weightKg !== undefined && e.weightKg !== null ? e.weightKg : (e.weight || 0)) || 0;
+    const r = Number(e.rate || 0) || 0;
+    const val = Number(e.totalAmount !== undefined && e.totalAmount !== null ? e.totalAmount : (e.total !== undefined ? e.total : (w * r))) || 0;
+    return sum + (isNaN(val) ? 0 : val);
+  }, 0);
+
+  const monthNetPayable = Math.max(0, monthGrossCharges - monthScrapCreditInr - monthExtraCuttingTotal);
 
   return (
     <div className="jw-hub-container">
@@ -530,7 +590,38 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
       {/* ── Contextual Metric Area (No Stacked Duplicates across Tabs) ── */}
       <div className="jw-top-kpis">
-        {activeTab === 'challanReport' ? (
+        {activeTab === 'monthlySettlement' ? (
+          <>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Monthly Outward Sent</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num">{monthTotalSentKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG RM</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Monthly FG Received</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-green">{monthTotalRecKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                <span className="jw-kpi-sublabel">KG Net</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card">
+              <div className="jw-kpi-title">Scrap Credit (@ ₹{settlementScrapRate}/kg)</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-orange">₹{Math.round(monthScrapCreditInr).toLocaleString('en-IN')}</span>
+                <span className="jw-kpi-sublabel">({monthActualScrapKg.toFixed(1)} KG)</span>
+              </div>
+            </div>
+            <div className="jw-kpi-card jw-kpi-highlight">
+              <div className="jw-kpi-title jw-title-green">Net Worker Payable</div>
+              <div className="jw-kpi-val-row">
+                <span className="jw-kpi-num jw-text-green">₹{Math.round(monthNetPayable).toLocaleString('en-IN')}</span>
+                <span className="jw-kpi-sublabel">Post Deductions</span>
+              </div>
+            </div>
+          </>
+        ) : activeTab === 'challanReport' ? (
           <>
             <div className="jw-kpi-card">
               <div className="jw-kpi-title">Total Dispatched (Net)</div>
@@ -739,6 +830,14 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           <span>Extra Cutting / Deductions</span>
           <span className="jw-tab-badge">{liveExtraCuttings.length}</span>
         </button>
+
+        <button
+          className={`jw-tab-btn ${activeTab === 'monthlySettlement' ? 'active' : ''}`}
+          onClick={() => setActiveTab('monthlySettlement')}
+        >
+          <Scale size={14} />
+          <span>Month-End Scrap Settlement</span>
+        </button>
       </div>
 
       {/* ── TAB 1: Job Work Ledger ── */}
@@ -931,16 +1030,40 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     title={`View details for ${row.id}`}
                   >
                     <td className="td-jw-num">
-                      <span className="jw-id-link">{row.id}</span>
-                      <span className="jw-challan-sub">Chl #{row.challan}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontWeight: 700, color: '#0f172a', fontFamily: 'monospace', fontSize: '0.86rem' }}>
+                          {row.challan.includes('/') ? row.challan : `${row.challan} / ${row.subChalNo || '1'}`}
+                        </span>
+                        {row.isDoubleJobWork && (
+                          <span style={{ background: '#ffedd5', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                            DOUBLE JW
+                          </span>
+                        )}
+                      </div>
+                      <span className="jw-challan-sub" style={{ fontSize: '0.72rem', color: '#64748b' }}>{row.id}</span>
                     </td>
                     <td className="td-date">{row.date}</td>
-                    <td className="td-party">{row.party}</td>
+                    <td className="td-party">
+                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{row.party}</div>
+                      {row.isDoubleJobWork && (
+                        <div style={{ fontSize: '0.68rem', color: '#ea580c', fontWeight: 600 }}>
+                          ⚡ Via {row.sourceLocation} ➔ {row.party}
+                        </div>
+                      )}
+                    </td>
                     <td className="td-material-col">
                       <div className="jw-mat-name">{row.material}</div>
                       <div className="jw-mat-sub">
                         {row.process} • <span className="jw-batch-text">{row.batch}</span>
                       </div>
+                      {(row.spoolsQtyKg > 0 || row.ldBagsQtyKg > 0 || row.outerBagsCount > 0) && (
+                        <div style={{ fontSize: '0.7rem', color: '#047857', marginTop: '3px', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 700 }}>📦 Acc:</span>
+                          {row.spoolsQtyKg > 0 && <span>Kokda: {row.spoolsQtyKg}kg</span>}
+                          {row.ldBagsQtyKg > 0 && <span>LD: {row.ldBagsQtyKg}kg</span>}
+                          {row.outerBagsCount > 0 && <span>Outer: {row.outerBagsCount}b</span>}
+                        </div>
+                      )}
                     </td>
                     {showAuditColumns && (
                       <td className="td-qty-right">{row.grossWeight ? row.grossWeight.toLocaleString('en-IN', { maximumFractionDigits: 1 }) : '—'}</td>
@@ -1658,6 +1781,206 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     </tr>
                     );
                   })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: Month-End Consolidated Scrap Settlement Hub ── */}
+      {activeTab === 'monthlySettlement' && (
+        <div className="jw-settlement-panel">
+          {/* Controls Card */}
+          <div className="jw-settlement-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  Consolidated Monthly Scrap Settlement &amp; Vendor Clearance
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '2px 0 0 0' }}>
+                  Filter job worker consignments by billing month, enter consolidated scrap return, and generate deduction settlement statement.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="jw-btn-ghost"
+                  onClick={() => exportToCsv(`MonthEnd_Scrap_Settlement_${settlementMonth}_${settlementVendor}.csv`, monthSettlementOrders)}
+                >
+                  <Download size={14} /> Export CSV
+                </button>
+                <button
+                  className="jw-btn-primary-blue"
+                  onClick={() => window.print()}
+                >
+                  <Printer size={14} /> Print Statement Slip
+                </button>
+              </div>
+            </div>
+
+            <div className="jw-settlement-grid">
+              <div className="jw-field-group">
+                <label className="jw-field-label">Select Job Worker</label>
+                <select
+                  value={settlementVendor}
+                  onChange={e => setSettlementVendor(e.target.value)}
+                  className="jw-field-select"
+                >
+                  <option value="All">All Job Workers</option>
+                  {allJobWorkersList.map(w => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="jw-field-group">
+                <label className="jw-field-label">Settlement Month</label>
+                <input
+                  type="month"
+                  value={settlementMonth}
+                  onChange={e => setSettlementMonth(e.target.value)}
+                  className="jw-field-input"
+                />
+              </div>
+
+              <div className="jw-field-group">
+                <label className="jw-field-label">Scrap Rate (₹/KG)</label>
+                <input
+                  type="number"
+                  value={settlementScrapRate}
+                  onChange={e => setSettlementScrapRate(Number(e.target.value))}
+                  className="jw-field-input"
+                />
+              </div>
+
+              <div className="jw-field-group">
+                <label className="jw-field-label">Actual Scrap Returned (KG)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder={`Expected: ${monthExpectedScrapKg.toFixed(1)} KG`}
+                  value={manualScrapKg}
+                  onChange={e => setManualScrapKg(e.target.value)}
+                  className="jw-field-input"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Consolidated Financial & Material Balance Summary Banner */}
+          <div className="jw-stmt-summary-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginTop: '0' }}>
+            <div className="jw-stmt-box">
+              <div className="jw-stmt-box-header">
+                📦 1. Monthly Material Reconciliation
+              </div>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Dispatched Raw Material:</span>
+                <span className="jw-stmt-row-val">{monthTotalSentKg.toFixed(1)} KG</span>
+              </div>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Received Finished Goods:</span>
+                <span className="jw-stmt-row-val" style={{ color: '#16a34a' }}>- {monthTotalRecKg.toFixed(1)} KG</span>
+              </div>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Allowable Burning Loss:</span>
+                <span className="jw-stmt-row-val" style={{ color: '#64748b' }}>- {monthTotalBLossKg.toFixed(1)} KG</span>
+              </div>
+              <div className="jw-stmt-row" style={{ borderTop: '1px dashed #e2e8f0' }}>
+                <span className="jw-stmt-row-label" style={{ fontWeight: 600 }}>Expected Scrap Deficit:</span>
+                <span className="jw-stmt-row-val" style={{ color: '#d97706' }}>{monthExpectedScrapKg.toFixed(1)} KG</span>
+              </div>
+              <div className="jw-stmt-closing-row">
+                <span>Actual Scrap Settled:</span>
+                <span style={{ color: '#2563eb' }}>{monthActualScrapKg.toFixed(1)} KG</span>
+              </div>
+            </div>
+
+            <div className="jw-stmt-box">
+              <div className="jw-stmt-box-header">
+                💳 2. Financial Settlement &amp; Net Payable
+              </div>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Gross Job Work Charges:</span>
+                <span className="jw-stmt-row-val">₹{Math.round(monthGrossCharges).toLocaleString('en-IN')}</span>
+              </div>
+              <div className="jw-stmt-row">
+                <span className="jw-stmt-row-label">Less Scrap Rebate (@ ₹{settlementScrapRate}/kg):</span>
+                <span className="jw-stmt-row-val" style={{ color: '#ea580c' }}>- ₹{Math.round(monthScrapCreditInr).toLocaleString('en-IN')}</span>
+              </div>
+              {monthExtraCuttingTotal > 0 && (
+                <div className="jw-stmt-row">
+                  <span className="jw-stmt-row-label">Less Extra Cutting Deductions:</span>
+                  <span className="jw-stmt-row-val" style={{ color: '#dc2626' }}>- ₹{Math.round(monthExtraCuttingTotal).toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              <div className="jw-stmt-closing-row" style={{ borderTop: '1px solid #cbd5e1', paddingTop: '8px', marginTop: '6px' }}>
+                <span style={{ fontSize: '0.9rem' }}>Net Vendor Payable:</span>
+                <span style={{ fontSize: '1.2rem', color: '#16a34a' }}>
+                  ₹{Math.round(monthNetPayable).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Consignments List in this month */}
+          <div className="jw-table-container">
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                Monthly Consignments Breakdown ({monthSettlementOrders.length} Trips)
+              </h3>
+              <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>
+                {settlementVendor} • Billing Period: {settlementMonth}
+              </span>
+            </div>
+
+            <table className="jw-ledger-table">
+              <thead>
+                <tr>
+                  <th>Challan #</th>
+                  <th>Date</th>
+                  <th>Worker / Vendor</th>
+                  <th>Material &amp; Process</th>
+                  <th style={{ textAlign: 'right' }}>Sent RM (KG)</th>
+                  <th style={{ textAlign: 'right' }}>Recd FG (KG)</th>
+                  <th style={{ textAlign: 'right' }}>B.Loss (KG)</th>
+                  <th style={{ textAlign: 'right' }}>Rate (₹/KG)</th>
+                  <th style={{ textAlign: 'right' }}>Gross Charges</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthSettlementOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan="10" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                      No job work orders found for <strong>{settlementVendor}</strong> in month <strong>{settlementMonth}</strong>.
+                    </td>
+                  </tr>
+                ) : (
+                  monthSettlementOrders.map((order, idx) => (
+                    <tr key={order.id || idx}>
+                      <td style={{ fontWeight: 700, color: '#0f172a' }}>{order.challan || order.id}</td>
+                      <td>{order.date}</td>
+                      <td style={{ fontWeight: 600 }}>{order.party}</td>
+                      <td>
+                        <div>{order.material}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{order.process || 'Extrusion / Yarn'}</div>
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                        {(Number(order.inputQty) || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>
+                        {(Number(order.receivedQty) || 0).toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG
+                      </td>
+                      <td style={{ textAlign: 'right', color: '#64748b' }}>
+                        {(Number(order.bLossKg) || 0).toFixed(1)} KG
+                      </td>
+                      <td style={{ textAlign: 'right' }}>₹{Number(order.ratePerKg || 17.5).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                        ₹{Math.round(Number(order.charges) || ((Number(order.receivedQty) || 0) * (Number(order.ratePerKg) || 17.5))).toLocaleString('en-IN')}
+                      </td>
+                      <td>{getStatusBadge(order.status)}</td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>

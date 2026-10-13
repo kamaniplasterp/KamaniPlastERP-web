@@ -2,6 +2,10 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
+  updateDoc,
+  deleteDoc,
+  setDoc,
+  writeBatch,
   doc, 
   getDoc,
   serverTimestamp,
@@ -225,7 +229,7 @@ export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0) {
 /**
  * Update FG Stock counts safely using atomic Firestore runTransaction
  */
-export async function updateFgStock(skuId, stockDelta = 0, reservedDelta = 0) {
+export async function updateFgStock(skuId, stockDelta = 0, reservedDelta = 0, meta = {}) {
   if (!db) return;
   try {
     let targetRef = null;
@@ -262,6 +266,25 @@ export async function updateFgStock(skuId, stockDelta = 0, reservedDelta = 0) {
     }
 
     if (!targetRef) {
+      if (stockDelta > 0) {
+        // Auto-create FG doc if new variant is received from Job Work
+        const codeClean = String(skuId || 'FG').replace(/[^a-zA-Z0-9]/g, '-').slice(0, 15).toUpperCase();
+        await addDoc(collection(db, 'finishedGoods'), {
+          code: meta.code || `FG-${codeClean}-${Date.now().toString().slice(-4)}`,
+          name: meta.name || String(skuId),
+          category: meta.category || 'Job Work Output',
+          desc: meta.desc || `Finished Goods processed: ${skuId}`,
+          stockQty: Math.max(0, stockDelta),
+          reservedQty: Math.max(0, reservedDelta),
+          rate: Number(meta.rate || 2450),
+          location: meta.location || 'Finished Goods Bay',
+          status: 'IN STOCK',
+          reorderLevel: 50,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        return;
+      }
       console.warn('updateFgStock: Target SKU not found for identifier:', skuId);
       return;
     }
@@ -286,6 +309,46 @@ export async function updateFgStock(skuId, stockDelta = 0, reservedDelta = 0) {
   } catch (err) {
     console.error('Error updating FG stock atomically:', err);
   }
+}
+
+/**
+ * Update physical Scrap stock atomically
+ */
+export async function updateScrapStock(scrapDeltaKg = 0, defaultRate = 70) {
+  if (!db || !scrapDeltaKg) return;
+  try {
+    const scrapRef = doc(db, 'settings', 'scrapInventory');
+    await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(scrapRef);
+      const existing = snap.exists() ? snap.data() : { totalScrapKg: 0, defaultRate };
+      const currentKg = Number(existing.totalScrapKg || 0);
+      const newKg = Math.max(0, currentKg + scrapDeltaKg);
+      transaction.set(scrapRef, {
+        totalScrapKg: newKg,
+        defaultRate: Number(defaultRate || 70),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    });
+  } catch (err) {
+    console.error('Error updating scrap stock:', err);
+  }
+}
+
+/**
+ * Subscribe to real-time physical Scrap stock
+ */
+export function subscribeScrapStock(callback) {
+  if (!db) return () => {};
+  return onSnapshot(doc(db, 'settings', 'scrapInventory'), (snapshot) => {
+    if (snapshot.exists()) {
+      callback(snapshot.data());
+    } else {
+      callback({ totalScrapKg: 0, defaultRate: 70 });
+    }
+  }, (err) => {
+    console.error('Error fetching scrap stock:', err);
+    callback({ totalScrapKg: 0, defaultRate: 70 });
+  });
 }
 
 /**
@@ -508,4 +571,124 @@ export async function issueRmToFactory(data) {
 
   return issueRef.id;
 }
+
+export const DEFAULT_SAMPLE_BAGS = [];
+
+/**
+ * Subscribe to real-time individual Bag Serials inventory
+ */
+export function subscribeInventoryBags(callback, limitCount = 300) {
+  if (!db) {
+    callback([]);
+    return () => {};
+  }
+  const q = query(collection(db, 'inventory_bags'), orderBy('bagNumber', 'asc'), limit(limitCount));
+  return onSnapshot(q, (snapshot) => {
+    if (snapshot.empty) {
+      callback([]);
+    } else {
+      const list = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+      callback(list);
+    }
+  }, (error) => {
+    console.error('Error fetching inventory bags:', error);
+    callback([]);
+  });
+}
+
+/**
+ * Add a batch of individual bags into inventory_bags collection
+ */
+export async function addInventoryBagsBatch(bagsArray) {
+  if (!db) throw new Error('Firestore not initialized');
+  const addedIds = [];
+  for (const bag of bagsArray) {
+    const docRef = await addDoc(collection(db, 'inventory_bags'), {
+      ...bag,
+      bagNumber: Number(bag.bagNumber || 1),
+      standardWeightKg: Number(bag.standardWeightKg || 50),
+      actualWeightKg: Number(bag.actualWeightKg || 0),
+      coilCount: Number(bag.coilCount || 0),
+      status: bag.status || 'AVAILABLE',
+      createdAt: serverTimestamp()
+    });
+    addedIds.push(docRef.id);
+  }
+  return addedIds;
+}
+
+/**
+ * Update an individual bag status or location
+ */
+export async function updateInventoryBag(id, updates) {
+  if (!db) throw new Error('Firestore not initialized');
+  const bagRef = doc(db, 'inventory_bags', id);
+  await updateDoc(bagRef, {
+    ...updates,
+    updatedAt: serverTimestamp()
+  });
+}
+
+/**
+ * Delete an inventory bag
+ */
+export async function deleteInventoryBag(id) {
+  if (!db) throw new Error('Firestore not initialized');
+  await deleteDoc(doc(db, 'inventory_bags', id));
+}
+
+/**
+ * Allocate and mark bags as DISPATCHED in inventory_bags collection
+ */
+export async function dispatchInventoryBags({ bagIds = [], requiredCoils = 0, dispatchDetails = {} }) {
+  if (!db) return [];
+  try {
+    let targetsToUpdate = [];
+
+    if (bagIds && bagIds.length > 0) {
+      // 1. Explicitly selected bags
+      targetsToUpdate = [...bagIds];
+    } else if (requiredCoils > 0) {
+      // 2. FIFO automatic allocation
+      const q = query(
+        collection(db, 'inventory_bags'),
+        where('status', '==', 'AVAILABLE'),
+        orderBy('bagNumber', 'asc'),
+        limit(100)
+      );
+      const snap = await getDocs(q);
+      let allocatedCoils = 0;
+      for (const d of snap.docs) {
+        if (allocatedCoils >= requiredCoils) break;
+        const bData = d.data();
+        allocatedCoils += (Number(bData.coilCount) || 12);
+        targetsToUpdate.push(d.id);
+      }
+    }
+
+    if (targetsToUpdate.length > 0) {
+      const batch = writeBatch(db);
+      for (const id of targetsToUpdate) {
+        const bRef = doc(db, 'inventory_bags', id);
+        batch.update(bRef, {
+          status: 'DISPATCHED',
+          dispatchChallanNo: dispatchDetails.challanNo || '',
+          dispatchNo: dispatchDetails.dispatchNo || '',
+          customer: dispatchDetails.customer || '',
+          dispatchedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
+      await batch.commit();
+    }
+    return targetsToUpdate;
+  } catch (err) {
+    console.error('Error dispatching inventory bags:', err);
+    return [];
+  }
+}
+
 

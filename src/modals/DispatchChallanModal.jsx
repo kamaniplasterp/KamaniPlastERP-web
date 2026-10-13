@@ -47,7 +47,7 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
   };
 
   const [form, setForm] = useState({
-    transporter: 'Shree Saurashtra Roadlines',
+    transporter: '',
     vehicleNo: '',
     driverName: '',
     driverMobile: '',
@@ -109,10 +109,10 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
         freight: propFreight,
         totalValue: dispatchTotal,
         value: `₹${dispatchTotal.toLocaleString('en-IN')}`,
-        itemSummary: targetOrder.itemSummary || 'PP Danline High Tenacity Rope (Yellow)',
-        vehicle: form.vehicleNo || 'GJ-03-BW-5544',
-        vehicleNo: form.vehicleNo || 'GJ-03-BW-5544',
-        transporter: form.transporter || 'Shree Saurashtra Roadlines',
+        itemSummary: targetOrder.itemSummary || 'Finished Product',
+        vehicle: form.vehicleNo || '',
+        vehicleNo: form.vehicleNo || '',
+        transporter: form.transporter || '',
         driverName: form.driverName || '',
         driverMobile: form.driverMobile || '',
         lrNumber: form.lrNumber || '',

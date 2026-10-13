@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Layers, Package, History, GitBranch, Search, Plus, ArrowUpRight,
   AlertTriangle, ArrowUpDown, ChevronRight, Filter, Download,
-  CheckCircle2, ArrowRight, Truck, FileText
+  CheckCircle2, ArrowRight, Truck, FileText, Scale, BookOpen, Edit3, Check, Calendar
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import SalesOrderModal from '../modals/SalesOrderModal';
@@ -12,7 +12,9 @@ import RawMaterialInwardModal from '../modals/RawMaterialInwardModal';
 import IssueToFactoryModal from '../modals/IssueToFactoryModal';
 import AddProductSkuModal from '../modals/AddProductSkuModal';
 import MaterialDetailDrawer from '../drawers/MaterialDetailDrawer';
+import BagDetailDrawer from '../drawers/BagDetailDrawer';
 import AddFinishedGoodsStockModal from '../modals/AddFinishedGoodsStockModal';
+import AddBagBatchModal from '../modals/AddBagBatchModal';
 import { useWorkflow } from '../context/WorkflowContext';
 import { 
   subscribeRawMaterials, 
@@ -20,6 +22,9 @@ import {
   subscribeStockMovements, 
   subscribeRmInwards,
   subscribeRmFactoryIssues,
+  subscribeInventoryBags,
+  subscribeScrapStock,
+  updateInventoryBag,
   addRawMaterial, 
   addFinishedGood, 
   updateFgStock, 
@@ -49,6 +54,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [liveOrders, setLiveOrders] = useState([]);
   const [liveRmInwards, setLiveRmInwards] = useState([]);
   const [liveRmIssues, setLiveRmIssues] = useState([]);
+  const [liveBags, setLiveBags] = useState([]);
+  const [scrapInfo, setScrapInfo] = useState({ totalScrapKg: 0, defaultRate: 70 });
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -65,6 +72,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     const unsubSo = subscribeSalesOrders(setLiveOrders);
     const unsubInw = subscribeRmInwards(setLiveRmInwards);
     const unsubIss = subscribeRmFactoryIssues(setLiveRmIssues);
+    const unsubBags = subscribeInventoryBags(setLiveBags);
+    const unsubScrap = subscribeScrapStock(setScrapInfo);
     return () => {
       unsubRm();
       unsubFg();
@@ -74,6 +83,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       unsubSo();
       unsubInw();
       unsubIss();
+      unsubBags();
+      unsubScrap();
     };
   }, []);
 
@@ -84,6 +95,38 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [movementSearch, setMovementSearch] = useState('');
   const [movementTypeFilter, setMovementTypeFilter] = useState('All');
   const [traceSearch, setTraceSearch] = useState('');
+  const [bagSearch, setBagSearch] = useState('');
+  const [bagStockTypeFilter, setBagStockTypeFilter] = useState('All');
+  const [bagLocationFilter, setBagLocationFilter] = useState('All');
+  const [bagViewMode, setBagViewMode] = useState('diary'); // 'diary' | 'flat'
+  const [showAddBagBatchModal, setShowAddBagBatchModal] = useState(false);
+  const [editingBagWeightId, setEditingBagWeightId] = useState(null);
+  const [editingBagWeightVal, setEditingBagWeightVal] = useState('');
+
+  const handleStartEditWeight = (bag) => {
+    setEditingBagWeightId(bag.id || `bag-${bag.bagNumber}`);
+    setEditingBagWeightVal(String(bag.actualWeightKg || bag.standardWeightKg || 50));
+  };
+
+  const handleSaveBagWeight = async (bag) => {
+    const newWt = parseFloat(editingBagWeightVal);
+    if (!isNaN(newWt) && newWt > 0) {
+      setLiveBags(prev => prev.map(b => (b.id === bag.id || b.bagNumber === bag.bagNumber) ? { ...b, actualWeightKg: newWt } : b));
+      if (bag.id) {
+        try {
+          await updateInventoryBag(bag.id, { actualWeightKg: newWt });
+        } catch (e) {
+          console.warn('Firestore update failed for bag weight:', e.message);
+        }
+      }
+    }
+    setEditingBagWeightId(null);
+  };
+
+  const handleBagsAdded = (newBags) => {
+    setLiveBags(prev => [...prev, ...newBags]);
+  };
+
   const [showJWModal, setShowJWModal] = useState(false);
   const [showSalesModal, setShowSalesModal] = useState(false);
   const [showAddRmModal, setShowAddRmModal] = useState(false);
@@ -93,6 +136,37 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [showAddFgStockModal, setShowAddFgStockModal] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedBagForDrawer, setSelectedBagForDrawer] = useState(null);
+  const [isBagDrawerOpen, setIsBagDrawerOpen] = useState(false);
+
+  const handleOpenBagDrawer = (bag) => {
+    setSelectedBagForDrawer(bag);
+    setIsBagDrawerOpen(true);
+  };
+
+  const handleUpdateBagWeightFromDrawer = async (bag, newWeight) => {
+    setLiveBags(prev => prev.map(b => (b.id === bag.id || b.bagNumber === bag.bagNumber) ? { ...b, actualWeightKg: newWeight } : b));
+    setSelectedBagForDrawer(prev => prev ? { ...prev, actualWeightKg: newWeight } : null);
+    if (bag.id) {
+      try {
+        await updateInventoryBag(bag.id, { actualWeightKg: newWeight });
+      } catch (e) {
+        console.warn('Firestore update failed for bag weight:', e.message);
+      }
+    }
+  };
+
+  const handleUpdateBagLocationFromDrawer = async (bag, newLocation) => {
+    setLiveBags(prev => prev.map(b => (b.id === bag.id || b.bagNumber === bag.bagNumber) ? { ...b, location: newLocation } : b));
+    setSelectedBagForDrawer(prev => prev ? { ...prev, location: newLocation } : null);
+    if (bag.id) {
+      try {
+        await updateInventoryBag(bag.id, { location: newLocation });
+      } catch (e) {
+        console.warn('Firestore update failed for bag location:', e.message);
+      }
+    }
+  };
 
   const handleOpenDrawer = (item) => {
     setSelectedMaterial(item);
@@ -500,6 +574,85 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const overallValuationInr = totalRmValuationInr + totalFgValuationInr;
   const overallValuationLakhs = (overallValuationInr / 100000).toFixed(2);
 
+  // Bags Dual Stock Calculations
+  const fixedBags = liveBags.filter(b => b.stockType === 'FIXED');
+  const looseBags = liveBags.filter(b => b.stockType === 'LOOSE');
+  const totalFixedKg = fixedBags.reduce((sum, b) => sum + (Number(b.actualWeightKg) || Number(b.standardWeightKg) || 0), 0);
+  const totalLooseKg = looseBags.reduce((sum, b) => sum + (Number(b.actualWeightKg) || 0), 0);
+  const totalBagStockKg = totalFixedKg + totalLooseKg;
+
+  const filteredBags = liveBags.filter(bag => {
+    const bagNumStr = `bag ${bag.bagNumber || ''}`.toLowerCase();
+    const query = bagSearch.toLowerCase();
+    const matchesQuery = 
+      bagNumStr.includes(query) ||
+      String(bag.bagNumber || '').includes(query) ||
+      (bag.inwardSlipNo || '').toLowerCase().includes(query) ||
+      (bag.jobWorkNo || '').toLowerCase().includes(query) ||
+      (bag.productName || '').toLowerCase().includes(query) ||
+      (bag.quality || '').toLowerCase().includes(query) ||
+      (bag.form || '').toLowerCase().includes(query) ||
+      (bag.size || '').toLowerCase().includes(query) ||
+      (bag.lotTitle || '').toLowerCase().includes(query) ||
+      (bag.location || '').toLowerCase().includes(query) ||
+      (bag.status || '').toLowerCase().includes(query);
+
+    const matchesStockType = bagStockTypeFilter === 'All' || bag.stockType === bagStockTypeFilter;
+    const matchesLocation = bagLocationFilter === 'All' || bag.location === bagLocationFilter;
+
+    return matchesQuery && matchesStockType && matchesLocation;
+  });
+
+  // Group bags for Physical Diary View matching handwritten sheet
+  const diaryLots = (() => {
+    const lotMap = new Map();
+    filteredBags.forEach(bag => {
+      const groupKey = bag.lotGroup || `${bag.inwardSlipNo || 'SLIP-3001'}-${bag.quality || 'Anchor'}-${bag.form || 'Hank'}-${bag.size || '3x3'}-${bag.stockType || 'FIXED'}`;
+      if (!lotMap.has(groupKey)) {
+        lotMap.set(groupKey, {
+          lotId: groupKey,
+          quality: bag.quality || 'Anchor',
+          form: bag.form || 'Hank',
+          size: bag.size || '3x3',
+          standardWeightKg: Number(bag.standardWeightKg) || 50,
+          coilCount: Number(bag.coilCount) || 12,
+          stockType: bag.stockType || 'FIXED',
+          location: bag.location || 'KPI Godown',
+          inwardSlipNo: bag.inwardSlipNo || 'SLIP-3001',
+          receivedAt: bag.receivedAt || '2026-03-30',
+          bags: []
+        });
+      }
+      lotMap.get(groupKey).bags.push(bag);
+    });
+
+    return Array.from(lotMap.values()).map(lot => {
+      lot.bags.sort((a, b) => (Number(a.bagNumber) || 0) - (Number(b.bagNumber) || 0));
+      const totalBags = lot.bags.length;
+      const minBag = lot.bags[0]?.bagNumber || 1;
+      const maxBag = lot.bags[lot.bags.length - 1]?.bagNumber || totalBags;
+      const totalActualKg = lot.bags.reduce((sum, b) => sum + (Number(b.actualWeightKg) || Number(b.standardWeightKg) || 0), 0);
+      const totalStdKg = totalBags * lot.standardWeightKg;
+      const totalVariance = totalActualKg - totalStdKg;
+      const avgWeightKg = totalBags > 0 ? (totalActualKg / totalBags).toFixed(2) : '0.00';
+      const totalCoils = lot.bags.reduce((sum, b) => sum + (Number(b.coilCount) || 12), 0);
+
+      return {
+        ...lot,
+        totalBags,
+        minBag,
+        maxBag,
+        totalActualKg,
+        totalStdKg,
+        totalVariance,
+        avgWeightKg,
+        totalCoils
+      };
+    });
+  })();
+
+  const uniqueBagLocations = Array.from(new Set(liveBags.map(b => b.location).filter(Boolean)));
+
   return (
     <div className="inv-hub-container">
       {/* ── Page Header ── */}
@@ -513,7 +666,12 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             Unified management of raw materials (granules/yarn), finished rope stock, warehouse movements, and batch traceability.
           </p>
         </div>
-        <div className="inv-header-right">
+        <div className="inv-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: 700 }}>RECOVERED SCRAP:</span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#dc2626' }}>{(scrapInfo.totalScrapKg || 0).toFixed(1)} KG</span>
+            <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>(@ ₹{scrapInfo.defaultRate || 70}/KG)</span>
+          </div>
           <div className="inv-alert-banner">
             <AlertTriangle size={15} />
             {liveRmList.filter(r => (Number(r.availFactory) || 0) <= 1000).length} Items need attention
@@ -523,7 +681,57 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
       {/* ── Contextual Metric Area (No Stacked Duplicates) ── */}
       <div className="inv-top-kpis">
-        {activeTab === 'fg' ? (
+        {activeTab === 'bags' ? (
+          <>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Total Inward Bags</span>
+                <div className="inv-kpi-icon inv-icon-blue"><Package size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">{liveBags.length}</span>
+                <span className="inv-kpi-sublabel">Bags Tracked</span>
+              </div>
+              <div className="inv-kpi-sub">Sequential Integer Serials (1, 2, 3...)</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Fixed Stock (Std 50kg)</span>
+                <div className="inv-kpi-icon inv-icon-green"><Scale size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-green">{fixedBags.length} Bags</span>
+                <span className="inv-kpi-sublabel">({totalFixedKg.toFixed(1)} KG)</span>
+              </div>
+              <div className="inv-kpi-sub inv-text-green">Standard 50.0 KG bag weight</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Loose Stock (Cut Bags)</span>
+                <div className="inv-kpi-icon inv-icon-orange"><Package size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-orange">{looseBags.length} Bags</span>
+                <span className="inv-kpi-sublabel">({totalLooseKg.toFixed(1)} KG)</span>
+              </div>
+              <div className="inv-kpi-sub inv-text-orange">Odd weights / remainder cuts</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Total Bag Stock</span>
+                <div className="inv-kpi-icon inv-icon-purple"><Layers size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">{totalBagStockKg.toFixed(1)}</span>
+                <span className="inv-kpi-sublabel">KG Net</span>
+              </div>
+              <div className="inv-kpi-sub">Stored in KPI &amp; Marvel Godowns</div>
+            </div>
+          </>
+        ) : activeTab === 'fg' ? (
           <>
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -748,6 +956,15 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           <Package size={14} />
           <span>Finished Goods (FG)</span>
           <span className="inv-tab-badge-green">{displayFgList.length}</span>
+        </button>
+
+        <button
+          className={`inv-tab-btn ${activeTab === 'bags' ? 'active' : ''}`}
+          onClick={() => setActiveTab('bags')}
+        >
+          <Scale size={14} />
+          <span>Bags &amp; Dual Stock</span>
+          <span className="inv-tab-badge-blue">{liveBags.length} Bags</span>
         </button>
 
         <button
@@ -1499,9 +1716,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             <span className="node-num">2. Job Work Issue</span>
                             <span className="node-dot dot-orange" />
                           </div>
-                          <div className="node-title">{activeTraceJw?.jwNo || 'JW Order'}</div>
-                          <div className="node-sub">{activeTraceJw?.vendor || 'Shree Plastic Works'}</div>
-                          <div className="node-highlight orange">Dispatched: {activeTraceJw?.sentQty || `${activeTraceJw?.sentQtyKg || 2000} KG`}</div>
+                          <div className="node-title">{activeTraceJw?.jwNo || 'JW Issue'}</div>
+                          <div className="node-sub">{activeTraceJw?.vendor || '-'}</div>
+                          <div className="node-highlight orange">Dispatched: {activeTraceJw?.sentQty || `${activeTraceJw?.sentQtyKg || 0} KG`}</div>
                         </div>
 
                         <ArrowRight size={16} className="node-arrow" />
@@ -1512,7 +1729,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             <span className="node-num">3. GRN Return</span>
                             <span className="node-dot dot-green" />
                           </div>
-                          <div className="node-title">GRN-{activeTraceJw?.jwNo || 'REC'}</div>
+                          <div className="node-title">{activeTraceJw?.jwNo ? `GRN-${activeTraceJw.jwNo}` : 'GRN Return'}</div>
                           <div className="node-sub">Recd: {activeTraceJw?.recQty || `${activeTraceJw?.recQtyKg || 0} KG`}</div>
                           <div className="node-highlight green">Status: {activeTraceJw?.status || 'RECEIVED'}</div>
                         </div>
@@ -1525,9 +1742,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             <span className="node-num">4. Finished Goods</span>
                             <span className="node-dot dot-blue" />
                           </div>
-                          <div className="node-title">{matchingFg?.name || 'PP Danline 6mm'}</div>
-                          <div className="node-sub">Code: {matchingFg?.code || 'FG-PPD-06-YL'}</div>
-                          <div className="node-highlight blue">{matchingFg ? `${matchingFg.stockQty} Coils` : 'In Stock'}</div>
+                          <div className="node-title">{matchingFg?.name || '-'}</div>
+                          <div className="node-sub">{matchingFg?.code ? `Code: ${matchingFg.code}` : '-'}</div>
+                          <div className="node-highlight blue">{matchingFg ? `${matchingFg.stockQty || 0} Coils` : '-'}</div>
                         </div>
 
                         <ArrowRight size={16} className="node-arrow" />
@@ -1539,8 +1756,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             <span className="node-dot dot-purple" />
                           </div>
                           <div className="node-title">{matchingDc?.challanNo || matchingDc?.dispatchNo || 'DC-Challan'}</div>
-                          <div className="node-sub">{matchingDc?.customer || 'ABC Marine Traders'}</div>
-                          <div className="node-highlight green">{matchingDc ? `${matchingDc.dispatchedQtyCoils || 300} Dispatched` : 'Dispatched'}</div>
+                          <div className="node-sub">{matchingDc?.customer || '-'}</div>
+                          <div className="node-highlight green">{matchingDc ? `${matchingDc.dispatchedQtyCoils || matchingDc.dispatchedQty || 0} Dispatched` : '-'}</div>
                         </div>
                       </div>
                     </div>
@@ -1558,6 +1775,507 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       )}
 
+      {/* ── TAB: Bags & Dual Stock (Fixed vs Loose) ── */}
+      {activeTab === 'bags' && (
+        <div className="inv-section-card">
+          <div className="inv-section-header">
+            <div className="inv-title-group">
+              <div className="inv-title-row-inner">
+                <h2 className="inv-section-title">Bag-Level Dual Stock Inventory</h2>
+                <span className="inv-badge-blue">{filteredBags.length} Bags Filtered</span>
+              </div>
+              <p className="inv-section-subtitle">
+                Individual bag tracking with sequential integer serials (1, 2, 3...) &amp; scale weights grouped matching the physical mill register.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="inv-view-toggle-wrap">
+                <button
+                  type="button"
+                  className={`inv-view-toggle-btn ${bagViewMode === 'diary' ? 'active' : ''}`}
+                  onClick={() => setBagViewMode('diary')}
+                >
+                  <BookOpen size={13} /> Diary View
+                </button>
+                <button
+                  type="button"
+                  className={`inv-view-toggle-btn ${bagViewMode === 'flat' ? 'active' : ''}`}
+                  onClick={() => setBagViewMode('flat')}
+                >
+                  <Scale size={13} /> Flat View
+                </button>
+              </div>
+
+              <button 
+                type="button"
+                className="inv-btn-ghost"
+                onClick={() => exportToCsv('Bags_Dual_Stock_Register.csv', filteredBags)}
+              >
+                <Download size={14} /> Export CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="inv-filter-bar">
+            <div className="inv-search-input-wrap">
+              <Search size={14} className="inv-search-icon" />
+              <input
+                type="text"
+                placeholder="Search by Bag # (e.g. 1, 2), Slip #, JW #, Quality, Form, Size, Location..."
+                className="inv-filter-search"
+                value={bagSearch}
+                onChange={(e) => setBagSearch(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="inv-filter-select"
+              value={bagStockTypeFilter}
+              onChange={(e) => setBagStockTypeFilter(e.target.value)}
+            >
+              <option value="All">All Types ({liveBags.length})</option>
+              <option value="FIXED">Fixed Stock (50kg std)</option>
+              <option value="LOOSE">Loose Stock (Cut / Odd)</option>
+            </select>
+
+            <select
+              className="inv-filter-select"
+              value={bagLocationFilter}
+              onChange={(e) => setBagLocationFilter(e.target.value)}
+            >
+              <option value="All">All Godowns</option>
+              {uniqueBagLocations.map(loc => (
+                <option key={loc} value={loc}>{loc}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Aggregated Variant Summary Cards */}
+          {(() => {
+            const variantMap = {};
+            filteredBags.forEach(b => {
+              const key = `${b.quality || 'Anchor'} ${b.form || 'Hank'} ${b.size || ''}`.trim() || 'General';
+              if (!variantMap[key]) {
+                variantMap[key] = {
+                  name: key,
+                  productName: b.productName || 'Twine',
+                  fixedBags: 0,
+                  fixedKg: 0,
+                  looseBags: 0,
+                  looseKg: 0,
+                  totalKg: 0
+                };
+              }
+              const wt = Number(b.actualWeightKg) || Number(b.standardWeightKg) || 0;
+              if (b.stockType === 'FIXED') {
+                variantMap[key].fixedBags += 1;
+                variantMap[key].fixedKg += wt;
+              } else {
+                variantMap[key].looseBags += 1;
+                variantMap[key].looseKg += wt;
+              }
+              variantMap[key].totalKg += wt;
+            });
+            const variants = Object.values(variantMap);
+            if (variants.length === 0) return null;
+
+            return (
+              <div style={{ margin: '2px 0 6px 0' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Stock Summary by Quality, Form &amp; Size Variant
+                </div>
+                <div className="inv-bag-variant-grid">
+                  {variants.map(v => (
+                    <div key={v.name} className="inv-bag-variant-card">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>{v.name}</span>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '10px' }}>
+                          {v.fixedBags + v.looseBags} Bags
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', fontSize: '0.76rem', alignItems: 'center' }}>
+                        <span style={{ color: '#16a34a', fontWeight: 600 }}>
+                          {v.fixedBags} Fixed ({v.fixedKg.toFixed(1)} KG)
+                        </span>
+                        <span style={{ color: '#d97706', fontWeight: 600 }}>
+                          {v.looseBags} Loose ({v.looseKg.toFixed(1)} KG)
+                        </span>
+                        <span style={{ color: '#0f172a', fontWeight: 700, borderLeft: '1px solid #e2e8f0', paddingLeft: '8px' }}>
+                          {v.totalKg.toFixed(1)} KG Total
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ─────────────────────────────────────────────────────────── */}
+          {/* GROUPED LOT REGISTER CARDS (DIARY) VS UNIFIED (FLAT) VIEW     */}
+          {/* ─────────────────────────────────────────────────────────── */}
+          {bagViewMode === 'diary' ? (
+            <div className="inv-diary-container">
+              {diaryLots.length > 0 ? (
+                diaryLots.map((lot) => (
+                  <div key={lot.lotId} className="inv-diary-lot-card">
+                    {/* Bracket Lot Header */}
+                    <div className="inv-lot-header">
+                      <div className="inv-lot-header-left">
+                        {/* Physical Group Bracket Identifier */}
+                        <div className="inv-lot-bracket-badge">
+                          <span>[ {lot.totalBags} Bags: #{lot.minBag} to #{lot.maxBag} ]</span>
+                        </div>
+
+                        <div className="inv-lot-specs">
+                          <span className="inv-lot-pill inv-lot-pill-blue">
+                            Quality: {lot.quality}
+                          </span>
+                          <span className="inv-lot-pill inv-lot-pill-purple">
+                            Form: {lot.form}
+                          </span>
+                          <span className="inv-lot-pill inv-lot-pill-green">
+                            Size: {lot.size}
+                          </span>
+                          <span className="inv-lot-pill inv-lot-pill-amber">
+                            Std: {lot.standardWeightKg.toFixed(1)} KG
+                          </span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
+                            {lot.coilCount} Coils/bag
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Lot Summary Statistics */}
+                      <div className="inv-lot-summary-stats">
+                        <div className="inv-lot-stat-item">
+                          <span className="inv-lot-stat-label">Total Net:</span>
+                          <span className="inv-lot-stat-val">{lot.totalActualKg.toFixed(1)} KG</span>
+                        </div>
+                        <div className="inv-lot-stat-item">
+                          <span className="inv-lot-stat-label">Avg:</span>
+                          <span className="inv-lot-stat-val">{lot.avgWeightKg} KG</span>
+                        </div>
+                        <div className="inv-lot-stat-item">
+                          <span className="inv-lot-stat-label">Variance:</span>
+                          <span 
+                            className="inv-lot-stat-val" 
+                            style={{ color: lot.totalVariance >= 0 ? '#16a34a' : '#ef4444' }}
+                          >
+                            {lot.totalVariance >= 0 ? `+${lot.totalVariance.toFixed(1)}` : lot.totalVariance.toFixed(1)} KG
+                          </span>
+                        </div>
+                        <div className="inv-lot-stat-item">
+                          <span className="inv-lot-stat-label">Coils:</span>
+                          <span className="inv-lot-stat-val">{lot.totalCoils}</span>
+                        </div>
+                        <div className="inv-lot-stat-item">
+                          <span className="inv-lot-stat-label">Location:</span>
+                          <span className="inv-lot-stat-val">{lot.location}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Table with Grouped Bag Serials */}
+                    <div className="inv-diary-table-wrap">
+                      <table className="inv-diary-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '90px' }}>BAG #</th>
+                            <th style={{ width: '110px' }}>QUALITY</th>
+                            <th style={{ width: '90px' }}>FORM</th>
+                            <th style={{ width: '80px' }}>SIZE</th>
+                            <th style={{ width: '100px', textAlign: 'right' }}>STD WT</th>
+                            <th style={{ width: '130px', textAlign: 'right' }}>ACTUAL WT (KG)</th>
+                            <th style={{ width: '100px', textAlign: 'right' }}>VARIANCE</th>
+                            <th style={{ width: '90px', textAlign: 'center' }}>COILS</th>
+                            <th style={{ width: '120px' }}>STOCK TYPE</th>
+                            <th>GODOWN / BAY</th>
+                            <th style={{ width: '70px', textAlign: 'center' }}>ACTION</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {lot.bags.map((bag, idx) => {
+                            const stdWt = Number(bag.standardWeightKg) || 50;
+                            const actWt = Number(bag.actualWeightKg) || stdWt;
+                            const variance = actWt - stdWt;
+                            const isEditing = editingBagWeightId === (bag.id || `bag-${bag.bagNumber}`);
+
+                            return (
+                              <tr 
+                                key={bag.id || `bag-${bag.bagNumber}`}
+                                onClick={() => handleOpenBagDrawer(bag)}
+                                style={{ cursor: 'pointer' }}
+                                title="Click to view full bag details"
+                              >
+                                <td>
+                                  <span className="bag-num-pill" style={bag.status === 'DISPATCHED' ? { background: '#f1f5f9', color: '#64748b', borderColor: '#cbd5e1' } : {}}>
+                                    Bag {bag.bagNumber}
+                                  </span>
+                                  {bag.status === 'DISPATCHED' && (
+                                    <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#475569', background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '1px 4px', borderRadius: '4px', marginLeft: 4, display: 'inline-block' }}>
+                                      DISP
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <strong style={{ color: '#0f172a' }}>{bag.quality || lot.quality}</strong>
+                                </td>
+                                <td>
+                                  <span style={{ color: '#334155' }}>{bag.form || lot.form}</span>
+                                </td>
+                                <td>
+                                  <span style={{ color: '#334155', fontWeight: 600 }}>{bag.size || lot.size}</span>
+                                </td>
+                                <td>
+                                  {`${stdWt.toFixed(1)} KG`}
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {isEditing ? (
+                                    <div 
+                                      onClick={(e) => e.stopPropagation()} 
+                                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                    >
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        className="mform-input"
+                                        value={editingBagWeightVal}
+                                        onChange={(e) => setEditingBagWeightVal(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleSaveBagWeight(bag)}
+                                        style={{ width: '70px', padding: '2px 6px', fontSize: '0.8rem', textAlign: 'right' }}
+                                        autoFocus
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSaveBagWeight(bag);
+                                        }}
+                                        style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', padding: '3px 6px', cursor: 'pointer' }}
+                                      >
+                                        <Check size={13} />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span 
+                                      className="act-wt-cell act-wt-editable"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartEditWeight(bag);
+                                      }}
+                                      title="Click to edit scale weight"
+                                    >
+                                      {actWt.toFixed(1)} KG
+                                      <Edit3 size={11} style={{ opacity: 0.35, marginLeft: 2 }} />
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <span className={`var-badge ${variance === 0 ? 'var-badge-exact' : variance > 0 ? 'var-badge-plus' : 'var-badge-minus'}`}>
+                                    {variance > 0 ? `+${variance.toFixed(1)}` : variance.toFixed(1)} KG
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'center', fontWeight: 600, color: '#475569' }}>
+                                  {bag.coilCount || lot.coilCount}
+                                </td>
+                                <td>
+                                  {bag.stockType === 'FIXED' ? (
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: 'rgba(22, 163, 74, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                      FIXED (50kg)
+                                    </span>
+                                  ) : (
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#d97706', background: 'rgba(217, 119, 6, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                      LOOSE (Odd)
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: '0.76rem', color: '#334155' }}>
+                                    {bag.location || lot.location}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <button
+                                    type="button"
+                                    className="inv-icon-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartEditWeight(bag);
+                                    }}
+                                    title="Edit scale weight"
+                                  >
+                                    <Edit3 size={12} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="inv-lot-footer-row">
+                            <td colSpan={4}>
+                              <strong>[ Subtotal: {lot.totalBags} Bags (#{lot.minBag} to #{lot.maxBag}) ]</strong>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              {lot.totalStdKg.toFixed(1)} KG
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>
+                              {lot.totalActualKg.toFixed(1)} KG Net
+                            </td>
+                            <td style={{ textAlign: 'right', color: lot.totalVariance >= 0 ? '#16a34a' : '#ef4444' }}>
+                              {lot.totalVariance >= 0 ? `+${lot.totalVariance.toFixed(1)}` : lot.totalVariance.toFixed(1)} KG
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              {lot.totalCoils} Coils
+                            </td>
+                            <td colSpan={3} style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                              Avg {lot.avgWeightKg} KG / bag • {lot.location}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', background: '#ffffff', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                  <Scale size={36} style={{ marginBottom: '12px', opacity: 0.4 }} />
+                  <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#334155' }}>No Bags Found For Current Filter</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ─────────────────────────────────────────────────────────── */
+            /* UNIFIED FLAT VIEW REGISTER TABLE                            */
+            /* ─────────────────────────────────────────────────────────── */
+            <div className="inv-table-container">
+              <table className="inv-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '80px' }}>BAG #</th>
+                    <th style={{ width: '110px' }}>STOCK TYPE</th>
+                    <th style={{ width: '110px' }}>INWARD REF</th>
+                    <th>QUALITY</th>
+                    <th>FORM</th>
+                    <th>SIZE</th>
+                    <th style={{ textAlign: 'right' }}>STD WT</th>
+                    <th style={{ textAlign: 'right' }}>ACTUAL WT</th>
+                    <th style={{ textAlign: 'right' }}>VARIANCE</th>
+                    <th style={{ textAlign: 'center' }}>COILS</th>
+                    <th>GODOWN / BAY</th>
+                    <th>STATUS</th>
+                    <th>INWARD DATE</th>
+                    <th style={{ textAlign: 'center', width: '70px' }}>ACTION</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredBags.length > 0 ? (
+                    filteredBags.map((bag) => {
+                      const stdWt = Number(bag.standardWeightKg) || 50;
+                      const actWt = Number(bag.actualWeightKg) || stdWt;
+                      const variance = actWt - stdWt;
+                      const isFixed = bag.stockType === 'FIXED';
+                      return (
+                        <tr
+                          key={bag.id || `flat-bag-${bag.bagNumber}`}
+                          onClick={() => handleOpenBagDrawer(bag)}
+                          style={{ cursor: 'pointer' }}
+                          title="Click to view detailed bag drawer"
+                        >
+                          <td>
+                            <span className="bag-num-pill">
+                              Bag {bag.bagNumber}
+                            </span>
+                          </td>
+                          <td>
+                            {isFixed ? (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: 'rgba(22, 163, 74, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                FIXED (50kg)
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#d97706', background: 'rgba(217, 119, 6, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                LOOSE (Odd)
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ fontWeight: 600, color: '#2563eb', fontSize: '0.78rem' }}>
+                            {bag.inwardSlipNo || 'SLIP-3001'}
+                          </td>
+                          <td style={{ fontWeight: 600, color: '#0f172a' }}>
+                            {bag.quality || 'Anchor Hank'}
+                          </td>
+                          <td style={{ color: '#475569' }}>
+                            {bag.form || 'Hank'}
+                          </td>
+                          <td style={{ fontWeight: 600, color: '#334155' }}>
+                            {bag.size || '3×3'}
+                          </td>
+                          <td style={{ textAlign: 'right', color: '#64748b' }}>
+                            {stdWt.toFixed(1)} KG
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <span className="act-wt-cell">
+                              {actWt.toFixed(1)} KG
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <span className={`var-badge ${variance === 0 ? 'var-badge-exact' : variance > 0 ? 'var-badge-plus' : 'var-badge-minus'}`}>
+                              {variance > 0 ? `+${variance.toFixed(1)}` : variance.toFixed(1)} KG
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: 600, color: '#475569' }}>
+                            {bag.coilCount || 10}
+                          </td>
+                          <td style={{ color: '#334155', fontSize: '0.8rem' }}>
+                            {bag.location || 'KPI Godown'}
+                          </td>
+                          <td>
+                            {bag.status === 'DISPATCHED' ? (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: '12px' }}>
+                                🚚 DISPATCHED
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: 'rgba(22, 163, 74, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                {bag.status || 'AVAILABLE'}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                            {bag.inwardDate || '2026-03-30'}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="inv-icon-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenBagDrawer(bag);
+                              }}
+                              title="View full bag details"
+                            >
+                              <ChevronRight size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={14} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                        No Bags Found For Current Filter
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Local Modals & Drawers ── */}
       {showJWModal && <NewJobWorkModal onClose={() => setShowJWModal(false)} />}
       {showSalesModal && <SalesOrderModal mode="sales" onClose={() => setShowSalesModal(false)} />}
@@ -1572,12 +2290,25 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           onSuccess={handleSaveFgStockModal}
         />
       )}
+      <AddBagBatchModal
+        isOpen={showAddBagBatchModal}
+        onClose={() => setShowAddBagBatchModal(false)}
+        currentMaxBagNumber={Math.max(0, ...liveBags.map(b => Number(b.bagNumber) || 0))}
+        onBagsAdded={handleBagsAdded}
+      />
       <MaterialDetailDrawer
         material={selectedMaterial}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         onIssueJW={triggerJWModal}
         onAddProduction={() => setShowAddFgStockModal(true)}
+      />
+      <BagDetailDrawer
+        bag={selectedBagForDrawer}
+        isOpen={isBagDrawerOpen}
+        onClose={() => setIsBagDrawerOpen(false)}
+        onUpdateBagWeight={handleUpdateBagWeightFromDrawer}
+        onUpdateBagLocation={handleUpdateBagLocationFromDrawer}
       />
     </div>
   );

@@ -57,7 +57,7 @@ export function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-const COMPANY_INFO = {
+export let COMPANY_INFO = {
   name: 'KAMANI PLASTIC INDUSTRIES',
   tagline: 'Manufacturers & Exporters of PP Danline Ropes, HDPE Twines & Quality Plastic Products',
   address: 'Plot No. 12/A, Phase-II, GIDC Industrial Estate, Veraval - 362269, Gujarat (INDIA)',
@@ -73,6 +73,17 @@ const COMPANY_INFO = {
   bankIfsc: 'SBIN0003412',
   bankType: 'Current Account'
 };
+
+export function updatePrintCompanyInfo(profile) {
+  if (!profile) return;
+  COMPANY_INFO = {
+    ...COMPANY_INFO,
+    name: profile.legalName || profile.name || COMPANY_INFO.name,
+    gstin: profile.gstin || COMPANY_INFO.gstin,
+    phone: profile.phone || COMPANY_INFO.phone,
+    address: profile.address || COMPANY_INFO.address
+  };
+}
 
 const BASE_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -420,14 +431,14 @@ function openPrintWindow(title, htmlBody) {
 export function printTaxInvoice(data = {}) {
   const invoiceNo = data.invoiceNo || data.taxInvoice || data.taxInvoiceNo || `INV-2026-${Math.floor(100 + Math.random() * 900)}`;
   const date = data.date || data.dispatchDate || new Date().toISOString().split('T')[0];
-  const orderRef = data.orderRef || data.orderNo || data.soId || 'SO-2026-4150';
-  const challanNo = data.challanNo || 'DC-2026-360';
-  const customer = data.customer || 'ABC Marine Traders';
-  const customerGstin = data.customerGstin || data.gstin || '24AABCA9876K1Z2';
-  const customerAddress = data.customerAddress || data.destination || data.address || 'Plot 45, Commercial Dock, Veraval, Gujarat - 362269';
-  const vehicle = data.vehicle || data.vehicleNo || 'GJ-03-BW-7821';
-  const transporter = data.transporter || 'Shree Saurashtra Roadlines';
-  const ewayBill = data.ewayBill || '750618359189';
+  const orderRef = data.orderRef || data.orderNo || data.soId || '-';
+  const challanNo = data.challanNo || '-';
+  const customer = data.customer || '-';
+  const customerGstin = data.customerGstin || data.gstin || '-';
+  const customerAddress = data.customerAddress || data.destination || data.address || '-';
+  const vehicle = data.vehicle || data.vehicleNo || '-';
+  const transporter = data.transporter || '-';
+  const ewayBill = data.ewayBill || '-';
 
   // Dynamic calculation of quantity and financials from live data:
   const qtyCoils = parseVal(data.dispatchedQty || data.dispatchedQtyCoils || data.orderedQtyCoils || data.orderedQty || 300);
@@ -644,12 +655,12 @@ export function printDeliveryChallan(data = {}) {
   const challanNo = data.challanNo || `DC-2026-${Math.floor(100 + Math.random() * 900)}`;
   const dispatchNo = data.dispatchNo || `DSP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
   const date = data.date || data.dispatchDate || new Date().toISOString().split('T')[0];
-  const orderRef = data.orderRef || data.orderNo || 'SO-2026-4150';
-  const customer = data.customer || 'ABC Marine Traders';
-  const customerAddress = data.destination || data.customerAddress || 'Plot 45, Commercial Dock, Veraval, Gujarat';
-  const vehicle = data.vehicle || data.vehicleNo || 'GJ-03-BW-7821';
-  const transporter = data.transporter || 'Shree Saurashtra Roadlines';
-  const ewayBill = data.ewayBill || '750618359189';
+  const orderRef = data.orderRef || data.orderNo || '-';
+  const customer = data.customer || '-';
+  const customerAddress = data.destination || data.customerAddress || '-';
+  const vehicle = data.vehicle || data.vehicleNo || '-';
+  const transporter = data.transporter || '-';
+  const ewayBill = data.ewayBill || '-';
   const qty = data.dispatchedQty || data.dispatchedQtyCoils || '300 Coils';
 
   const html = `
@@ -815,7 +826,7 @@ export function printJobWorkChallan(data = {}) {
   const charges = typeof data.ratePerKg === 'string'
     ? data.ratePerKg
     : (data.charges || data.ratePerKg || data.processingRate ? `₹${data.charges || data.ratePerKg || data.processingRate} / KG` : '₹17.50 / KG');
-  const vehicle = data.vehicleNo || data.vehicle || 'GJ-03-XX-1234';
+  const vehicle = data.vehicleNo || data.vehicle || '-';
   const date = data.date || data.challanDate || new Date().toISOString().split('T')[0];
   const expectedReturn = data.expectedReturn || '2025-04-30';
   const batch = data.batch || data.batchNo || 'BATCH-2026-904';
@@ -994,13 +1005,13 @@ export function printJobWorkChallan(data = {}) {
  * 4. Print Sales Order Acknowledgement
  */
 export function printSalesOrderAck(data = {}) {
-  const orderNo = data.id || data.orderNo || 'SO-2026-4150';
+  const orderNo = data.id || data.orderNo || '-';
   const date = data.orderDate || data.date || new Date().toISOString().split('T')[0];
-  const targetDispatch = data.targetDispatch || data.deliveryDate || '2026-08-30';
-  const customer = data.customer || 'ABC Marine Traders';
-  const poRef = data.poRef || 'PO-2026-6111';
-  const address = data.address || data.deliveryAddress || data.destination || 'Plot 45, Commercial Dock, Veraval, Gujarat';
-  const paymentTerms = data.paymentTerms || '30 Days Post Dispatch';
+  const targetDispatch = data.targetDispatch || data.deliveryDate || '-';
+  const customer = data.customer || '-';
+  const poRef = data.poRef || '-';
+  const address = data.address || data.deliveryAddress || data.destination || '-';
+  const paymentTerms = data.paymentTerms || '-';
 
   const qtyNum = parseVal(data.ordered || data.orderedQtyCoils || data.orderedQty || 1);
   const rateNum = parseVal(data.rate || (data.items && data.items[0]?.rate) || 2450);
@@ -1164,7 +1175,7 @@ export function printInwardDeliverySlip(slip = {}, jwData = {}) {
   const process = jwData.process || jwData.processType || slip.process || 'ROPE COIL - 404';
   const workOrder = jwData.workOrder || slip.workOrder || 'WO-6612';
   const department = slip.department || jwData.department || 'Job Work Extrusion';
-  const vehicle = jwData.vehicleNo || jwData.vehicle || slip.vehicleNo || 'GJ-03-XX-1234';
+  const vehicle = jwData.vehicleNo || jwData.vehicle || slip.vehicleNo || '-';
   const receivedBy = slip.receivedBy || 'RAMILBHAI';
   const rawMat = jwData.inputMaterialName || jwData.rawMat || 'HDPE Granules (IOCL F5400)';
   const returnedItem = slip.itemLabel || slip.itemDescription || 'ANCHOR YARN / FISHING YARN';

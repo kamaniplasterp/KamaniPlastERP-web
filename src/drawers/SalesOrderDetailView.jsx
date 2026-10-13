@@ -40,13 +40,13 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
   // Grand Total
   const grandTotalNum = taxableSubtotalNum + gstNum + freightNum;
 
-  const defaultItems = (simMatch?.items && simMatch.items.length > 0) ? simMatch.items : [
+  const defaultItems = (simMatch?.items && simMatch.items.length > 0) ? simMatch.items : (simMatch ? [
     {
       id: 1,
-      desc: simMatch?.itemSummary || simMatch?.productName || 'PP Danline Rope 6mm (Yellow)',
-      code: simMatch?.fgSkuId || 'FG-PPD-06-YL',
-      product: simMatch?.itemSummary || simMatch?.productName || 'PP Danline Rope 6mm (Yellow)',
-      diaColor: simMatch?.spec || '6 mm • Bright Yellow',
+      desc: simMatch.itemSummary || simMatch.productName || 'Ordered Item',
+      code: simMatch.fgSkuId || simMatch.fgSkuCode || 'FG',
+      product: simMatch.itemSummary || simMatch.productName || 'Ordered Item',
+      diaColor: simMatch.spec || '-',
       orderedQty: `${orderedQtyNum} Coils`,
       reserved: `${reservedQtyNum} Coils`,
       dispatched: `${dispatchedQtyNum} Coils`,
@@ -54,18 +54,18 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
       rate: `₹${rateNum.toLocaleString('en-IN')}`,
       amount: `₹${taxableSubtotalNum.toLocaleString('en-IN')}`
     }
-  ];
+  ] : []);
 
   const orderDetails = {
-    id: simMatch?.orderNo || simMatch?.id || orderId || 'SO-2026-4150',
-    status: simMatch?.status || 'STOCK RESERVED',
+    id: simMatch?.orderNo || simMatch?.id || orderId || '-',
+    status: simMatch?.status || 'PENDING',
     statusClass: simMatch?.status === 'COMPLETED' ? 'pill-completed' : (simMatch?.status === 'DISPATCHED' ? 'pill-dispatched' : 'pill-confirmed'),
-    customer: simMatch?.customer || 'ABC Marine Traders',
-    poRef: simMatch?.poRef || 'PO-2026-6111',
-    address: simMatch?.deliveryAddress || simMatch?.destination || 'Plot 45, Commercial Dock, Veraval, Gujarat',
-    orderDate: simMatch?.orderDate || simMatch?.date || '2026-08-26',
-    targetDispatch: simMatch?.targetDispatch || simMatch?.deliveryDate || '2026-08-30',
-    paymentTerms: simMatch?.paymentTerms || '30 Days Post Dispatch',
+    customer: simMatch?.customer || '-',
+    poRef: simMatch?.poRef || '-',
+    address: simMatch?.deliveryAddress || simMatch?.destination || '-',
+    orderDate: simMatch?.orderDate || simMatch?.date || '-',
+    targetDispatch: simMatch?.targetDispatch || simMatch?.deliveryDate || '-',
+    paymentTerms: simMatch?.paymentTerms || 'Payment on Delivery',
     ordered: orderedQtyNum,
     reserved: reservedQtyNum,
     dispatched: dispatchedQtyNum,
@@ -254,10 +254,10 @@ export default function SalesOrderDetailView({ orderId, onBack, onCreateDispatch
               <tbody>
                 {linkedDispatches.map(d => (
                   <tr key={d.id || d.dispatchNo}>
-                    <td className="so-item-name">{d.dispatchNo || `DSP-2026-${d.id.slice(0, 4).toUpperCase()}`}</td>
-                    <td>{d.date || '2026-08-26'}</td>
-                    <td>{d.challanNo || 'DC-2026-0182'}</td>
-                    <td>{d.taxInvoice || d.invoiceNo || 'INV-2026-0921'}</td>
+                    <td className="so-item-name">{d.dispatchNo || '-'}</td>
+                    <td>{d.date || '-'}</td>
+                    <td>{d.challanNo || '-'}</td>
+                    <td>{d.taxInvoice || d.invoiceNo || '-'}</td>
                     <td className="text-green text-bold">{typeof d.dispatchedQtyCoils === 'number' ? `${d.dispatchedQtyCoils} Coils` : (d.dispatchedQty || '0 Coils')}</td>
                     <td><span className="so-status-badge pill-confirmed">• {d.status || 'DISPATCHED'}</span></td>
                   </tr>

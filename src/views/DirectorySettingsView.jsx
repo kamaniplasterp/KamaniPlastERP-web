@@ -24,6 +24,7 @@ import {
   DEFAULT_COMPANY_PROFILE
 } from '../api/directory.api';
 import { subscribeJobWorks, JW_PROCESS_LIST } from '../api/jobwork.api';
+import { subscribeProcesses, DEFAULT_PROCESS_LIST } from '../api/process.api';
 import { subscribeSalesOrders } from '../api/sales.api';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
@@ -62,6 +63,7 @@ export default function DirectorySettingsView() {
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
   const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
   const [newPersonName, setNewPersonName] = useState('');
+  const [liveProcesses, setLiveProcesses] = useState(DEFAULT_PROCESS_LIST);
   const [companyProfile, setCompanyProfile] = useState(DEFAULT_COMPANY_PROFILE);
 
   useEffect(() => {
@@ -74,6 +76,7 @@ export default function DirectorySettingsView() {
     const unsubTare = subscribeTareStandards(setTareStandards);
     const unsubPers = subscribePersonnel(setPersonnelList);
     const unsubProf = subscribeCompanyProfile(setCompanyProfile);
+    const unsubProc = subscribeProcesses(setLiveProcesses);
     return () => {
       unsubV();
       unsubB();
@@ -84,6 +87,7 @@ export default function DirectorySettingsView() {
       unsubTare();
       unsubPers();
       unsubProf();
+      unsubProc();
     };
   }, []);
 
@@ -251,7 +255,7 @@ export default function DirectorySettingsView() {
         <div>
           <h1 className="ds-page-title">Directory &amp; Master Configuration</h1>
           <p className="ds-page-subtitle">
-            Maintain supplier rates, valuation codes, tare standards, contacts directory, and plant profile.
+            Maintain supplier and customer registries, job worker rates, tare standards, and plant profile.
           </p>
         </div>
       </div>
@@ -944,7 +948,10 @@ export default function DirectorySettingsView() {
               <div className="mform-field">
                 <label className="mform-label">Process</label>
                 <select className="mform-select" value={newRateForm.process} onChange={e => setNewRateForm({ ...newRateForm, process: e.target.value })}>
-                  {JW_PROCESS_LIST.map(p => <option key={p} value={p}>{p}</option>)}
+                  {liveProcesses.map(proc => {
+                    const pName = proc.processName || proc.name || proc;
+                    return <option key={proc.id || pName} value={pName}>{pName}</option>;
+                  })}
                 </select>
               </div>
               <div className="mform-field">

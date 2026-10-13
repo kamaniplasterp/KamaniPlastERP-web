@@ -1,22 +1,35 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X, Layers, Sparkles } from 'lucide-react';
+import { subscribeProductAttributes, DEFAULT_PRODUCT_ATTRIBUTES } from '../api/productMatrix.api';
 import '../styles/Modals.css';
 
-const BRAND_OPTIONS = ['LOTUS', 'ANCHOR', 'GALAXY', 'KPI', 'KAMANI'];
-const SIZE_OPTIONS = ['02MM', '03MM', '04MM', '05MM', '06MM', '08MM', '10MM', '12MM', '14MM', '16MM'];
-const PACKING_OPTIONS = ['HANKS', 'CONE', 'COIL', 'REEL', 'BUNDLE'];
+const DEFAULT_BRAND_OPTIONS = ['LOTUS', 'ANCHOR', 'GALAXY', 'KPI', 'KAMANI'];
+const DEFAULT_SIZE_OPTIONS = ['02MM', '03MM', '04MM', '05MM', '06MM', '08MM', '10MM', '12MM', '14MM', '16MM'];
+const DEFAULT_PACKING_OPTIONS = ['HANKS', 'CONE', 'COIL', 'REEL', 'BUNDLE'];
 const PACK_WEIGHT_OPTIONS = ['1KG', '2KG', '5KG', '10KG', '20KG', '25KG', '50KG'];
-const COLOR_OPTIONS = ['F BLUE', 'WHITE', 'GREEN', 'RED', 'NATURAL', 'YELLOW', 'BLACK'];
+const DEFAULT_COLOR_OPTIONS = ['F BLUE', 'WHITE', 'GREEN', 'RED', 'NATURAL', 'YELLOW', 'BLACK'];
 
 export default function AddProductSkuModal({ onClose, onSave }) {
+  const [productAttrs, setProductAttrs] = useState(DEFAULT_PRODUCT_ATTRIBUTES);
+
+  useEffect(() => {
+    const unsub = subscribeProductAttributes(setProductAttrs);
+    return () => unsub();
+  }, []);
+
+  const brandOptions = productAttrs.qualities?.length ? productAttrs.qualities : DEFAULT_BRAND_OPTIONS;
+  const sizeOptions = productAttrs.sizes?.length ? productAttrs.sizes : DEFAULT_SIZE_OPTIONS;
+  const packingOptions = productAttrs.forms?.length ? productAttrs.forms : DEFAULT_PACKING_OPTIONS;
+  const colorOptions = productAttrs.colors?.length ? productAttrs.colors : DEFAULT_COLOR_OPTIONS;
+
   const [formData, setFormData] = useState({
     code: '',
     category: 'PP Danline Rope',
-    brand: 'LOTUS',
-    sizeDia: '02MM',
-    packingType: 'HANKS',
+    brand: brandOptions[0] || 'LOTUS',
+    sizeDia: sizeOptions[0] || '02MM',
+    packingType: packingOptions[0] || 'HANKS',
     packWeightKg: '1KG',
-    color: 'F BLUE',
+    color: colorOptions[0] || 'F BLUE',
     initialStock: '0',
     rate: '245.00',
     reorderLevel: '10'
@@ -151,7 +164,7 @@ export default function AddProductSkuModal({ onClose, onSave }) {
                 onChange={e => handleChange('brand', e.target.value)}
                 required
               >
-                {BRAND_OPTIONS.map(b => (
+                {brandOptions.map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
@@ -165,7 +178,7 @@ export default function AddProductSkuModal({ onClose, onSave }) {
                 onChange={e => handleChange('sizeDia', e.target.value)}
                 required
               >
-                {SIZE_OPTIONS.map(s => (
+                {sizeOptions.map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
@@ -181,7 +194,7 @@ export default function AddProductSkuModal({ onClose, onSave }) {
                 onChange={e => handleChange('packingType', e.target.value)}
                 required
               >
-                {PACKING_OPTIONS.map(p => (
+                {packingOptions.map(p => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
@@ -209,7 +222,7 @@ export default function AddProductSkuModal({ onClose, onSave }) {
                 onChange={e => handleChange('color', e.target.value)}
                 required
               >
-                {COLOR_OPTIONS.map(c => (
+                {colorOptions.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>

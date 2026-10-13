@@ -12,7 +12,7 @@ import {
   runTransaction
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
-import { updateFgStock, logStockMovement } from './inventory.api';
+import { updateFgStock, logStockMovement, dispatchInventoryBags } from './inventory.api';
 
 /**
  * Subscribe to real-time Sales Orders collection with optional limit
@@ -66,10 +66,10 @@ export async function createSalesOrder(data) {
     orderNo: orderNo,
     poRef: data.poRef || `PO: ${data.customer || 'CUSTOMER'}-REF`,
     date: data.date || new Date().toISOString().split('T')[0],
-    customer: data.customer || 'ABC Marine Traders',
+    customer: data.customer || 'Direct Customer',
     customerId: data.customerId || null,
     expDate: data.expDate || `Exp: ${new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0]}`,
-    itemSummary: data.itemSummary || 'PP Danline Rope 6mm (Yellow)',
+    itemSummary: data.itemSummary || 'Finished Goods Coils',
     fgSkuId: data.fgSkuId || null,
     orderedQty: `${orderedQtyCoils} Coils`,
     orderedQtyCoils: orderedQtyCoils,
@@ -275,6 +275,21 @@ export async function createDispatch(data) {
     location: 'Finished Goods Bay -> Transport',
     remarks: `Dispatched ${dispatchQtyCoils} Coils under ${dispatchDoc.challanNo}`
   });
+
+  // Update Bag Serials status in inventory_bags (FIFO or specific bag IDs)
+  try {
+    await dispatchInventoryBags({
+      bagIds: data.selectedBagIds || [],
+      requiredCoils: dispatchQtyCoils,
+      dispatchDetails: {
+        challanNo: chNo,
+        dispatchNo: dispatchNo,
+        customer: data.customer
+      }
+    });
+  } catch (bagErr) {
+    console.warn('Could not update inventory bags status on dispatch:', bagErr);
+  }
 
   return docRef.id;
 }

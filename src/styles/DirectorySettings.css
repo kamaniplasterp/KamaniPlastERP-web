@@ -438,6 +438,59 @@
   background: #1e293b;
 }
 
+/* Minimalist Light Header Table (matches JobWorkHub & InventoryStock) */
+.ds-table-container,
+.ds-table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  margin-top: 14px;
+}
+
+.ds-table {
+  width: 100%;
+  min-width: 1150px;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  background: #ffffff;
+}
+
+.ds-table thead tr {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.ds-table thead th {
+  padding: 13px 16px;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  text-transform: uppercase;
+  border-bottom: 1px solid #f1f5f9;
+  white-space: nowrap;
+}
+
+.ds-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.12s ease;
+}
+
+.ds-table tbody tr:hover {
+  background: #fafbfc;
+}
+
+.ds-table tbody td {
+  padding: 14px 16px;
+  color: #334155;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+}
+
 /* Responsive */
 @media (max-width: 1100px) {
   .ds-cards-grid {

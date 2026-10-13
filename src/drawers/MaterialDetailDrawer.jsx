@@ -23,11 +23,11 @@ export default function MaterialDetailDrawer({ material, isOpen, onClose, onIssu
       }
     }).map(j => ({
       id: j.jwNo || j.id,
-      vendor: j.vendor || 'Shree Plastic Works',
-      sent: j.sentQty || `${j.sentQtyKg || 2000} KG`,
-      recd: j.recQty || `${j.recQtyKg || 1960} KG`,
+      vendor: j.vendor || j.party || '-',
+      sent: j.sentQty || `${j.sentQtyKg || 0} KG`,
+      recd: j.recQty || `${j.recQtyKg || 0} KG`,
       bal: j.balQty || `${j.balQtyKg || 0} KG`,
-      status: j.status || 'FULLY RECEIVED',
+      status: j.status || 'SENT',
       badgeClass: j.status === 'FULLY RECEIVED' || j.status === 'COMPLETED' ? 'badge-completed' : 'badge-sent'
     }))
   );
@@ -35,9 +35,9 @@ export default function MaterialDetailDrawer({ material, isOpen, onClose, onIssu
   const salesOrdersList = (material.salesOrdersList && material.salesOrdersList.length > 0) ? material.salesOrdersList : (
     (simulatedSalesOrders || []).map(s => ({
       id: s.orderNo || s.id,
-      customer: s.customer || 'ABC Marine Traders',
-      qty: `${s.reservedCoils || s.orderedQtyCoils || 300} Coils`,
-      status: s.status || 'RESERVED',
+      customer: s.customer || '-',
+      qty: `${s.reservedCoils || s.orderedQtyCoils || 0} Coils`,
+      status: s.status || 'PENDING',
       badgeClass: s.status === 'COMPLETED' ? 'badge-completed' : 'badge-sent'
     }))
   );

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import '../styles/Dashboard.css';
 
-/* ─── Mock Data ─── */
+/* ─── Baseline KPI Templates ─── */
 const kpiData = [
   {
     id: 'raw',
@@ -75,14 +75,6 @@ const lifecycleStages = [
   { id: 5, label: 'Sales Pipeline', value: '0', unit: 'Orders', color: 'gray', active: false },
   { id: 6, label: 'Dispatches', value: '0', unit: 'Challans', color: 'gray', active: false },
 ];
-
-const jobWorkData = [];
-
-const dispatches = [];
-
-const reorderAlerts = [];
-
-const traceabilitySteps = [];
 
 /* ─── Chart SVG helpers ─── */
 function DonutChart({ rmStock = 0, fgStock = 0, jobWorkStock = 0 }) {

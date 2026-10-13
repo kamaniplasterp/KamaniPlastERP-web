@@ -19,6 +19,8 @@ import {
   subscribeSalesOrders, 
   subscribeDispatches 
 } from '../api/sales.api';
+import { subscribeCompanyProfile } from '../api/directory.api';
+import { updatePrintCompanyInfo } from '../utils/printDocument';
 
 const WorkflowContext = createContext();
 
@@ -57,6 +59,7 @@ export function WorkflowProvider({ children }) {
     const unsubSo = subscribeSalesOrders(setSalesOrderList);
     const unsubDc = subscribeDispatches(setDispatchList);
     const unsubMov = subscribeStockMovements(setMovementList);
+    const unsubProf = subscribeCompanyProfile(updatePrintCompanyInfo);
 
     return () => {
       unsubRm();
@@ -65,6 +68,7 @@ export function WorkflowProvider({ children }) {
       unsubSo();
       unsubDc();
       unsubMov();
+      unsubProf();
     };
   }, [user]);
 

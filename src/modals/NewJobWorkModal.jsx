@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react';
-import { X, Calculator, Truck, FileText, Layers, UserCheck } from 'lucide-react';
-import { createJobWork, ARTICLE_TARE_DEFAULTS, JW_PROCESS_LIST } from '../api/jobwork.api';
+import { X, Calculator, Truck, FileText, Layers, UserCheck, Warehouse, Scale, PackageCheck, Plus, CheckCircle2 } from 'lucide-react';
+import { createJobWork, ARTICLE_TARE_DEFAULTS, JW_PROCESS_LIST, getNextChallanNumber } from '../api/jobwork.api';
 import { subscribeRawMaterials } from '../api/inventory.api';
 import { 
   subscribeVendors, 
   subscribePersonnel, 
   subscribeTareStandards, 
+  subscribeCompanyProfile,
   DEFAULT_PERSONNEL, 
-  DEFAULT_TARE_STANDARDS 
+  DEFAULT_TARE_STANDARDS,
+  DEFAULT_COMPANY_PROFILE 
 } from '../api/directory.api';
+import { subscribeProcesses, DEFAULT_PROCESS_LIST } from '../api/process.api';
+import { subscribeLocations, DEFAULT_LOCATIONS_LIST } from '../api/locations.api';
 import '../styles/Modals.css';
 
 function today() {
@@ -25,17 +29,62 @@ export default function NewJobWorkModal({ onClose, onSave }) {
   const [liveVendors, setLiveVendors] = useState([]);
   const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
+  const [liveProcesses, setLiveProcesses] = useState(DEFAULT_PROCESS_LIST);
+  const [liveLocations, setLiveLocations] = useState(DEFAULT_LOCATIONS_LIST);
+  const [companyProfile, setCompanyProfile] = useState(DEFAULT_COMPANY_PROFILE);
 
   useEffect(() => {
     const unsubRm = subscribeRawMaterials(setLiveMaterials);
     const unsubVe = subscribeVendors(setLiveVendors);
     const unsubPers = subscribePersonnel(setPersonnelList);
     const unsubTare = subscribeTareStandards(setTareStandards);
+    const unsubProc = subscribeProcesses((procs) => {
+      setLiveProcesses(procs);
+      if (procs && procs.length > 0) {
+        setForm(f => {
+          if (!f.processId || f.processType === 'Job Work Extrusion' || !f.processingRate) {
+            const first = procs[0];
+            return {
+              ...f,
+              department: first.processName || f.department,
+              processType: first.processName,
+              processId: first.processCode || first.id,
+              processingRate: String(first.defaultRatePerKg || '5.00'),
+              isFixedWeight: Boolean(first.isFixedWeight),
+              standardBagWeightKg: String(first.standardBagWeightKg || 50),
+              bLossPct: first.expectedScrapPct !== undefined ? String(first.expectedScrapPct) : f.bLossPct
+            };
+          }
+          return f;
+        });
+      }
+    });
+    const unsubLoc = subscribeLocations(setLiveLocations);
+    const unsubComp = subscribeCompanyProfile((profile) => {
+      setCompanyProfile(profile);
+      if (profile?.jwPrefix) {
+        setForm(f => ({ ...f, challanSeries: profile.jwPrefix }));
+      }
+    });
+
+    getNextChallanNumber().then(nextCh => {
+      if (nextCh?.baseChallan) {
+        setForm(f => ({
+          ...f,
+          challanNo: nextCh.baseChallan,
+          subChalNo: nextCh.subChallan || '1'
+        }));
+      }
+    });
+
     return () => {
       unsubRm();
       unsubVe();
       unsubPers();
       unsubTare();
+      unsubProc();
+      unsubLoc();
+      unsubComp();
     };
   }, []);
 
@@ -48,8 +97,9 @@ export default function NewJobWorkModal({ onClose, onSave }) {
   };
 
   const [form, setForm] = useState({
-    // Challan Headers
+    // Challan Headers matching Image 1 format (000010126 / 1 / 2)
     challanSeries: 'JW-2026-',
+    challanNo: '',
     subChalNo: '1',
     workOrder: `WO-${Math.floor(1000 + Math.random() * 9000)}`,
     department: 'Job Work Extrusion',
@@ -57,11 +107,25 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     durationDays: '5',
     expectedReturn: addDays(5),
 
+    // Source Location & Routing (supporting Double Job Work)
+    sourceLocation: '',
+    isDoubleJobWork: false,
+
     // Party & Material
     jwParty: '',
     rawMaterial: '',
     grade: '',
-    processType: JW_PROCESS_LIST[0],
+    processType: DEFAULT_PROCESS_LIST[0]?.processName || JW_PROCESS_LIST[0],
+    processId: DEFAULT_PROCESS_LIST[0]?.processCode || '',
+    isFixedWeight: DEFAULT_PROCESS_LIST[0]?.isFixedWeight ?? true,
+    standardBagWeightKg: String(DEFAULT_PROCESS_LIST[0]?.standardBagWeightKg || 50),
+
+    // Accessories Dispatched (Kokda, LD Bags, Outer Thela)
+    includeAccessories: false,
+    spoolsCount: '',
+    spoolsQtyKg: '',
+    ldBagsQtyKg: '',
+    outerBagsCount: '',
 
     // Weight & Packaging
     grossWeight: '',
@@ -76,24 +140,19 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     sampleWeight: '0.5',
 
     // Financials
-    processingRate: '',
+    processingRate: String(DEFAULT_PROCESS_LIST[0]?.defaultRatePerKg || '5.00'),
     freight: '',
 
     // Logistics & Administration
     batchNo: `BATCH-2026-${Math.floor(Math.random() * 900 + 100)}`,
     vehicleNo: '',
-    stockSource: 'Factory Silo Bay A-1',
+    stockSource: '',
     issuedBy: DEFAULT_PERSONNEL[0],
     approvedBy: 'FINAL APPROVED',
     remarks: ''
   });
 
-  const displayVendors = liveVendors.length > 0 ? liveVendors : [
-    { id: 'V1', name: 'GALAXY.ENTERPRISE', location: 'Morbi, Gujarat', gst: '24AABCS9912K1Z4', rate: 17.5 },
-    { id: 'V2', name: 'RAMJIBHAI', location: 'Rajkot, Gujarat', gst: '24AABCP1234K1Z5', rate: 17.0 },
-    { id: 'V3', name: 'HIMMATBHAI', location: 'Jamnagar, Gujarat', gst: '24AABCK5678K1Z6', rate: 17.0 },
-    { id: 'V4', name: 'CHIRIMIRIPLASTICS', location: 'Dhoraji, Gujarat', gst: '24AABCC1111K1Z7', rate: 16.5 }
-  ];
+  const displayVendors = liveVendors;
 
   const selMaterial = liveMaterials.find(m => m.id === form.rawMaterial);
   const selParty = displayVendors.find(p => p.id === form.jwParty);
@@ -134,10 +193,61 @@ export default function NewJobWorkModal({ onClose, onSave }) {
 
   const handlePartySelect = (partyId) => {
     const p = displayVendors.find(v => v.id === partyId);
+    const procKey = form.processId || form.processType;
+    const contractRate = p?.rateContracts?.[procKey] || p?.rateContracts?.[form.processType];
+    const matched = liveProcesses.find(proc => proc.id === form.processId || proc.processCode === form.processId || proc.processName === form.processType);
+    
+    // Priority: 1. Vendor Specific Contract Rate -> 2. Process Master Default Rate -> 3. Vendor Base Rate
+    const newRate = contractRate !== undefined 
+      ? String(contractRate) 
+      : (matched?.defaultRatePerKg !== undefined 
+          ? String(matched.defaultRatePerKg) 
+          : (p && p.rate !== undefined ? String(p.rate) : form.processingRate));
+
     setForm(f => ({
       ...f,
       jwParty: partyId,
-      processingRate: p && p.rate !== undefined ? String(p.rate) : f.processingRate
+      processingRate: newRate
+    }));
+  };
+
+  const handleProcessSelect = (procIdentifier) => {
+    const matched = liveProcesses.find(p => p.id === procIdentifier || p.processCode === procIdentifier || p.processName === procIdentifier);
+    const p = displayVendors.find(v => v.id === form.jwParty);
+    const procKey = matched ? (matched.processCode || matched.processName) : procIdentifier;
+    const contractRate = p?.rateContracts?.[procKey] || p?.rateContracts?.[matched?.processName] || p?.rateContracts?.[matched?.processCode];
+
+    if (matched) {
+      setForm(f => ({
+        ...f,
+        department: matched.processName,
+        processType: matched.processName,
+        processId: matched.processCode || matched.id,
+        processingRate: contractRate !== undefined 
+          ? String(contractRate) 
+          : (matched.defaultRatePerKg !== undefined 
+              ? String(matched.defaultRatePerKg) 
+              : (p?.rate !== undefined ? String(p.rate) : f.processingRate)),
+        isFixedWeight: Boolean(matched.isFixedWeight),
+        standardBagWeightKg: String(matched.standardBagWeightKg || 50),
+        bLossPct: matched.expectedScrapPct !== undefined ? String(matched.expectedScrapPct) : f.bLossPct
+      }));
+    } else {
+      setForm(f => ({
+        ...f,
+        department: procIdentifier,
+        processType: procIdentifier
+      }));
+    }
+  };
+
+  const handleSourceLocationSelect = (locName) => {
+    const matched = liveLocations.find(l => l.name === locName || l.locationCode === locName);
+    const isDouble = matched ? matched.type === 'JOB_WORKER' : false;
+    setForm(f => ({
+      ...f,
+      sourceLocation: locName,
+      isDoubleJobWork: isDouble
     }));
   };
 
@@ -168,19 +278,35 @@ export default function NewJobWorkModal({ onClose, onSave }) {
 
     try {
       const autoNum = Math.floor(1000 + Math.random() * 9000);
+      const formattedChallan = form.challanNo ? `${form.challanNo} / ${form.subChalNo || '1'}` : String(autoNum);
       const payload = {
-        jwNo: `${form.challanSeries}${autoNum}`,
-        chNo: String(autoNum),
+        jwNo: `CH-${form.challanNo || autoNum}`,
+        chNo: formattedChallan,
+        challanNo: form.challanNo || String(autoNum),
         challanSeries: form.challanSeries,
         subChalNo: form.subChalNo || '1',
         workOrder: form.workOrder,
         department: form.department,
+        // Routing & Locations
+        sourceLocation: form.sourceLocation || 'KPI Godown',
+        isDoubleJobWork: Boolean(form.isDoubleJobWork),
         vendor: vendorLabel,
         vendorId: form.jwParty || null,
+        targetLocation: vendorLabel,
+        // Process linkage
+        process: form.processType,
+        processId: form.processId || '',
+        isFixedWeight: Boolean(form.isFixedWeight),
+        standardBagWeightKg: Number(form.standardBagWeightKg || 50),
+        // Dispatched Accessories
+        spoolsCount: Number(form.spoolsCount || 0),
+        spoolsQtyKg: Number(form.spoolsQtyKg || 0),
+        ldBagsQtyKg: Number(form.ldBagsQtyKg || 0),
+        outerBagsCount: Number(form.outerBagsCount || 0),
+        // Material & Weights
         rawMat: matLabel,
         grade: form.grade || selMaterial?.grade || '',
         rawMaterialId: form.rawMaterial || null,
-        process: form.processType,
         grossWeight: grossWght,
         boraCount: boraCnt,
         articleType: form.articleType,
@@ -201,7 +327,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
         expectedReturn: form.expectedReturn || '',
         batch: form.batchNo || '',
         vehicleNo: form.vehicleNo || '',
-        stockSource: form.stockSource || 'Factory Silo Bay A-1',
+        stockSource: form.sourceLocation || form.stockSource || 'Factory Silo Bay A-1',
         issuedBy: form.issuedBy || 'SURESHBHAI',
         approvedBy: form.approvedBy || 'FINAL APPROVED',
         remarks: form.remarks || ''
@@ -248,11 +374,11 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             <div className="mform-row mform-col-4">
               <div className="mform-field">
                 <label className="mform-label">Department</label>
-                <select className="mform-select" value={form.department} onChange={e => set('department', e.target.value)}>
-                  <option value="Job Work Extrusion">Job Work Extrusion</option>
-                  <option value="Tape Spinning">Tape Spinning</option>
-                  <option value="Twisting & Winding">Twisting &amp; Winding</option>
-                  <option value="Rope Laying">Rope Laying</option>
+                <select className="mform-select" value={form.department} onChange={e => handleProcessSelect(e.target.value)}>
+                  {liveProcesses.map(proc => {
+                    const pName = proc.processName || proc.name || proc;
+                    return <option key={proc.id || pName} value={pName}>{pName}</option>;
+                  })}
                 </select>
               </div>
 
@@ -263,7 +389,9 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               <div className="mform-field">
                 <label className="mform-label">Challan Series</label>
                 <select className="mform-select" value={form.challanSeries} onChange={e => set('challanSeries', e.target.value)}>
-                  <option value="JW-2026-">JW-2026- (Standard)</option>
+                  <option value={companyProfile?.jwPrefix || 'JW-2026-'}>
+                    {companyProfile?.jwPrefix || 'JW-2026-'} (Company Standard)
+                  </option>
                   <option value="CH-">CH- (Direct Challan)</option>
                   <option value="EXT-">EXT- (Extrusion Issue)</option>
                 </select>
@@ -272,20 +400,40 @@ export default function NewJobWorkModal({ onClose, onSave }) {
 
             <div className="mform-row mform-col-4" style={{ marginTop: '10px' }}>
               <div className="mform-field">
-                <label className="mform-label">Sub Challan No.</label>
-                <input type="text" className="mform-input" value={form.subChalNo} onChange={e => set('subChalNo', e.target.value)} placeholder="1" />
+                <label className="mform-label">Challan Base No. (Padded)</label>
+                <input 
+                  type="text" 
+                  className="mform-input" 
+                  value={form.challanNo} 
+                  onChange={e => set('challanNo', e.target.value)} 
+                  placeholder="000010126" 
+                  style={{ fontWeight: 700, fontFamily: 'monospace' }}
+                />
               </div>
               <div className="mform-field">
-                <label className="mform-label">Challan No.</label>
-                <input type="text" className="mform-input" value={`${form.challanSeries}${form.subChalNo || '1'}`} readOnly style={{ background: '#f1f5f9', fontWeight: 'bold' }} />
+                <label className="mform-label">Sub Challan</label>
+                <input 
+                  type="text" 
+                  className="mform-input" 
+                  value={form.subChalNo} 
+                  onChange={e => set('subChalNo', e.target.value)} 
+                  placeholder="1" 
+                  style={{ fontWeight: 700, textAlign: 'center' }}
+                />
+              </div>
+              <div className="mform-field">
+                <label className="mform-label">Challan Reference (Image 1)</label>
+                <input 
+                  type="text" 
+                  className="mform-input" 
+                  value={`${form.challanNo || '000010126'} / ${form.subChalNo || '1'}`} 
+                  readOnly 
+                  style={{ background: '#f8fafc', fontWeight: 'bold', color: '#1e293b', fontFamily: 'monospace' }} 
+                />
               </div>
               <div className="mform-field">
                 <label className="mform-label">Date <span className="req">*</span></label>
                 <input type="date" className="mform-input" value={form.challanDate} onChange={e => set('challanDate', e.target.value)} required />
-              </div>
-              <div className="mform-field">
-                <label className="mform-label">Duration</label>
-                <input type="number" className="mform-input" min="1" max="90" value={form.durationDays} onChange={e => set('durationDays', e.target.value)} placeholder="Days" />
               </div>
             </div>
           </div>
@@ -294,11 +442,31 @@ export default function NewJobWorkModal({ onClose, onSave }) {
           <div className="mform-section">
             <div className="mform-section-title">
               <Layers size={15} className="msec-icon" />
-              VENDOR &amp; RAW MATERIAL SPECIFICATIONS
+              LOCATION ROUTING, VENDOR &amp; MATERIAL SPECIFICATIONS
             </div>
+
             <div className="mform-row mform-col-2">
               <div className="mform-field">
-                <label className="mform-label">Party Name <span className="req">*</span></label>
+                <label className="mform-label">
+                  <Warehouse size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                  Source Godown / Origin <span className="req">*</span>
+                </label>
+                <select className="mform-select" value={form.sourceLocation} onChange={e => handleSourceLocationSelect(e.target.value)} required>
+                  {liveLocations.map(loc => (
+                    <option key={loc.locationCode || loc.id} value={loc.name}>
+                      {loc.name} {loc.type === 'JOB_WORKER' ? '⚡ (Outside Job Worker / Double JW)' : '(Internal Godown)'}
+                    </option>
+                  ))}
+                </select>
+                {form.isDoubleJobWork && (
+                  <div className="mform-hint" style={{ color: '#ea580c', fontWeight: 600 }}>
+                    ⚡ Double Job Work Active: Dispatched directly from third-party processor site!
+                  </div>
+                )}
+              </div>
+
+              <div className="mform-field">
+                <label className="mform-label">Target Vendor / Job Worker <span className="req">*</span></label>
                 <select className="mform-select" value={form.jwParty} onChange={e => handlePartySelect(e.target.value)} required>
                   <option value="">-- Select Vendor / Job Worker --</option>
                   {displayVendors.map(p => (
@@ -313,9 +481,11 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                   </div>
                 )}
               </div>
+            </div>
 
+            <div className="mform-row mform-col-2" style={{ marginTop: '10px' }}>
               <div className="mform-field">
-                <label className="mform-label">Item Name <span className="req">*</span></label>
+                <label className="mform-label">Raw Material <span className="req">*</span></label>
                 <select className="mform-select" value={form.rawMaterial} onChange={e => handleMaterialSelect(e.target.value)} required>
                   <option value="">-- Select Polymer Material --</option>
                   {liveMaterials.map(m => (
@@ -330,18 +500,24 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                   </div>
                 )}
               </div>
-            </div>
 
-            <div className="mform-row mform-col-2" style={{ marginTop: '10px' }}>
               <div className="mform-field">
-                <label className="mform-label">Process Name <span className="req">*</span></label>
-                <select className="mform-select" value={form.processType} onChange={e => set('processType', e.target.value)} required>
-                  {JW_PROCESS_LIST.map(p => <option key={p} value={p}>{p}</option>)}
+                <label className="mform-label">
+                  <Scale size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                  Process Master <span className="req">*</span>
+                </label>
+                <select className="mform-select" value={form.processType} onChange={e => handleProcessSelect(e.target.value)} required>
+                  {liveProcesses.map(p => (
+                    <option key={p.id || p.processCode} value={p.processName}>
+                      {p.processName} • ₹{Number(p.defaultRatePerKg || 0).toFixed(2)}/kg {p.isFixedWeight ? `[Fixed: ${p.standardBagWeightKg}kg]` : '[Variable]'}
+                    </option>
+                  ))}
                 </select>
-              </div>
-              <div className="mform-field">
-                <label className="mform-label">Rejection/Rework</label>
-                <input type="text" className="mform-input" placeholder="e.g. Standard 0% allowance / fresh issue" defaultValue="Fresh Issue" />
+                {form.isFixedWeight && (
+                  <div className="mform-hint" style={{ color: '#2563eb', fontWeight: 500 }}>
+                    ✓ Standard Fixed Bag Weight: {form.standardBagWeightKg} KG per bag
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -451,12 +627,83 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             </div>
           </div>
 
+          {/* Section 3B: Dispatched Accessories & Packaging Materials (Kokda, LD Bags, Outer Thela) */}
+          <div className="mform-section" style={{ background: '#f0fdf4', padding: '14px', borderRadius: '8px', border: '1px solid #bbf7d0', marginTop: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: form.includeAccessories ? 12 : 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: 600, color: '#166534', fontSize: '13px' }}>
+                <input
+                  type="checkbox"
+                  style={{ width: 16, height: 16, accentColor: '#16a34a', cursor: 'pointer' }}
+                  checked={form.includeAccessories}
+                  onChange={e => set('includeAccessories', e.target.checked)}
+                />
+                Include Dispatched Accessories (Kokda Spools, LD Inner Bags, Outer Thela)
+              </label>
+              <span style={{ fontSize: '11px', color: '#15803d' }}>
+                {form.includeAccessories ? '✓ Accessories Ledger Dispatched' : 'No accessories sent'}
+              </span>
+            </div>
+
+            {form.includeAccessories && (
+              <div className="mform-row mform-col-4" style={{ marginTop: '10px' }}>
+                <div className="mform-field">
+                  <label className="mform-label">Kokda (Spools) Wt (KG)</label>
+                  <input
+                    type="number" step="0.1" min="0" className="mform-input" placeholder="e.g. 50.0"
+                    value={form.spoolsQtyKg} onChange={e => set('spoolsQtyKg', e.target.value)}
+                  />
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>Plastic rolls / tubes</span>
+                </div>
+                <div className="mform-field">
+                  <label className="mform-label">Kokda (Spools) Count</label>
+                  <input
+                    type="number" min="0" className="mform-input" placeholder="e.g. 200"
+                    value={form.spoolsCount} onChange={e => set('spoolsCount', e.target.value)}
+                  />
+                </div>
+                <div className="mform-field">
+                  <label className="mform-label">LD Inner Bags (KG)</label>
+                  <input
+                    type="number" step="0.1" min="0" className="mform-input" placeholder="e.g. 25.0"
+                    value={form.ldBagsQtyKg} onChange={e => set('ldBagsQtyKg', e.target.value)}
+                  />
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>Inner thin polybags</span>
+                </div>
+                <div className="mform-field">
+                  <label className="mform-label">Outer Thela / Bags (Qty)</label>
+                  <input
+                    type="number" min="0" className="mform-input" placeholder="e.g. 50"
+                    value={form.outerBagsCount} onChange={e => set('outerBagsCount', e.target.value)}
+                  />
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>Big outer packing bags</span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Section 4: Financials & Rate Master */}
           <div className="mform-row mform-col-3" style={{ marginTop: '14px' }}>
             <div className="mform-field">
               <label className="mform-label">Processing Rate (₹ / KG) <span className="req">*</span></label>
-              <input type="number" step="0.01" className="mform-input" placeholder="17.50" value={form.processingRate} onChange={e => set('processingRate', e.target.value)} required />
-              <div className="mform-hint">From JW Rate Master for {form.processType}</div>
+              <input type="number" step="0.01" className="mform-input" placeholder="5.00" value={form.processingRate} onChange={e => set('processingRate', e.target.value)} required />
+              <div className="mform-hint" style={{ color: '#059669', fontWeight: 500 }}>
+                {(() => {
+                  const p = displayVendors.find(v => v.id === form.jwParty);
+                  const procKey = form.processId || form.processType;
+                  const contractRate = p?.rateContracts?.[procKey] || p?.rateContracts?.[form.processType];
+                  if (contractRate !== undefined && String(contractRate) === String(form.processingRate)) {
+                    return `✓ Rate Contract for ${p?.name || 'Vendor'} (${form.processType})`;
+                  }
+                  const matched = liveProcesses.find(proc => proc.id === form.processId || proc.processCode === form.processId || proc.processName === form.processType);
+                  if (matched && String(matched.defaultRatePerKg) === String(form.processingRate)) {
+                    return `✓ From JW Rate Master for ${matched.processName}`;
+                  }
+                  if (p && String(p.rate) === String(form.processingRate)) {
+                    return `✓ Vendor Base Rate for ${p.name || 'Vendor'}`;
+                  }
+                  return `✓ Rate for ${form.processType}`;
+                })()}
+              </div>
             </div>
             <div className="mform-field">
               <label className="mform-label">Freight / Other Charges (₹)</label>
