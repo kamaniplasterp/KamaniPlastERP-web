@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
-  Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck
+  Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck, MessageSquare
 } from 'lucide-react';
 import { 
   subscribeVendors, 
@@ -113,6 +113,13 @@ export default function DirectorySettingsView() {
         name: data.name,
         category: data.category,
         phone: data.phone,
+        whatsapp: data.whatsapp || data.phone,
+        isWhatsAppDifferent: !!data.isWhatsAppDifferent,
+        isPhoneVerified: !!data.isPhoneVerified,
+        phoneVerifiedAt: data.phoneVerifiedAt || null,
+        isWhatsappVerified: !!data.isWhatsappVerified,
+        whatsappVerifiedAt: data.whatsappVerifiedAt || null,
+        contactPerson: data.contactPerson || '',
         location: data.location,
         gst: data.gst,
         paymentTerms: data.paymentTerms,
@@ -217,6 +224,10 @@ export default function DirectorySettingsView() {
       name: b.name || 'Customer',
       termsBadge: b.category || b.paymentTerms || 'Wholesale Buyer',
       phone: b.phone || '',
+      whatsapp: b.whatsapp || b.phone || '',
+      isPhoneVerified: !!b.isPhoneVerified,
+      isWhatsappVerified: !!(b.isWhatsappVerified || (b.isPhoneVerified && !b.isWhatsAppDifferent)),
+      contactPerson: b.contactPerson || '',
       location: b.location || 'Gujarat',
       gst: `GST: ${b.gst || '24AAAAA0000A1Z5'}`,
       orders: `${totalOrdersCount} Orders`,
@@ -802,10 +813,79 @@ export default function DirectorySettingsView() {
                 </div>
 
                 <div className="ds-card-info-list">
-                  <div className="ds-info-item">
-                    <Phone size={13} className="ds-info-icon" />
-                    <span>{c.phone}</span>
+                  <div className="ds-info-item" style={{ justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Phone size={13} className="ds-info-icon" />
+                      <span>{c.phone ? (c.phone.startsWith('+') ? c.phone : `+91 ${c.phone}`) : 'No phone'}</span>
+                    </div>
+                    {c.isPhoneVerified && (
+                      <span 
+                        title="SMS OTP Verified via MSG91"
+                        style={{
+                          fontSize: '0.68rem',
+                          background: '#ecfdf5',
+                          color: '#059669',
+                          border: '1px solid #a7f3d0',
+                          padding: '1px 6px',
+                          borderRadius: 9999,
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}
+                      >
+                        <CheckCircle2 size={10} /> Verified
+                      </span>
+                    )}
                   </div>
+
+                  {c.whatsapp && (
+                    <div className="ds-info-item">
+                      <MessageSquare size={13} color="#16a34a" style={{ flexShrink: 0 }} />
+                      <span>WA: +91 {c.whatsapp.replace(/\D/g, '').slice(-10)}</span>
+                      {c.isWhatsappVerified && (
+                        <span 
+                          title="WhatsApp Number Verified"
+                          style={{
+                            fontSize: '0.65rem',
+                            background: '#ecfdf5',
+                            color: '#059669',
+                            border: '1px solid #a7f3d0',
+                            padding: '1px 5px',
+                            borderRadius: 9999,
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 2,
+                            marginLeft: 4
+                          }}
+                        >
+                          <CheckCircle2 size={9} /> Verified
+                        </span>
+                      )}
+                      <a
+                        href={`https://wa.me/91${c.whatsapp.replace(/\D/g, '').slice(-10)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Chat with Customer on WhatsApp"
+                        style={{
+                          fontSize: '0.7rem',
+                          color: '#16a34a',
+                          background: '#f0fdf4',
+                          border: '1px solid #bbf7d0',
+                          padding: '1px 7px',
+                          borderRadius: 4,
+                          marginLeft: 'auto',
+                          textDecoration: 'none',
+                          fontWeight: 500
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        Chat
+                      </a>
+                    </div>
+                  )}
+
                   <div className="ds-info-item">
                     <MapPin size={13} className="ds-info-icon" />
                     <span>{c.location}</span>
