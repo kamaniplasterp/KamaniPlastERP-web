@@ -7,12 +7,14 @@ import {
   subscribePersonnel, 
   subscribeTareStandards, 
   subscribeCompanyProfile,
+  subscribeJobWorkRates,
+  getPartyRateByProcess,
   DEFAULT_PERSONNEL, 
   DEFAULT_TARE_STANDARDS,
   DEFAULT_COMPANY_PROFILE 
 } from '../api/directory.api';
-import { subscribeProcesses, DEFAULT_PROCESS_LIST } from '../api/process.api';
-import { subscribeLocations, DEFAULT_LOCATIONS_LIST } from '../api/locations.api';
+import { subscribeProcesses } from '../api/process.api';
+import { subscribeLocations } from '../api/locations.api';
 import '../styles/Modals.css';
 
 function today() {
@@ -29,20 +31,22 @@ export default function NewJobWorkModal({ onClose, onSave }) {
   const [liveVendors, setLiveVendors] = useState([]);
   const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
-  const [liveProcesses, setLiveProcesses] = useState(DEFAULT_PROCESS_LIST);
-  const [liveLocations, setLiveLocations] = useState(DEFAULT_LOCATIONS_LIST);
+  const [liveProcesses, setLiveProcesses] = useState([]);
+  const [liveLocations, setLiveLocations] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(DEFAULT_COMPANY_PROFILE);
+  const [liveJwRates, setLiveJwRates] = useState([]);
 
   useEffect(() => {
     const unsubRm = subscribeRawMaterials(setLiveMaterials);
     const unsubVe = subscribeVendors(setLiveVendors);
     const unsubPers = subscribePersonnel(setPersonnelList);
     const unsubTare = subscribeTareStandards(setTareStandards);
+    const unsubRates = subscribeJobWorkRates(setLiveJwRates);
     const unsubProc = subscribeProcesses((procs) => {
       setLiveProcesses(procs);
       if (procs && procs.length > 0) {
         setForm(f => {
-          if (!f.processId || f.processType === 'Job Work Extrusion' || !f.processingRate) {
+          if (!f.processId || !f.processType) {
             const first = procs[0];
             return {
               ...f,
@@ -82,6 +86,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
       unsubVe();
       unsubPers();
       unsubTare();
+      unsubRates();
       unsubProc();
       unsubLoc();
       unsubComp();
@@ -115,10 +120,10 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     jwParty: '',
     rawMaterial: '',
     grade: '',
-    processType: DEFAULT_PROCESS_LIST[0]?.processName || JW_PROCESS_LIST[0],
-    processId: DEFAULT_PROCESS_LIST[0]?.processCode || '',
-    isFixedWeight: DEFAULT_PROCESS_LIST[0]?.isFixedWeight ?? true,
-    standardBagWeightKg: String(DEFAULT_PROCESS_LIST[0]?.standardBagWeightKg || 50),
+    processType: '',
+    processId: '',
+    isFixedWeight: true,
+    standardBagWeightKg: '50',
 
     // Accessories Dispatched (Kokda, LD Bags, Outer Thela)
     includeAccessories: false,
@@ -140,7 +145,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     sampleWeight: '0.5',
 
     // Financials
-    processingRate: String(DEFAULT_PROCESS_LIST[0]?.defaultRatePerKg || '5.00'),
+    processingRate: '',
     freight: '',
 
     // Logistics & Administration
@@ -194,15 +199,20 @@ export default function NewJobWorkModal({ onClose, onSave }) {
   const handlePartySelect = (partyId) => {
     const p = displayVendors.find(v => v.id === partyId);
     const procKey = form.processId || form.processType;
+    
+    // Priority: 1. Party-Specific Rate Master (Change 1) -> 2. Vendor Specific Contract Rate -> 3. Vendor Base Rate -> 4. Process Default Rate
+    const partyMasterRate = getPartyRateByProcess(p?.name || partyId, form.processType, liveJwRates) ??
+      getPartyRateByProcess(p?.name || partyId, form.processId, liveJwRates);
     const contractRate = p?.rateContracts?.[procKey] || p?.rateContracts?.[form.processType];
     const matched = liveProcesses.find(proc => proc.id === form.processId || proc.processCode === form.processId || proc.processName === form.processType);
     
-    // Priority: 1. Vendor Specific Contract Rate -> 2. Process Master Default Rate -> 3. Vendor Base Rate
-    const newRate = contractRate !== undefined 
-      ? String(contractRate) 
-      : (matched?.defaultRatePerKg !== undefined 
-          ? String(matched.defaultRatePerKg) 
-          : (p && p.rate !== undefined ? String(p.rate) : form.processingRate));
+    const newRate = partyMasterRate !== null
+      ? String(partyMasterRate)
+      : (contractRate !== undefined 
+          ? String(contractRate) 
+          : (p && p.rate !== undefined 
+              ? String(p.rate) 
+              : (matched?.defaultRatePerKg !== undefined ? String(matched.defaultRatePerKg) : form.processingRate)));
 
     setForm(f => ({
       ...f,
@@ -215,7 +225,21 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     const matched = liveProcesses.find(p => p.id === procIdentifier || p.processCode === procIdentifier || p.processName === procIdentifier);
     const p = displayVendors.find(v => v.id === form.jwParty);
     const procKey = matched ? (matched.processCode || matched.processName) : procIdentifier;
+    const procName = matched ? matched.processName : procIdentifier;
+
+    const partyMasterRate = p ? (
+      getPartyRateByProcess(p.name || p.id, procName, liveJwRates) ??
+      getPartyRateByProcess(p.name || p.id, procKey, liveJwRates)
+    ) : null;
     const contractRate = p?.rateContracts?.[procKey] || p?.rateContracts?.[matched?.processName] || p?.rateContracts?.[matched?.processCode];
+
+    const determinedRate = partyMasterRate !== null
+      ? String(partyMasterRate)
+      : (contractRate !== undefined
+          ? String(contractRate)
+          : (p?.rate !== undefined
+              ? String(p.rate)
+              : (matched?.defaultRatePerKg !== undefined ? String(matched.defaultRatePerKg) : form.processingRate)));
 
     if (matched) {
       setForm(f => ({
@@ -223,11 +247,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
         department: matched.processName,
         processType: matched.processName,
         processId: matched.processCode || matched.id,
-        processingRate: contractRate !== undefined 
-          ? String(contractRate) 
-          : (matched.defaultRatePerKg !== undefined 
-              ? String(matched.defaultRatePerKg) 
-              : (p?.rate !== undefined ? String(p.rate) : f.processingRate)),
+        processingRate: determinedRate,
         isFixedWeight: Boolean(matched.isFixedWeight),
         standardBagWeightKg: String(matched.standardBagWeightKg || 50),
         bLossPct: matched.expectedScrapPct !== undefined ? String(matched.expectedScrapPct) : f.bLossPct
@@ -236,7 +256,8 @@ export default function NewJobWorkModal({ onClose, onSave }) {
       setForm(f => ({
         ...f,
         department: procIdentifier,
-        processType: procIdentifier
+        processType: procIdentifier,
+        processingRate: determinedRate
       }));
     }
   };
@@ -507,6 +528,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                   Process Master <span className="req">*</span>
                 </label>
                 <select className="mform-select" value={form.processType} onChange={e => handleProcessSelect(e.target.value)} required>
+                  {!form.processType && <option value="">-- Select Process Master --</option>}
                   {liveProcesses.map(p => (
                     <option key={p.id || p.processCode} value={p.processName}>
                       {p.processName} • ₹{Number(p.defaultRatePerKg || 0).toFixed(2)}/kg {p.isFixedWeight ? `[Fixed: ${p.standardBagWeightKg}kg]` : '[Variable]'}

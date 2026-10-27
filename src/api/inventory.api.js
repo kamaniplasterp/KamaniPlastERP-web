@@ -17,6 +17,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { createQcCheck } from './qc.api';
 
 /**
  * Subscribe to real-time Raw Materials collection with optional query limit
@@ -141,6 +142,9 @@ export async function addFinishedGood(data) {
     name: data.name || 'New Finished Good',
     desc: data.desc || '',
     category: data.category || 'Danline Rope',
+    diaColor: data.diaColor || (data.diaSize ? `${data.diaSize} • ${data.colorTracer || data.color || ''}` : (data.size ? `${data.size} • ${data.color || ''}` : '')),
+    diaSize: data.diaSize || data.size || '',
+    colorTracer: data.colorTracer || data.color || '',
     stockQty: stockQty,
     reservedQty: Number(data.reservedQty || 0),
     rate: Number(data.rate || 0),
@@ -170,7 +174,7 @@ export async function addFinishedGood(data) {
 /**
  * Update RM Stock counts safely using atomic Firestore runTransaction
  */
-export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0) {
+export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0, looseDelta = 0) {
   if (!db) return;
   try {
     let targetRef = skuId ? doc(db, 'rawMaterials', skuId) : null;
@@ -196,12 +200,14 @@ export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0) {
         const fbData = fbDoc.data();
         const newAvail = Math.max(0, (Number(fbData.availFactory) || 0) + factoryDelta);
         const newJw = Math.max(0, (Number(fbData.atJobWork) || 0) + jwDelta);
+        const newLoose = Math.max(0, (Number(fbData.looseStockKg) || 0) + looseDelta);
         const reorderLvl = Number(fbData.reorderLevel || 1000);
         const newStatus = newAvail >= reorderLvl ? 'IN STOCK' : newAvail > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
 
         transaction.update(fbRef, {
           availFactory: newAvail,
           atJobWork: newJw,
+          looseStockKg: newLoose,
           status: newStatus,
           updatedAt: serverTimestamp()
         });
@@ -211,12 +217,14 @@ export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0) {
       const data = docSnap.data();
       const newAvail = Math.max(0, (Number(data.availFactory) || 0) + factoryDelta);
       const newJw = Math.max(0, (Number(data.atJobWork) || 0) + jwDelta);
+      const newLoose = Math.max(0, (Number(data.looseStockKg) || 0) + looseDelta);
       const reorderLvl = Number(data.reorderLevel || 1000);
       const newStatus = newAvail >= reorderLvl ? 'IN STOCK' : newAvail > 0 ? 'LOW STOCK' : 'OUT OF STOCK';
 
       transaction.update(targetRef, {
         availFactory: newAvail,
         atJobWork: newJw,
+        looseStockKg: newLoose,
         status: newStatus,
         updatedAt: serverTimestamp()
       });
@@ -224,6 +232,13 @@ export async function updateRmStock(skuId, factoryDelta = 0, jwDelta = 0) {
   } catch (err) {
     console.error('Error updating RM stock atomically:', err);
   }
+}
+
+/**
+ * Update Loose Stock quantity in KG (Change 6)
+ */
+export async function updateLooseStock(rawMaterialId, deltaKg) {
+  return updateRmStock(rawMaterialId, 0, 0, deltaKg);
 }
 
 /**
@@ -463,23 +478,52 @@ export async function recordRmInward(data) {
   const articleTareWeight = Number(data.articleWeight !== undefined ? data.articleWeight : (boraCount * unitTare));
   const netInwardKg = grossWght > 0 ? Math.max(0, grossWght - articleTareWeight) : Number(data.netWeight || 0);
 
-  const grnRef = await addDoc(collection(db, 'rmInwards'), {
+  const looseStockKg = Number(data.looseStockKg || 0);
+  const bagCount = Number(data.bagCount || (boraCount || 0));
+  const bagStockKg = Number(data.bagStockKg || (netInwardKg > looseStockKg ? netInwardKg - looseStockKg : netInwardKg));
+
+  const grnDocData = {
     grnNo: data.grnNo || `GRN-${Math.floor(1000 + Math.random() * 9000)}`,
     challanNo: data.challanNo || '',
     date: data.date || new Date().toISOString().split('T')[0],
     supplierName: data.supplierName || 'RAMJIBHAI',
     itemName: data.itemName || 'GRANUALS-HDPE',
     grade: data.grade || 'HD',
+    // 5 material attributes & batch (Change 3)
+    materialForm: data.materialForm || 'Granule',
+    materialColor: data.materialColor || 'Natural',
+    packaging: data.packaging || 'Woven Bag',
+    batchNumber: data.batchNumber || `BATCH-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
     grossWeight: grossWght,
     noOfArticles: boraCount,
     articleType,
     articleWeight: articleTareWeight,
+    varianceKg: articleTareWeight, // Tare deduction / variance (Change 4)
     netWeight: netInwardKg,
+    challanWeight: Number(data.challanWeight || 0),
+    shortfallKg: Number(data.shortfallKg || 0),
+    isShortDelivery: Boolean(data.isShortDelivery),
+    // Dual stock system (Change 6)
+    bagCount,
+    bagStockKg,
+    looseStockKg,
     rate: Number(data.rate || 112),
     receivedBy: data.receivedBy || 'SURESHBHAI',
     remarks: data.remarks || 'Raw material inward received',
     createdAt: serverTimestamp()
-  });
+  };
+
+  const grnRef = await addDoc(collection(db, 'rmInwards'), grnDocData);
+
+  // Auto-trigger Mandatory QC Workflow (Change 5)
+  try {
+    await createQcCheck(grnRef.id, {
+      ...grnDocData,
+      id: grnRef.id
+    });
+  } catch (qcErr) {
+    console.warn('Auto create QC check error:', qcErr);
+  }
 
   // Find or update matching rawMaterial SKU in Firestore
   const rmSnap = await getDocs(collection(db, 'rawMaterials'));
@@ -497,15 +541,16 @@ export async function recordRmInward(data) {
   }
 
   if (matchedRm) {
-    await updateRmStock(matchedRm.id, netInwardKg, 0);
+    await updateRmStock(matchedRm.id, netInwardKg, 0, looseStockKg);
   } else {
     await addRawMaterial({
       code: `RM-${(data.itemName || 'POLY').slice(0, 4).toUpperCase()}-${(data.grade || 'STD').slice(0, 3).toUpperCase()}`,
       name: data.itemName,
       brand: data.supplierName,
       grade: data.grade,
-      desc: `${data.itemName} ^ ${data.grade}`,
+      desc: `${data.itemName} ^ ${data.grade} (${grnDocData.materialForm})`,
       availFactory: netInwardKg,
+      looseStockKg: looseStockKg,
       rate: Number(data.rate || 112),
       reorderLevel: 1000
     });
@@ -516,12 +561,12 @@ export async function recordRmInward(data) {
     typeBadge: 'inv-badge-receipt',
     icon: '📦',
     ref: data.grnNo || `GRN-INWARD`,
-    item: `${data.itemName} ^ ${data.grade}`,
-    batch: data.challanNo ? `CHL-${data.challanNo}` : 'LOT-INWARD',
+    item: `${data.itemName} ^ ${data.grade} (${grnDocData.materialForm})`,
+    batch: grnDocData.batchNumber,
     inward: `+${netInwardKg} KG`,
     outward: '0 KG',
     location: 'Factory Main Silo',
-    remarks: `Inward from ${data.supplierName} (${boraCount} ${articleType})`
+    remarks: `Inward from ${data.supplierName} (${bagCount} bags, ${looseStockKg} KG loose)`
   });
 
   return grnRef.id;

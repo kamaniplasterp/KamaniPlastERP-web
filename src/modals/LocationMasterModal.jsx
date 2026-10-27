@@ -1,21 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, MapPin, Building, Warehouse, User, Phone, CheckCircle2 } from 'lucide-react';
 import { addLocation, updateLocation } from '../api/locations.api';
 import '../styles/Modals.css';
 
-export default function LocationMasterModal({ locationToEdit, onClose, onSaved }) {
-  const isEditing = Boolean(locationToEdit?.id);
+export default function LocationMasterModal({ locationToEdit, location, onClose, onSaved }) {
+  const targetLoc = locationToEdit || location;
+  const isEditing = Boolean(targetLoc && (targetLoc.id || targetLoc.locationCode));
 
   const [formData, setFormData] = useState({
-    locationCode: locationToEdit?.locationCode || `LOC-${Math.floor(100 + Math.random() * 900)}`,
-    name: locationToEdit?.name || '',
-    type: locationToEdit?.type || 'INTERNAL',
-    address: locationToEdit?.address || '',
-    contactPerson: locationToEdit?.contactPerson || '',
-    phone: locationToEdit?.phone || '',
-    capacityKg: locationToEdit?.capacityKg !== undefined ? String(locationToEdit.capacityKg) : '50000',
-    isDefault: locationToEdit?.isDefault || false
+    locationCode: targetLoc?.locationCode || `LOC-${Math.floor(100 + Math.random() * 900)}`,
+    name: targetLoc?.name || '',
+    type: targetLoc?.type || 'INTERNAL',
+    address: targetLoc?.address || '',
+    contactPerson: targetLoc?.contactPerson || '',
+    phone: targetLoc?.phone || '',
+    capacityKg: targetLoc?.capacityKg !== undefined ? String(targetLoc.capacityKg) : '50000',
+    isDefault: targetLoc?.isDefault || false
   });
+
+  useEffect(() => {
+    if (targetLoc) {
+      setFormData({
+        locationCode: targetLoc.locationCode || `LOC-${Math.floor(100 + Math.random() * 900)}`,
+        name: targetLoc.name || '',
+        type: targetLoc.type || 'INTERNAL',
+        address: targetLoc.address || '',
+        contactPerson: targetLoc.contactPerson || '',
+        phone: targetLoc.phone || '',
+        capacityKg: targetLoc.capacityKg !== undefined ? String(targetLoc.capacityKg) : '50000',
+        isDefault: targetLoc.isDefault || false
+      });
+    }
+  }, [targetLoc]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -39,7 +55,8 @@ export default function LocationMasterModal({ locationToEdit, onClose, onSaved }
       };
 
       if (isEditing) {
-        await updateLocation(locationToEdit.id, payload);
+        const targetId = targetLoc.id || targetLoc.locationCode;
+        await updateLocation(targetId, payload);
         alert(`Location "${formData.name}" updated successfully!`);
       } else {
         await addLocation(payload);
@@ -66,8 +83,14 @@ export default function LocationMasterModal({ locationToEdit, onClose, onSaved }
               <Warehouse size={16} />
             </div>
             <div>
-              <h2 className="modal-title">{isEditing ? 'Edit Godown / Location' : 'Add New Godown / Location'}</h2>
-              <p className="modal-subtitle">Internal factory warehouses (KPI, Marvel) & outside job worker locations</p>
+              <h2 className="modal-title">
+                {isEditing ? `Edit Godown: ${targetLoc?.name || formData.name}` : 'Add New Godown / Location'}
+              </h2>
+              <p className="modal-subtitle">
+                {isEditing
+                  ? `Editing: "${targetLoc?.name || formData.name}" (${targetLoc?.locationCode || formData.locationCode})`
+                  : 'Internal factory warehouses (KPI, Marvel) & outside job worker locations'}
+              </p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -77,6 +100,40 @@ export default function LocationMasterModal({ locationToEdit, onClose, onSaved }
 
         {/* Form */}
         <form className="modal-body" onSubmit={handleSubmit}>
+          {isEditing && (
+            <div style={{
+              background: '#ecfdf5',
+              border: '1px solid #a7f3d0',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div>
+                <span style={{ fontSize: '0.7rem', color: '#059669', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Current Godown / Location
+                </span>
+                <div style={{ color: '#065f46', fontWeight: 700, fontSize: '0.98rem' }}>
+                  {targetLoc?.name || formData.name}
+                </div>
+              </div>
+              <span style={{
+                background: '#d1fae5',
+                border: '1px solid #6ee7b7',
+                color: '#047857',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                padding: '3px 10px',
+                borderRadius: '6px'
+              }}>
+                {targetLoc?.locationCode || formData.locationCode}
+              </span>
+            </div>
+          )}
+
           <div className="mform-row mform-col-2">
             <div className="mform-field">
               <label className="mform-label">Location Code <span className="req">*</span></label>
@@ -116,7 +173,7 @@ export default function LocationMasterModal({ locationToEdit, onClose, onSaved }
           </div>
 
           <div className="mform-field">
-            <label className="mform-label">Address / Bay Location</label>
+            <label className="mform-label">Address / Bay Location <span style={{ fontSize: '0.72rem', color: '#64748b' }}>(Optional)</span></label>
             <input
               type="text"
               className="mform-input"
@@ -128,7 +185,7 @@ export default function LocationMasterModal({ locationToEdit, onClose, onSaved }
 
           <div className="mform-row mform-col-2">
             <div className="mform-field">
-              <label className="mform-label">Contact Person / Supervisor</label>
+              <label className="mform-label">Contact Person / Supervisor <span style={{ fontSize: '0.72rem', color: '#64748b' }}>(Optional)</span></label>
               <input
                 type="text"
                 className="mform-input"
@@ -138,7 +195,7 @@ export default function LocationMasterModal({ locationToEdit, onClose, onSaved }
               />
             </div>
             <div className="mform-field">
-              <label className="mform-label">Storage Capacity (KG)</label>
+              <label className="mform-label">Storage Capacity (KG) <span style={{ fontSize: '0.72rem', color: '#64748b' }}>(Optional)</span></label>
               <input
                 type="number"
                 min="0"
@@ -151,11 +208,17 @@ export default function LocationMasterModal({ locationToEdit, onClose, onSaved }
           </div>
 
           {formData.type === 'INTERNAL' && (
-            <div style={{ marginTop: 8 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: 13, color: '#e2e8f0' }}>
+            <div style={{ 
+              marginTop: '10px',
+              padding: '12px 14px',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px'
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: 0 }}>
                 <input
                   type="checkbox"
-                  style={{ width: 16, height: 16, accentColor: '#10b981' }}
+                  style={{ width: 16, height: 16, accentColor: '#059669', cursor: 'pointer' }}
                   checked={formData.isDefault}
                   onChange={e => handleChange('isDefault', e.target.checked)}
                 />

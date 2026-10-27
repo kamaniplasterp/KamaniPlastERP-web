@@ -104,8 +104,8 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
           reworkQtyKg: reworkNum,
           rejectionQtyKg: rejectionNum,
           scrapQtyKg: scrapNum,
-          samplePcs: Number(simMatch?.samplePcs || 10),
-          sampleWeight: Number(simMatch?.sampleWeight || 0.5),
+          samplePcs: simMatch?.samplePcs !== undefined ? Number(simMatch.samplePcs) : 0,
+          sampleWeight: simMatch?.sampleWeight !== undefined ? Number(simMatch.sampleWeight) : 0,
           receivedBy: 'RAMILBHAI',
           ratePerKg: chargeRate,
           value: recNum * chargeRate,
@@ -124,7 +124,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
     workOrder: workOrder,
     department: department,
     inputMaterialCode: rmCode,
-    inputMaterialName: simMatch?.rawMat || matchingRm?.name || 'Raw Material',
+    inputMaterialName: simMatch?.rawMat || simMatch?.material || simMatch?.itemName || matchingRm?.name || '-',
     grade: simMatch?.grade || '',
     process: processName,
     grossWeight: `${grossWght.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
@@ -156,8 +156,8 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
     scrapQtyKg: scrapNum,
     reworkQty: `${reworkNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
     rejectionQty: `${rejectionNum.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG`,
-    samplePcs: Number(simMatch?.samplePcs || 10),
-    sampleWeight: Number(simMatch?.sampleWeight || 0.5),
+    samplePcs: simMatch?.samplePcs !== undefined ? Number(simMatch.samplePcs) : 0,
+    sampleWeight: simMatch?.sampleWeight !== undefined ? Number(simMatch.sampleWeight) : 0,
     issuedBy: issuedBy,
     approvedBy: approvedBy,
     ratePerKg: `₹${chargeRate} / KG`,
@@ -455,7 +455,7 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
                     <td style={{ color: '#dc2626' }}>
                       {(Number(grn.reworkQtyKg || 0) + Number(grn.rejectionQtyKg || 0)).toFixed(1)} KG
                     </td>
-                    <td>{grn.samplePcs || 10} PCs ({grn.sampleWeight || 0.5}k)</td>
+                    <td>{grn.samplePcs !== undefined ? grn.samplePcs : 0} PCs ({grn.sampleWeight !== undefined ? grn.sampleWeight : 0}k)</td>
                     <td>{grn.receivedBy || 'RAMILBHAI'}</td>
                     <td className="font-bold">₹{Number(grn.value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
                     <td>

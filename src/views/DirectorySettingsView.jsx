@@ -23,8 +23,8 @@ import {
   DEFAULT_PERSONNEL,
   DEFAULT_COMPANY_PROFILE
 } from '../api/directory.api';
-import { subscribeJobWorks, JW_PROCESS_LIST } from '../api/jobwork.api';
-import { subscribeProcesses, DEFAULT_PROCESS_LIST } from '../api/process.api';
+import { subscribeJobWorks } from '../api/jobwork.api';
+import { subscribeProcesses } from '../api/process.api';
 import { subscribeSalesOrders } from '../api/sales.api';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
@@ -38,6 +38,7 @@ export default function DirectorySettingsView() {
   const [vendorSearch, setVendorSearch] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [rateSearch, setRateSearch] = useState('');
+  const [ratePartyFilter, setRatePartyFilter] = useState('ALL');
   const [valueSearch, setValueSearch] = useState('');
 
   const [liveVendors, setLiveVendors] = useState([]);
@@ -54,7 +55,7 @@ export default function DirectorySettingsView() {
 
   const [newRateForm, setNewRateForm] = useState({
     party: 'GALAXY.ENTERPRISE',
-    process: JW_PROCESS_LIST[0],
+    process: '',
     item: 'ANCHOR YARN ^ YARN HANK',
     uom: 'Kgs',
     rate: '17.50'
@@ -63,7 +64,7 @@ export default function DirectorySettingsView() {
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
   const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
   const [newPersonName, setNewPersonName] = useState('');
-  const [liveProcesses, setLiveProcesses] = useState(DEFAULT_PROCESS_LIST);
+  const [liveProcesses, setLiveProcesses] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(DEFAULT_COMPANY_PROFILE);
 
   useEffect(() => {
@@ -76,7 +77,10 @@ export default function DirectorySettingsView() {
     const unsubTare = subscribeTareStandards(setTareStandards);
     const unsubPers = subscribePersonnel(setPersonnelList);
     const unsubProf = subscribeCompanyProfile(setCompanyProfile);
-    const unsubProc = subscribeProcesses(setLiveProcesses);
+    const unsubProc = subscribeProcesses((procs) => {
+      setLiveProcesses(procs);
+      if (procs?.length) setNewRateForm(f => f.process ? f : { ...f, process: procs[0].processName });
+    });
     return () => {
       unsubV();
       unsubB();
@@ -102,8 +106,10 @@ export default function DirectorySettingsView() {
         rate: Number(data.rate || 17.5),
         pendingKg: 0
       });
+      alert(`Vendor "${data.name}" added successfully!\n✓ Godown location auto-created for "${data.name}" for instant inventory tracking.`);
     } catch (err) {
       console.error('Error adding vendor:', err);
+      alert('Error adding vendor. Check console for details.');
     }
   };
 
@@ -179,10 +185,10 @@ export default function DirectorySettingsView() {
       avatar: (v.name || 'VE').slice(0, 2).toUpperCase(),
       name: v.name || 'Vendor',
       processBadge: v.processBadge || 'Job Work Processor',
-      phone: v.phone || '+91 98250 00000',
-      location: v.location || 'Gujarat',
-      gst: `GST: ${v.gst || '24AABCS9912K1Z4'}`,
-      rate: typeof v.rate === 'number' ? `₹${v.rate}/KG` : v.rate || '₹17.50/KG',
+      phone: v.phone || '-',
+      location: v.location || '-',
+      gst: v.gst ? `GST: ${v.gst}` : 'GST: Not Provided',
+      rate: typeof v.rate === 'number' ? `₹${v.rate}/KG` : v.rate || '-',
       pending: `${pendingTotal.toLocaleString('en-IN')} KG`,
       pendingOrange: pendingTotal > 0
     };
@@ -228,8 +234,8 @@ export default function DirectorySettingsView() {
       isPhoneVerified: !!b.isPhoneVerified,
       isWhatsappVerified: !!(b.isWhatsappVerified || (b.isPhoneVerified && !b.isWhatsAppDifferent)),
       contactPerson: b.contactPerson || '',
-      location: b.location || 'Gujarat',
-      gst: `GST: ${b.gst || '24AAAAA0000A1Z5'}`,
+      location: b.location || '-',
+      gst: b.gst ? `GST: ${b.gst}` : 'GST: Not Provided',
       orders: `${totalOrdersCount} Orders`,
       booked: `₹${bookedLakhs}L`
     };
@@ -248,11 +254,13 @@ export default function DirectorySettingsView() {
     c.location.toLowerCase().includes(customerSearch.toLowerCase())
   );
 
-  const filteredRates = allRates.filter(r => 
-    (r.party || '').toLowerCase().includes(rateSearch.toLowerCase()) ||
-    (r.process || '').toLowerCase().includes(rateSearch.toLowerCase()) ||
-    (r.item || '').toLowerCase().includes(rateSearch.toLowerCase())
-  );
+  const filteredRates = allRates.filter(r => {
+    const matchesParty = ratePartyFilter === 'ALL' || (r.party || '').toLowerCase() === ratePartyFilter.toLowerCase();
+    const matchesSearch = (r.party || '').toLowerCase().includes(rateSearch.toLowerCase()) ||
+      (r.process || '').toLowerCase().includes(rateSearch.toLowerCase()) ||
+      (r.item || '').toLowerCase().includes(rateSearch.toLowerCase());
+    return matchesParty && matchesSearch;
+  });
 
   const filteredValueMasters = liveValueMasters.filter(v => 
     (v.code || '').toLowerCase().includes(valueSearch.toLowerCase()) ||
@@ -390,12 +398,25 @@ export default function DirectorySettingsView() {
       {/* ── TAB 2: Job Work Rate Master (Matching Excel 'JW Rate Master') ── */}
       {activeTab === 'rateMaster' && (
         <div className="jw-ledger-section">
-          <div className="ds-filter-row">
-            <div className="ds-search-wrap">
+          <div className="ds-filter-row" style={{ flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>Party (Job Worker):</span>
+              <select
+                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 600, background: '#ffffff', color: '#0f172a' }}
+                value={ratePartyFilter}
+                onChange={e => setRatePartyFilter(e.target.value)}
+              >
+                <option value="ALL">All Parties ({displayVendors.length})</option>
+                {displayVendors.map(v => (
+                  <option key={v.name} value={v.name}>{v.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="ds-search-wrap" style={{ flex: 1, minWidth: '220px' }}>
               <Search size={14} className="ds-search-icon" />
               <input
                 type="text"
-                placeholder="Search by Party, Process, Item..."
+                placeholder="Search by Process, Item..."
                 className="ds-search-input"
                 value={rateSearch}
                 onChange={e => setRateSearch(e.target.value)}
@@ -567,9 +588,9 @@ export default function DirectorySettingsView() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <div>
                     <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>
-                      BORA (Polymer Bags)
+                      WOVEN BAG
                     </div>
-                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Granules &amp; Danline secondary bags</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Polymer woven bags (Bora)</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input
@@ -607,9 +628,9 @@ export default function DirectorySettingsView() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <div>
                     <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>
-                      KHALI BAG
+                      PAPER BAG
                     </div>
-                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Secondary pack protective bags</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Secondary pack paper bags (Khali Bag)</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input
@@ -627,9 +648,9 @@ export default function DirectorySettingsView() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <div>
                     <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>
-                      THELI (PACKAGING)
+                      LD BAG
                     </div>
-                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Consumer hank sleeves &amp; liners</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>LDPE sleeves, liners &amp; bags (Theli)</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input
@@ -641,6 +662,27 @@ export default function DirectorySettingsView() {
                       style={{ width: '85px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold', textAlign: 'right', color: '#0f172a', background: '#ffffff' }}
                     />
                     <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>KG</span>
+                  </div>
+                </div>
+
+                {/* Tare / Weight Variance Alert Threshold */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff7ed', padding: '10px 14px', borderRadius: '6px', border: '1px solid #fed7aa' }}>
+                  <div>
+                    <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#9a3412', marginBottom: '2px' }}>
+                      GRN TARE VARIANCE ALERT THRESHOLD
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#c2410c' }}>Trigger alert banner in GRN if tare variance exceeds this limit</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={tareStandards.varianceAllowanceKg !== undefined ? tareStandards.varianceAllowanceKg : 50}
+                      onChange={e => setTareStandards({ ...tareStandards, varianceAllowanceKg: parseFloat(e.target.value) || 0 })}
+                      style={{ width: '85px', padding: '5px 8px', borderRadius: '4px', border: '1px solid #fdba74', fontWeight: 'bold', textAlign: 'right', color: '#9a3412', background: '#ffffff' }}
+                    />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#c2410c' }}>KG</span>
                   </div>
                 </div>
               </div>

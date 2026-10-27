@@ -1,25 +1,29 @@
 import { useState, useEffect } from 'react';
 import { X, Building } from 'lucide-react';
-import { JW_PROCESS_LIST } from '../api/jobwork.api';
-import { subscribeProcesses, DEFAULT_PROCESS_LIST } from '../api/process.api';
+import { subscribeProcesses } from '../api/process.api';
 import '../styles/Modals.css';
 
 export default function AddVendorModal({ onClose, onSave }) {
-  const [liveProcesses, setLiveProcesses] = useState(DEFAULT_PROCESS_LIST);
-
-  useEffect(() => {
-    const unsub = subscribeProcesses(setLiveProcesses);
-    return () => unsub();
-  }, []);
+  const [liveProcesses, setLiveProcesses] = useState([]);
 
   const [formData, setFormData] = useState({
     name: '',
-    processBadge: DEFAULT_PROCESS_LIST[0]?.processName || JW_PROCESS_LIST[0] || 'GRANUAL - FISHING YARN',
+    processBadge: '',
     phone: '',
     location: '',
     gst: '',
     rate: '17.5'
   });
+
+  useEffect(() => {
+    const unsub = subscribeProcesses((procs) => {
+      setLiveProcesses(procs);
+      if (procs.length > 0) {
+        setFormData(f => f.processBadge ? f : { ...f, processBadge: procs[0].processName });
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const handleChange = (field, val) => {
     setFormData(prev => ({ ...prev, [field]: val }));

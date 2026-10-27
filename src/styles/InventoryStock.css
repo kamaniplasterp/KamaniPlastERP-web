@@ -1113,3 +1113,54 @@
   font-weight: 700;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
+
+/* Filter Panel & Active Badges (Change 9) */
+.inv-active-filters-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px dashed #cbd5e1;
+  font-size: 0.75rem;
+}
+.inv-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+  font-size: 0.75rem;
+}
+.inv-filter-chip-remove {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  color: #64748b;
+  margin-left: 2px;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.inv-filter-chip-remove:hover {
+  color: #dc2626;
+}
+.inv-filter-clear-all-btn {
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0 4px;
+  margin-left: auto;
+}
+

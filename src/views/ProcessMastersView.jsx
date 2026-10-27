@@ -4,8 +4,8 @@ import {
   MapPin, Users, Sparkles, Check, CheckCircle2, X, SlidersHorizontal,
   ChevronDown, ChevronUp, RefreshCw, Eye
 } from 'lucide-react';
-import { subscribeProcesses, deleteProcess, DEFAULT_PROCESS_LIST } from '../api/process.api';
-import { subscribeLocations, deleteLocation, DEFAULT_LOCATIONS_LIST } from '../api/locations.api';
+import { subscribeProcesses, deleteProcess } from '../api/process.api';
+import { subscribeLocations, deleteLocation } from '../api/locations.api';
 import { subscribeFinishedGoods } from '../api/inventory.api';
 import { 
   subscribeProductAttributes, 
@@ -27,8 +27,8 @@ export default function ProcessMastersView() {
   const [locationSearch, setLocationSearch] = useState('');
   const [matrixSearch, setMatrixSearch] = useState('');
 
-  const [liveProcesses, setLiveProcesses] = useState(DEFAULT_PROCESS_LIST);
-  const [liveLocations, setLiveLocations] = useState(DEFAULT_LOCATIONS_LIST);
+  const [liveProcesses, setLiveProcesses] = useState([]);
+  const [liveLocations, setLiveLocations] = useState([]);
   const [productAttrs, setProductAttrs] = useState(DEFAULT_PRODUCT_ATTRIBUTES);
 
   const [showAddProcessModal, setShowAddProcessModal] = useState(false);
@@ -42,12 +42,15 @@ export default function ProcessMastersView() {
   const [generatedMatrix, setGeneratedMatrix] = useState([]);
   const [isSyncingMatrix, setIsSyncingMatrix] = useState(false);
   const [syncMatrixSuccess, setSyncMatrixSuccess] = useState(null);
-  const [newAttrInputs, setNewAttrInputs] = useState({ qualities: '', forms: '', colors: '', sizes: '', lengths: '', tracerLines: '' });
+  const [newAttrInputs, setNewAttrInputs] = useState({ qualities: '', forms: '', colors: '', sizes: '', lengths: '', tracerLines: '', meterMarkings: '' });
   const [matrixPage, setMatrixPage] = useState(1);
   const [matrixPageSize, setMatrixPageSize] = useState(50);
   const [existingFgList, setExistingFgList] = useState([]);
   const [builderMode, setBuilderMode] = useState('single'); // 'single' | 'batch'
   const [showAttrPools, setShowAttrPools] = useState(false);
+  const [showBuilderCard, setShowBuilderCard] = useState(true);
+  const [selectedCombos, setSelectedCombos] = useState(new Set());
+  const [bulkRateInput, setBulkRateInput] = useState('');
 
   // Custom Selection State: which items are active for combination generation
   const [selectedAttrs, setSelectedAttrs] = useState({
@@ -56,7 +59,8 @@ export default function ProcessMastersView() {
     colors: ['Bright Yellow'],
     sizes: ['3x3'],
     lengths: ['Standard'],
-    tracerLines: ['No Tracer Line']
+    tracerLines: ['No Tracer Line'],
+    meterMarkings: ['Non-Meter Marking']
   });
 
   // Single Custom SKU Quick Builder State
@@ -67,6 +71,7 @@ export default function ProcessMastersView() {
     size: '3x3',
     length: 'Standard',
     tracerLine: 'No Tracer Line',
+    meterMarking: 'Non-Meter Marking',
     bagWeight: 50.0,
     rate: 220
   });
@@ -181,9 +186,14 @@ export default function ProcessMastersView() {
     const s = singleSku.size || (productAttrs.sizes?.[0] || '3x3');
     const l = singleSku.length || (productAttrs.lengths?.[0] || 'Standard');
     const t = singleSku.tracerLine || (productAttrs.tracerLines?.[0] || 'No Tracer Line');
+    const m = singleSku.meterMarking || (productAttrs.meterMarkings?.[0] || 'Non-Meter Marking');
 
-    const code = generateSkuCode(q, f, c, s, l, t);
-    const extraDesc = [l !== 'Standard' ? l : '', t !== 'No Tracer Line' ? t : ''].filter(Boolean).join(' • ');
+    const code = generateSkuCode(q, f, c, s, l, t, m);
+    const extraDesc = [
+      l !== 'Standard' ? l : '', 
+      t !== 'No Tracer Line' ? t : '',
+      m !== 'Non-Meter Marking' ? m : ''
+    ].filter(Boolean).join(' • ');
     const name = `${q} ${f} - ${s} (${c})${extraDesc ? ' [' + extraDesc + ']' : ''}`;
 
     const newEntry = {
@@ -196,6 +206,7 @@ export default function ProcessMastersView() {
       size: s,
       length: l,
       tracerLine: t,
+      meterMarking: m,
       category: 'Danline & Fishing Twine',
       standardBagWeightKg: Number(singleSku.bagWeight) || 50.0,
       ratePerKg: Number(singleSku.rate) || 220,
@@ -214,12 +225,18 @@ export default function ProcessMastersView() {
 
   const handleRemoveMatrixRow = (skuCode) => {
     setGeneratedMatrix(prev => prev.filter(r => r.skuCode !== skuCode));
+    setSelectedCombos(prev => {
+      const next = new Set(prev);
+      next.delete(skuCode);
+      return next;
+    });
   };
 
   const handleClearMatrix = () => {
     if (generatedMatrix.length === 0) return;
     if (window.confirm('Are you sure you want to clear all combinations from this list?')) {
       setGeneratedMatrix([]);
+      setSelectedCombos(new Set());
       setSyncMatrixSuccess(null);
     }
   };
@@ -231,6 +248,50 @@ export default function ProcessMastersView() {
       }
       return row;
     }));
+  };
+
+  // Bulk rate selection handlers (Item 4)
+  const toggleSelectCombo = (skuCode) => {
+    setSelectedCombos(prev => {
+      const next = new Set(prev);
+      if (next.has(skuCode)) next.delete(skuCode);
+      else next.add(skuCode);
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = (allFilteredCodes) => {
+    setSelectedCombos(prev => {
+      const allSelected = allFilteredCodes.every(code => prev.has(code));
+      if (allSelected) {
+        const next = new Set(prev);
+        allFilteredCodes.forEach(c => next.delete(c));
+        return next;
+      } else {
+        const next = new Set(prev);
+        allFilteredCodes.forEach(c => next.add(c));
+        return next;
+      }
+    });
+  };
+
+  const handleApplyBulkRate = () => {
+    const rateNum = Number(bulkRateInput);
+    if (isNaN(rateNum) || rateNum <= 0) {
+      alert('Please enter a valid rate greater than 0');
+      return;
+    }
+    if (selectedCombos.size === 0) {
+      alert('Please select at least one combination first.');
+      return;
+    }
+    setGeneratedMatrix(prev => prev.map(row => {
+      if (selectedCombos.has(row.skuCode)) {
+        return { ...row, ratePerKg: rateNum };
+      }
+      return row;
+    }));
+    alert(`Updated rate to ₹${rateNum}/KG for ${selectedCombos.size} selected combinations.`);
   };
 
   const handleLoadExistingFg = () => {
@@ -248,6 +309,7 @@ export default function ProcessMastersView() {
       size: fg.size || (fg.diaColor && fg.diaColor.includes('•') ? fg.diaColor.split('•')[0]?.trim() : '3x3'),
       length: fg.length || 'Standard',
       tracerLine: fg.tracerLine || 'None',
+      meterMarking: fg.meterMarking || 'Non-Meter Marking',
       standardBagWeightKg: Number(fg.standardBagWeightKg || 50),
       ratePerKg: Number(fg.rate || 220),
       stockQty: fg.stockQty || 0,
@@ -270,8 +332,9 @@ export default function ProcessMastersView() {
     const selS = selectedAttrs.sizes?.length ? selectedAttrs.sizes : [productAttrs.sizes?.[0] || '3x3'];
     const selL = selectedAttrs.lengths?.length ? selectedAttrs.lengths : ['Standard'];
     const selT = selectedAttrs.tracerLines?.length ? selectedAttrs.tracerLines : ['No Tracer Line'];
+    const selM = selectedAttrs.meterMarkings?.length ? selectedAttrs.meterMarkings : ['Non-Meter Marking'];
 
-    const totalCount = selQ.length * selF.length * selC.length * selS.length * selL.length * selT.length;
+    const totalCount = selQ.length * selF.length * selC.length * selS.length * selL.length * selT.length * selM.length;
     if (totalCount > 400) {
       if (!window.confirm(`This will generate ${totalCount} custom combinations. Do you want to proceed?`)) {
         return;
@@ -286,7 +349,8 @@ export default function ProcessMastersView() {
       matrixBaseRate,
       matrixBagWeight,
       selL,
-      selT
+      selT,
+      selM
     );
 
     setGeneratedMatrix(prev => {
@@ -457,7 +521,7 @@ export default function ProcessMastersView() {
                   <div className="ds-stat-col" style={{ textAlign: 'right' }}>
                     <span className="ds-stat-label">EXP. SCRAP LOSS</span>
                     <span className="ds-stat-val" style={{ color: '#d97706' }}>
-                      {proc.expectedScrapPercentage || 0.5}%
+                      {proc.expectedScrapPct !== undefined ? proc.expectedScrapPct : (proc.expectedScrapPercentage ?? 0.5)}%
                     </span>
                   </div>
                 </div>
@@ -579,7 +643,7 @@ export default function ProcessMastersView() {
       {activeTab === 'productMatrix' && (
         <>
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: showBuilderCard ? '18px' : 0 }}>
               <div>
                 <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Layers size={20} style={{ color: '#2563eb' }} />
@@ -591,6 +655,17 @@ export default function ProcessMastersView() {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowBuilderCard(prev => !prev)}
+                  className="ds-btn-ghost"
+                  style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px', background: showBuilderCard ? '#eff6ff' : '#f8fafc', color: showBuilderCard ? '#2563eb' : '#475569', fontWeight: 600 }}
+                  title="Toggle visibility of combination builder"
+                >
+                  {showBuilderCard ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  {showBuilderCard ? 'Hide Combination Builder' : 'Show Combination Builder'}
+                </button>
+
                 <button
                   type="button"
                   onClick={handleLoadExistingFg}
@@ -614,404 +689,425 @@ export default function ProcessMastersView() {
               </div>
             </div>
 
-            {/* Builder Mode Switcher */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', width: 'fit-content' }}>
-              <button
-                type="button"
-                onClick={() => setBuilderMode('single')}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: builderMode === 'single' ? '#ffffff' : 'transparent',
-                  color: builderMode === 'single' ? '#0f172a' : '#64748b',
-                  boxShadow: builderMode === 'single' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                }}
-              >
-                <Plus size={14} style={{ color: '#2563eb' }} />
-                Build Single Custom Combination
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setBuilderMode('batch')}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: builderMode === 'batch' ? '#ffffff' : 'transparent',
-                  color: builderMode === 'batch' ? '#0f172a' : '#64748b',
-                  boxShadow: builderMode === 'batch' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                }}
-              >
-                <SlidersHorizontal size={14} style={{ color: '#7c3aed' }} />
-                Multi-Select Combination Mix
-              </button>
-            </div>
-
-            {/* ── MODE 1: Single Custom SKU Direct Selector ── */}
-            {builderMode === 'single' && (
-              <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
-                <div style={{ marginBottom: '12px' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
-                    Select Attributes to Make 1 Custom Product Combination:
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '14px' }}>
-                  <div>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1e40af', display: 'block', marginBottom: '4px' }}>
-                      1. Quality
-                    </label>
-                    <select
-                      value={singleSku.quality}
-                      onChange={e => setSingleSku(s => ({ ...s, quality: e.target.value }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    >
-                      {(productAttrs.qualities || []).map(q => <option key={q} value={q}>{q}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', display: 'block', marginBottom: '4px' }}>
-                      2. Form
-                    </label>
-                    <select
-                      value={singleSku.form}
-                      onChange={e => setSingleSku(s => ({ ...s, form: e.target.value }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    >
-                      {(productAttrs.forms || []).map(f => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#b45309', display: 'block', marginBottom: '4px' }}>
-                      3. Color
-                    </label>
-                    <select
-                      value={singleSku.color}
-                      onChange={e => setSingleSku(s => ({ ...s, color: e.target.value }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    >
-                      {(productAttrs.colors || []).map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7e22ce', display: 'block', marginBottom: '4px' }}>
-                      4. Size
-                    </label>
-                    <select
-                      value={singleSku.size}
-                      onChange={e => setSingleSku(s => ({ ...s, size: e.target.value }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    >
-                      {(productAttrs.sizes || []).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0e7490', display: 'block', marginBottom: '4px' }}>
-                      5. Length
-                    </label>
-                    <select
-                      value={singleSku.length}
-                      onChange={e => setSingleSku(s => ({ ...s, length: e.target.value }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    >
-                      {(productAttrs.lengths || ['Standard']).map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#be185d', display: 'block', marginBottom: '4px' }}>
-                      6. Tracer Line
-                    </label>
-                    <select
-                      value={singleSku.tracerLine}
-                      onChange={e => setSingleSku(s => ({ ...s, tracerLine: e.target.value }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    >
-                      {(productAttrs.tracerLines || ['No Tracer Line']).map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-
-                  <div style={{ maxWidth: '100px' }}>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
-                      Bag Wt (KG)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={singleSku.bagWeight}
-                      onChange={e => setSingleSku(s => ({ ...s, bagWeight: Number(e.target.value) }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    />
-                  </div>
-
-                  <div style={{ maxWidth: '105px' }}>
-                    <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
-                      Rate (₹/KG)
-                    </label>
-                    <input
-                      type="number"
-                      value={singleSku.rate}
-                      onChange={e => setSingleSku(s => ({ ...s, rate: Number(e.target.value) }))}
-                      style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
-                    />
-                  </div>
-                </div>
-
-                {/* SKU Code Preview & Add Button Row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Generated SKU Code:</span>
-                    <code style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '0.85rem' }}>
-                      {generateSkuCode(singleSku.quality, singleSku.form, singleSku.color, singleSku.size, singleSku.length, singleSku.tracerLine)}
-                    </code>
-                    <span style={{ fontSize: '0.78rem', color: '#334155', fontWeight: 600 }}>
-                      ({singleSku.quality} {singleSku.form} - {singleSku.size} • {singleSku.color})
-                    </span>
-                  </div>
+            {/* Collapsible Combination Builder Body (Item 5) */}
+            {showBuilderCard && (
+              <>
+                {/* Builder Mode Switcher */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', width: 'fit-content', marginTop: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setBuilderMode('single')}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: builderMode === 'single' ? '#ffffff' : 'transparent',
+                      color: builderMode === 'single' ? '#0f172a' : '#64748b',
+                      boxShadow: builderMode === 'single' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    <Plus size={14} style={{ color: '#2563eb' }} />
+                    Build Single Custom Combination
+                  </button>
 
                   <button
                     type="button"
-                    onClick={handleAddSingleSku}
-                    className="ds-btn-primary"
-                    style={{ background: '#2563eb', color: '#fff', padding: '7px 18px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700 }}
+                    onClick={() => setBuilderMode('batch')}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: builderMode === 'batch' ? '#ffffff' : 'transparent',
+                      color: builderMode === 'batch' ? '#0f172a' : '#64748b',
+                      boxShadow: builderMode === 'batch' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
                   >
-                    <Plus size={15} /> Add Custom Combination
+                    <SlidersHorizontal size={14} style={{ color: '#7c3aed' }} />
+                    Multi-Select Combination Mix
                   </button>
                 </div>
-              </div>
-            )}
 
-            {/* ── MODE 2: Multi-Select Targeted Batch Generator ── */}
-            {builderMode === 'batch' && (
-              <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
-                <div style={{ marginBottom: '12px' }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
-                    Select Multiple Options to Combine (Only Checked Items Will Be Created):
-                  </span>
-                </div>
+                {/* ── MODE 1: Single Custom SKU Direct Selector ── */}
+                {builderMode === 'single' && (
+                  <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
+                    <div style={{ marginBottom: '12px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
+                        Select Attributes to Make 1 Custom Product Combination:
+                      </span>
+                    </div>
 
-                {/* 6 Attribute Cards with Checkbox Chips */}
-                {(() => {
-                  const renderBatchCard = (num, title, category, activeColor, borderLight) => {
-                    const allItems = productAttrs[category] || [];
-                    const selItems = selectedAttrs[category] || [];
-                    return (
-                      <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a' }}>{num}. {title}</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.72rem' }}>
-                            <span style={{ color: activeColor, fontWeight: 700 }}>
-                              {selItems.length}/{allItems.length} sel
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1e40af', display: 'block', marginBottom: '4px' }}>
+                          1. Quality
+                        </label>
+                        <select
+                          value={singleSku.quality}
+                          onChange={e => setSingleSku(s => ({ ...s, quality: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        >
+                          {(productAttrs.qualities || []).map(q => <option key={q} value={q}>{q}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#15803d', display: 'block', marginBottom: '4px' }}>
+                          2. Form
+                        </label>
+                        <select
+                          value={singleSku.form}
+                          onChange={e => setSingleSku(s => ({ ...s, form: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        >
+                          {(productAttrs.forms || []).map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#b45309', display: 'block', marginBottom: '4px' }}>
+                          3. Color
+                        </label>
+                        <select
+                          value={singleSku.color}
+                          onChange={e => setSingleSku(s => ({ ...s, color: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        >
+                          {(productAttrs.colors || []).map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#7e22ce', display: 'block', marginBottom: '4px' }}>
+                          4. Size
+                        </label>
+                        <select
+                          value={singleSku.size}
+                          onChange={e => setSingleSku(s => ({ ...s, size: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        >
+                          {(productAttrs.sizes || []).map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0e7490', display: 'block', marginBottom: '4px' }}>
+                          5. Length
+                        </label>
+                        <select
+                          value={singleSku.length}
+                          onChange={e => setSingleSku(s => ({ ...s, length: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        >
+                          {(productAttrs.lengths || ['Standard']).map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#be185d', display: 'block', marginBottom: '4px' }}>
+                          6. Tracer Line
+                        </label>
+                        <select
+                          value={singleSku.tracerLine}
+                          onChange={e => setSingleSku(s => ({ ...s, tracerLine: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        >
+                          {(productAttrs.tracerLines || ['No Tracer Line']).map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#059669', display: 'block', marginBottom: '4px' }}>
+                          7. Meter Marking
+                        </label>
+                        <select
+                          value={singleSku.meterMarking || 'Non-Meter Marking'}
+                          onChange={e => setSingleSku(s => ({ ...s, meterMarking: e.target.value }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        >
+                          {(productAttrs.meterMarkings || ['Non-Meter Marking', 'Meter Marking']).map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+
+                      <div style={{ maxWidth: '100px' }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                          Bag Wt (KG)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={singleSku.bagWeight}
+                          onChange={e => setSingleSku(s => ({ ...s, bagWeight: Number(e.target.value) }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        />
+                      </div>
+
+                      <div style={{ maxWidth: '105px' }}>
+                        <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                          Rate (₹/KG)
+                        </label>
+                        <input
+                          type="number"
+                          value={singleSku.rate}
+                          onChange={e => setSingleSku(s => ({ ...s, rate: Number(e.target.value) }))}
+                          style={{ width: '100%', padding: '6px 8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem', background: '#fff' }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* SKU Code Preview & Add Button Row */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Generated SKU Code:</span>
+                        <code style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '0.85rem' }}>
+                          {generateSkuCode(singleSku.quality, singleSku.form, singleSku.color, singleSku.size, singleSku.length, singleSku.tracerLine, singleSku.meterMarking)}
+                        </code>
+                        <span style={{ fontSize: '0.78rem', color: '#334155', fontWeight: 600 }}>
+                          ({singleSku.quality} {singleSku.form} - {singleSku.size} • {singleSku.color} • {singleSku.meterMarking || 'Non-Meter Marking'})
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddSingleSku}
+                        className="ds-btn-primary"
+                        style={{ background: '#2563eb', color: '#fff', padding: '7px 18px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700 }}
+                      >
+                        <Plus size={15} /> Add Custom Combination
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── MODE 2: Multi-Select Targeted Batch Generator ── */}
+                {builderMode === 'batch' && (
+                  <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
+                    <div style={{ marginBottom: '12px' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
+                        Select Multiple Options to Combine (Only Checked Items Will Be Created):
+                      </span>
+                    </div>
+
+                    {/* 7 Attribute Cards with Checkbox Chips */}
+                    {(() => {
+                      const renderBatchCard = (num, title, category, activeColor, borderLight) => {
+                        const allItems = productAttrs[category] || [];
+                        const selItems = selectedAttrs[category] || [];
+                        return (
+                          <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#0f172a' }}>{num}. {title}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.72rem' }}>
+                                <span style={{ color: activeColor, fontWeight: 700 }}>
+                                  {selItems.length}/{allItems.length} sel
+                                </span>
+                                <span>•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => selectAllAttrs(category)}
+                                  style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: '0.72rem', textDecoration: 'underline' }}
+                                >
+                                  All
+                                </button>
+                                <span>•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => clearAllAttrs(category)}
+                                  style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0, fontSize: '0.72rem', textDecoration: 'underline' }}
+                                >
+                                  None
+                                </button>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                              {allItems.map(val => {
+                                const isSelected = selItems.includes(val);
+                                return (
+                                  <span 
+                                    key={val} 
+                                    onClick={() => toggleSelectAttr(category, val)}
+                                    style={{ 
+                                      display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer',
+                                      background: isSelected ? borderLight : '#f8fafc',
+                                      color: isSelected ? activeColor : '#64748b',
+                                      border: isSelected ? `1.5px solid ${activeColor}` : '1px solid #cbd5e1',
+                                      padding: '2px 8px', borderRadius: '16px', fontSize: '0.74rem',
+                                      fontWeight: isSelected ? 700 : 500,
+                                      userSelect: 'none'
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {}}
+                                      style={{ accentColor: activeColor, cursor: 'pointer', margin: 0, width: 12, height: 12 }}
+                                    />
+                                    {val}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      };
+
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                          {renderBatchCard('1', 'Qualities', 'qualities', '#1d4ed8', '#eff6ff')}
+                          {renderBatchCard('2', 'Forms', 'forms', '#15803d', '#f0fdf4')}
+                          {renderBatchCard('3', 'Colors', 'colors', '#b45309', '#fef3c7')}
+                          {renderBatchCard('4', 'Sizes', 'sizes', '#7e22ce', '#f3e8ff')}
+                          {renderBatchCard('5', 'Lengths', 'lengths', '#0e7490', '#ecfeff')}
+                          {renderBatchCard('6', 'Tracer Lines', 'tracerLines', '#be185d', '#fdf2f8')}
+                          {renderBatchCard('7', 'Meter Marking', 'meterMarkings', '#059669', '#ecfdf5')}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Batch Action Banner */}
+                    {(() => {
+                      const qCount = (selectedAttrs.qualities || []).length;
+                      const fCount = (selectedAttrs.forms || []).length;
+                      const cCount = (selectedAttrs.colors || []).length;
+                      const sCount = (selectedAttrs.sizes || []).length;
+                      const lCount = Math.max(1, (selectedAttrs.lengths || []).length);
+                      const tCount = Math.max(1, (selectedAttrs.tracerLines || []).length);
+                      const mCount = Math.max(1, (selectedAttrs.meterMarkings || []).length);
+                      const totalCombos = qCount * fCount * cCount * sCount * lCount * tCount * mCount;
+
+                      return (
+                        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                          <div>
+                            <span style={{ fontSize: '0.78rem', color: '#1e40af', fontWeight: 600 }}>Calculation: </span>
+                            <span style={{ fontSize: '0.82rem', color: '#0f172a', fontWeight: 700 }}>
+                              {qCount} Qualities × {fCount} Forms × {cCount} Colors × {sCount} Sizes = <span style={{ color: '#2563eb' }}>{totalCombos.toLocaleString()} Custom SKUs</span>
                             </span>
-                            <span>•</span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Bag Wt:</label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                value={matrixBagWeight}
+                                onChange={e => setMatrixBagWeight(Number(e.target.value))}
+                                style={{ width: '60px', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.78rem' }}
+                              />
+                              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>KG</span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Rate:</label>
+                              <input
+                                type="number"
+                                value={matrixBaseRate}
+                                onChange={e => setMatrixBaseRate(Number(e.target.value))}
+                                style={{ width: '65px', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.78rem' }}
+                              />
+                              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>₹/KG</span>
+                            </div>
+
                             <button
                               type="button"
-                              onClick={() => selectAllAttrs(category)}
-                              style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: '0.72rem', textDecoration: 'underline' }}
+                              onClick={handleGenerateBatchMix}
+                              className="ds-btn-primary"
+                              disabled={totalCombos === 0}
+                              style={{ background: '#0f172a', color: '#ffffff', padding: '6px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
                             >
-                              All
-                            </button>
-                            <span>•</span>
-                            <button
-                              type="button"
-                              onClick={() => clearAllAttrs(category)}
-                              style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 0, fontSize: '0.72rem', textDecoration: 'underline' }}
-                            >
-                              None
+                              <Sparkles size={14} /> Generate &amp; Add ({totalCombos}) Combinations
                             </button>
                           </div>
                         </div>
-
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                          {allItems.map(val => {
-                            const isSelected = selItems.includes(val);
-                            return (
-                              <span 
-                                key={val} 
-                                onClick={() => toggleSelectAttr(category, val)}
-                                style={{ 
-                                  display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer',
-                                  background: isSelected ? borderLight : '#f8fafc',
-                                  color: isSelected ? activeColor : '#64748b',
-                                  border: isSelected ? `1.5px solid ${activeColor}` : '1px solid #cbd5e1',
-                                  padding: '2px 8px', borderRadius: '16px', fontSize: '0.74rem',
-                                  fontWeight: isSelected ? 700 : 500,
-                                  userSelect: 'none'
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  style={{ accentColor: activeColor, cursor: 'pointer', margin: 0, width: 12, height: 12 }}
-                                />
-                                {val}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  };
-
-                  return (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px', marginBottom: '14px' }}>
-                      {renderBatchCard('1', 'Qualities', 'qualities', '#1d4ed8', '#eff6ff')}
-                      {renderBatchCard('2', 'Forms', 'forms', '#15803d', '#f0fdf4')}
-                      {renderBatchCard('3', 'Colors', 'colors', '#b45309', '#fef3c7')}
-                      {renderBatchCard('4', 'Sizes', 'sizes', '#7e22ce', '#f3e8ff')}
-                      {renderBatchCard('5', 'Lengths', 'lengths', '#0e7490', '#ecfeff')}
-                      {renderBatchCard('6', 'Tracer Lines', 'tracerLines', '#be185d', '#fdf2f8')}
-                    </div>
-                  );
-                })()}
-
-                {/* Batch Action Banner */}
-                {(() => {
-                  const qCount = (selectedAttrs.qualities || []).length;
-                  const fCount = (selectedAttrs.forms || []).length;
-                  const cCount = (selectedAttrs.colors || []).length;
-                  const sCount = (selectedAttrs.sizes || []).length;
-                  const lCount = Math.max(1, (selectedAttrs.lengths || []).length);
-                  const tCount = Math.max(1, (selectedAttrs.tracerLines || []).length);
-                  const totalCombos = qCount * fCount * cCount * sCount * lCount * tCount;
-
-                  return (
-                    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-                      <div>
-                        <span style={{ fontSize: '0.78rem', color: '#1e40af', fontWeight: 600 }}>Calculation: </span>
-                        <span style={{ fontSize: '0.82rem', color: '#0f172a', fontWeight: 700 }}>
-                          {qCount} Qualities × {fCount} Forms × {cCount} Colors × {sCount} Sizes = <span style={{ color: '#2563eb' }}>{totalCombos.toLocaleString()} Custom SKUs</span>
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Bag Wt:</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            value={matrixBagWeight}
-                            onChange={e => setMatrixBagWeight(Number(e.target.value))}
-                            style={{ width: '60px', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.78rem' }}
-                          />
-                          <span style={{ fontSize: '0.72rem', color: '#64748b' }}>KG</span>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Rate:</label>
-                          <input
-                            type="number"
-                            value={matrixBaseRate}
-                            onChange={e => setMatrixBaseRate(Number(e.target.value))}
-                            style={{ width: '65px', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.78rem' }}
-                          />
-                          <span style={{ fontSize: '0.72rem', color: '#64748b' }}>₹/KG</span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleGenerateBatchMix}
-                          className="ds-btn-primary"
-                          disabled={totalCombos === 0}
-                          style={{ background: '#0f172a', color: '#ffffff', padding: '6px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <Sparkles size={14} /> Generate &amp; Add ({totalCombos}) Combinations
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Collapsible Master Attribute Pools Management */}
-            {showAttrPools && (
-              <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '16px', marginTop: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
-                      Master Product Attribute Pools (Available in Selectors)
-                    </h4>
-                    <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
-                      Add or remove options. Any updates automatically appear in the combination builder dropdowns.
-                    </span>
+                      );
+                    })()}
                   </div>
-                </div>
+                )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
-                  {[
-                    { num: '1', title: 'Qualities', cat: 'qualities', color: '#1d4ed8' },
-                    { num: '2', title: 'Forms', cat: 'forms', color: '#15803d' },
-                    { num: '3', title: 'Colors', cat: 'colors', color: '#b45309' },
-                    { num: '4', title: 'Sizes', cat: 'sizes', color: '#7e22ce' },
-                    { num: '5', title: 'Lengths', cat: 'lengths', color: '#0e7490' },
-                    { num: '6', title: 'Tracer Lines', cat: 'tracerLines', color: '#be185d' }
-                  ].map(({ num, title, cat, color }) => (
-                    <div key={cat} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#0f172a' }}>{num}. {title}</span>
-                        <span style={{ fontSize: '0.7rem', color, fontWeight: 700 }}>
-                          {(productAttrs[cat] || []).length} items
+                {/* Collapsible Master Attribute Pools Management */}
+                {showAttrPools && (
+                  <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '16px', marginTop: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
+                          Master Product Attribute Pools (Available in Selectors)
+                        </h4>
+                        <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                          Add or remove options. Any updates automatically appear in the combination builder dropdowns.
                         </span>
                       </div>
-
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px', minHeight: '30px' }}>
-                        {(productAttrs[cat] || []).map(val => (
-                          <span
-                            key={val}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#f1f5f9', color: '#334155', padding: '2px 7px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 500 }}
-                          >
-                            {val}
-                            <X
-                              size={11}
-                              style={{ cursor: 'pointer', opacity: 0.6 }}
-                              onClick={() => handleRemoveAttribute(cat, val)}
-                              title={`Delete ${val}`}
-                            />
-                          </span>
-                        ))}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <input
-                          type="text"
-                          placeholder={`+ Add ${title}...`}
-                          value={newAttrInputs[cat] || ''}
-                          onChange={e => setNewAttrInputs(prev => ({ ...prev, [cat]: e.target.value }))}
-                          onKeyDown={e => e.key === 'Enter' && handleAddAttribute(cat, newAttrInputs[cat])}
-                          style={{ flex: 1, padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.74rem' }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleAddAttribute(cat, newAttrInputs[cat])}
-                          style={{ padding: '3px 8px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.72rem', cursor: 'pointer' }}
-                        >
-                          Add
-                        </button>
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                      {[
+                        { num: '1', title: 'Qualities', cat: 'qualities', color: '#1d4ed8' },
+                        { num: '2', title: 'Forms', cat: 'forms', color: '#15803d' },
+                        { num: '3', title: 'Colors', cat: 'colors', color: '#b45309' },
+                        { num: '4', title: 'Sizes', cat: 'sizes', color: '#7e22ce' },
+                        { num: '5', title: 'Lengths', cat: 'lengths', color: '#0e7490' },
+                        { num: '6', title: 'Tracer Lines', cat: 'tracerLines', color: '#be185d' },
+                        { num: '7', title: 'Meter Markings', cat: 'meterMarkings', color: '#059669' }
+                      ].map(({ num, title, cat, color }) => (
+                        <div key={cat} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#0f172a' }}>{num}. {title}</span>
+                            <span style={{ fontSize: '0.7rem', color, fontWeight: 700 }}>
+                              {(productAttrs[cat] || []).length} items
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px', minHeight: '30px' }}>
+                            {(productAttrs[cat] || []).map(val => (
+                              <span
+                                key={val}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#f1f5f9', color: '#334155', padding: '2px 7px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 500 }}
+                              >
+                                {val}
+                                <X
+                                  size={11}
+                                  style={{ cursor: 'pointer', opacity: 0.6 }}
+                                  onClick={() => handleRemoveAttribute(cat, val)}
+                                  title={`Delete ${val}`}
+                                />
+                              </span>
+                            ))}
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <input
+                              type="text"
+                              placeholder={`+ Add ${title}...`}
+                              value={newAttrInputs[cat] || ''}
+                              onChange={e => setNewAttrInputs(prev => ({ ...prev, [cat]: e.target.value }))}
+                              onKeyDown={e => e.key === 'Enter' && handleAddAttribute(cat, newAttrInputs[cat])}
+                              style={{ flex: 1, padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.74rem' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAddAttribute(cat, newAttrInputs[cat])}
+                              style={{ padding: '3px 8px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '0.72rem', cursor: 'pointer' }}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -1126,11 +1222,13 @@ export default function ProcessMastersView() {
                     (m.color || '').toLowerCase().includes(matrixSearch.toLowerCase()) ||
                     (m.size || '').toLowerCase().includes(matrixSearch.toLowerCase()) ||
                     (m.length && m.length.toLowerCase().includes(matrixSearch.toLowerCase())) ||
-                    (m.tracerLine && m.tracerLine.toLowerCase().includes(matrixSearch.toLowerCase()))
+                    (m.tracerLine && m.tracerLine.toLowerCase().includes(matrixSearch.toLowerCase())) ||
+                    (m.meterMarking && m.meterMarking.toLowerCase().includes(matrixSearch.toLowerCase()))
                   );
                   const totalPages = Math.ceil(filteredMatrix.length / matrixPageSize) || 1;
                   const safePage = Math.min(matrixPage, totalPages);
                   const paginatedItems = filteredMatrix.slice((safePage - 1) * matrixPageSize, safePage * matrixPageSize);
+                  const allVisibleSelected = filteredMatrix.length > 0 && filteredMatrix.every(r => selectedCombos.has(r.skuCode));
 
                   return (
                     <>
@@ -1138,7 +1236,16 @@ export default function ProcessMastersView() {
                         <table className="jw-ledger-table ds-table">
                           <thead>
                             <tr>
-                              <th style={{ width: '40px', textAlign: 'center' }}>#</th>
+                              <th style={{ width: '38px', textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={allVisibleSelected}
+                                  onChange={() => handleToggleSelectAll(filteredMatrix.map(r => r.skuCode))}
+                                  style={{ cursor: 'pointer', accentColor: '#2563eb', width: 14, height: 14 }}
+                                  title="Select / Deselect all visible combinations"
+                                />
+                              </th>
+                              <th style={{ width: '35px', textAlign: 'center' }}>#</th>
                               <th>SKU CODE</th>
                               <th>PRODUCT NAME</th>
                               <th>QUALITY</th>
@@ -1147,6 +1254,7 @@ export default function ProcessMastersView() {
                               <th>SIZE</th>
                               <th>LENGTH</th>
                               <th>TRACER LINE</th>
+                              <th>METER MARKING</th>
                               <th style={{ textAlign: 'right' }}>STD BAG WT</th>
                               <th style={{ textAlign: 'right' }}>RATE (₹/KG)</th>
                               <th style={{ textAlign: 'center' }}>STATUS</th>
@@ -1155,7 +1263,15 @@ export default function ProcessMastersView() {
                           </thead>
                           <tbody>
                             {paginatedItems.map((row, idx) => (
-                              <tr key={row.skuCode}>
+                              <tr key={row.skuCode} style={{ background: selectedCombos.has(row.skuCode) ? 'rgba(37, 99, 235, 0.04)' : undefined }}>
+                                <td style={{ textAlign: 'center' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedCombos.has(row.skuCode)}
+                                    onChange={() => toggleSelectCombo(row.skuCode)}
+                                    style={{ cursor: 'pointer', accentColor: '#2563eb', width: 14, height: 14 }}
+                                  />
+                                </td>
                                 <td style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600 }}>
                                   {(safePage - 1) * matrixPageSize + idx + 1}
                                 </td>
@@ -1193,6 +1309,21 @@ export default function ProcessMastersView() {
                                 <td>
                                   <span style={{ background: '#fdf2f8', color: '#be185d', border: '1px solid #fce7f3', padding: '2px 8px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-block' }}>
                                     {row.tracerLine || 'None'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{
+                                    background: row.meterMarking === 'Meter Marking' ? '#ecfdf5' : '#f8fafc',
+                                    color: row.meterMarking === 'Meter Marking' ? '#059669' : '#64748b',
+                                    border: row.meterMarking === 'Meter Marking' ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                                    padding: '2px 8px',
+                                    borderRadius: '9999px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 600,
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-block'
+                                  }}>
+                                    {row.meterMarking || 'Non-Meter Marking'}
                                   </span>
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
@@ -1262,6 +1393,67 @@ export default function ProcessMastersView() {
                         </table>
                       </div>
 
+                      {/* Floating Action Bar for Bulk Rate Edit (Item 4) */}
+                      {selectedCombos.size > 0 && (
+                        <div style={{
+                          position: 'sticky',
+                          bottom: '16px',
+                          zIndex: 50,
+                          background: '#0f172a',
+                          color: '#ffffff',
+                          padding: '12px 18px',
+                          borderRadius: '10px',
+                          boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.4), 0 8px 10px -6px rgba(15, 23, 42, 0.2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '12px',
+                          marginTop: '12px',
+                          border: '1px solid #334155'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ background: '#2563eb', color: '#ffffff', padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700 }}>
+                              {selectedCombos.size} Combinations Selected
+                            </span>
+                            <span style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>
+                              Set uniform rate across selected variants (e.g. all colors):
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#1e293b', padding: '5px 10px', borderRadius: '6px', border: '1px solid #475569' }}>
+                              <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>₹</span>
+                              <input
+                                type="number"
+                                placeholder="e.g. 225"
+                                value={bulkRateInput}
+                                onChange={e => setBulkRateInput(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleApplyBulkRate()}
+                                style={{ width: '80px', background: 'transparent', border: 'none', color: '#ffffff', fontSize: '0.85rem', fontWeight: 700, outline: 'none' }}
+                              />
+                              <span style={{ color: '#94a3b8', fontSize: '0.74rem' }}>/KG</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleApplyBulkRate}
+                              style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '7px 16px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+                            >
+                              <Check size={14} /> Apply Bulk Rate
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCombos(new Set())}
+                              style={{ background: 'transparent', color: '#94a3b8', border: '1px solid #475569', padding: '7px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
+                            >
+                              Deselect All
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Pagination Bar */}
                       {filteredMatrix.length > matrixPageSize && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', padding: '8px 4px', fontSize: '0.8rem', color: '#64748b', flexWrap: 'wrap', gap: '8px' }}>
@@ -1314,6 +1506,7 @@ export default function ProcessMastersView() {
       {showAddProcessModal && (
         <ProcessMasterModal
           process={selectedProcessToEdit}
+          processToEdit={selectedProcessToEdit}
           onClose={() => { setShowAddProcessModal(false); setSelectedProcessToEdit(null); }}
         />
       )}
@@ -1321,6 +1514,7 @@ export default function ProcessMastersView() {
       {showAddLocationModal && (
         <LocationMasterModal
           location={selectedLocationToEdit}
+          locationToEdit={selectedLocationToEdit}
           onClose={() => { setShowAddLocationModal(false); setSelectedLocationToEdit(null); }}
         />
       )}

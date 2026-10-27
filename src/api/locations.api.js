@@ -2,6 +2,7 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
+  setDoc,
   updateDoc, 
   deleteDoc,
   doc, 
@@ -14,6 +15,7 @@ import { db } from '../firebase/firebase';
 
 export const DEFAULT_LOCATIONS_LIST = [
   {
+    id: 'LOC-KPI',
     locationCode: 'LOC-KPI',
     name: 'KPI Godown',
     type: 'INTERNAL',
@@ -23,6 +25,7 @@ export const DEFAULT_LOCATIONS_LIST = [
     capacityKg: 100000
   },
   {
+    id: 'LOC-MARVEL',
     locationCode: 'LOC-MARVEL',
     name: 'Marvel Godown',
     type: 'INTERNAL',
@@ -32,6 +35,7 @@ export const DEFAULT_LOCATIONS_LIST = [
     capacityKg: 80000
   },
   {
+    id: 'LOC-GALAXY',
     locationCode: 'LOC-GALAXY',
     name: 'Galaxy Enterprise (Job Worker)',
     type: 'JOB_WORKER',
@@ -42,6 +46,7 @@ export const DEFAULT_LOCATIONS_LIST = [
     capacityKg: 50000
   },
   {
+    id: 'LOC-RAMJI',
     locationCode: 'LOC-RAMJI',
     name: 'Ramjibhai Unit (Job Worker)',
     type: 'JOB_WORKER',
@@ -52,6 +57,7 @@ export const DEFAULT_LOCATIONS_LIST = [
     capacityKg: 40000
   },
   {
+    id: 'LOC-HIMMAT',
     locationCode: 'LOC-HIMMAT',
     name: 'Himmatbhai Unit (Job Worker)',
     type: 'JOB_WORKER',
@@ -64,79 +70,66 @@ export const DEFAULT_LOCATIONS_LIST = [
 ];
 
 /**
- * Subscribe to real-time locations collection with fallback to defaults
+ * Subscribe to real-time locations collection directly from Firestore database
  */
 export function subscribeLocations(callback, limitCount = 100) {
   if (!db) {
     callback(DEFAULT_LOCATIONS_LIST);
     return () => {};
   }
+
   const q = query(collection(db, 'locations'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
-    if (snapshot.empty) {
-      callback(DEFAULT_LOCATIONS_LIST);
-    } else {
-      const list = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      callback(list);
-    }
+    const list = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    list.sort((a, b) => (a.locationCode || '').localeCompare(b.locationCode || ''));
+    callback(list);
   }, (error) => {
     console.error('Error fetching locations:', error);
-    callback(DEFAULT_LOCATIONS_LIST);
+    callback([]);
   });
 }
 
 /**
- * Add a new Location / Godown record
+ * Add a new Location / Godown record directly to Firestore
  */
 export async function addLocation(data) {
   if (!db) throw new Error('Firestore not initialized');
-  const ref = await addDoc(collection(db, 'locations'), {
+  const code = data.locationCode || `LOC-${Math.floor(100 + Math.random() * 900)}`;
+  const locRef = doc(db, 'locations', code);
+  await setDoc(locRef, {
     ...data,
-    locationCode: data.locationCode || `LOC-${Math.floor(100 + Math.random() * 900)}`,
+    locationCode: code,
     type: data.type || 'INTERNAL',
     capacityKg: Number(data.capacityKg || 0),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
-  });
-  return ref.id;
+  }, { merge: true });
+  return code;
 }
 
 /**
- * Update an existing Location
+ * Update an existing Location directly in Firestore
  */
 export async function updateLocation(id, data) {
   if (!db) throw new Error('Firestore not initialized');
-  const locRef = doc(db, 'locations', id);
-  await updateDoc(locRef, {
+  const docId = id || data.locationCode;
+  const locRef = doc(db, 'locations', docId);
+  await setDoc(locRef, {
     ...data,
+    locationCode: data.locationCode || docId,
     capacityKg: Number(data.capacityKg || 0),
     updatedAt: serverTimestamp()
-  });
+  }, { merge: true });
 }
 
 /**
- * Delete a Location
+ * Delete a Location directly from Firestore
  */
 export async function deleteLocation(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'locations', id));
-}
-
-/**
- * Seed default locations if collection is empty
- */
-export async function seedDefaultLocations() {
-  if (!db) return;
-  const snap = await getDocs(collection(db, 'locations'));
-  if (snap.empty) {
-    for (const loc of DEFAULT_LOCATIONS_LIST) {
-      await addDoc(collection(db, 'locations'), {
-        ...loc,
-        createdAt: serverTimestamp()
-      });
-    }
-  }
 }

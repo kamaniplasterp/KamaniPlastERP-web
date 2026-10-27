@@ -50,7 +50,7 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
         : (parseFloat(String(d.value || '').replace(/[^0-9.]/g, '')) || 0);
 
       if (currentVal <= 0 && d.id) {
-        const qty = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 200;
+        const qty = Number(d.dispatchedQtyCoils !== undefined ? d.dispatchedQtyCoils : (parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 0));
         const linkedSo = liveOrders.find(o => o.id === d.soId || o.orderNo === d.orderRef);
         let correctedVal = 0;
         if (linkedSo && linkedSo.grandTotal && linkedSo.orderedQtyCoils) {
@@ -191,7 +191,7 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       (typeof o.reservedCoils === 'number' ? Math.min(o.reservedCoils, balQty) : (parseVal(o.reserved) || balQty))
     );
 
-    const orderDateStr = o.date || o.orderDate || (o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toISOString().split('T')[0] : '2026-08-26');
+    const orderDateStr = o.date || o.orderDate || (o.createdAt?.seconds ? new Date(o.createdAt.seconds * 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
     const expDateStr = o.expDate || (o.deliveryDate ? `Exp: ${o.deliveryDate}` : '');
     const formattedVal = o.orderValue && typeof o.orderValue === 'string' && o.orderValue.startsWith('₹') 
       ? o.orderValue 

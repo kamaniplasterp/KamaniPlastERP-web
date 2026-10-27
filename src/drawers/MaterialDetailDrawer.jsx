@@ -14,13 +14,17 @@ export default function MaterialDetailDrawer({ material, isOpen, onClose, onIssu
 
   const jwList = (material.jwList && material.jwList.length > 0) ? material.jwList : (
     (simulatedJobWorks || []).filter(j => {
-      const jwMat = (j.rawMat || '').toLowerCase();
+      const jwMat = (j.rawMat || j.material || j.itemName || '').toLowerCase();
       const jwMatId = (j.rawMaterialId || '').toLowerCase();
+      const targetId = (material.id || '').toLowerCase();
+      
+      if (jwMatId && targetId && jwMatId === targetId) return true;
+      if (matName && jwMat && (jwMat.includes(matName) || matName.includes(jwMat))) return true;
+      if (matCode && jwMat && jwMat.includes(matCode)) return true;
       if (matName.includes('yarn') || matCode.includes('yarn')) {
-        return jwMat.includes('yarn') || jwMatId.includes('yarn');
-      } else {
-        return !jwMat.includes('yarn');
+        return jwMat.includes('yarn');
       }
+      return false;
     }).map(j => ({
       id: j.jwNo || j.id,
       vendor: j.vendor || j.party || '-',

@@ -8,9 +8,9 @@ import {
   DEFAULT_PERSONNEL, 
   DEFAULT_TARE_STANDARDS 
 } from '../api/directory.api';
-import { subscribeLocations, DEFAULT_LOCATIONS_LIST } from '../api/locations.api';
+import { subscribeLocations } from '../api/locations.api';
 import { subscribeProductAttributes, DEFAULT_PRODUCT_ATTRIBUTES } from '../api/productMatrix.api';
-import { subscribeProcesses, DEFAULT_PROCESS_LIST } from '../api/process.api';
+import { subscribeProcesses } from '../api/process.api';
 import '../styles/Modals.css';
 
 export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
@@ -23,8 +23,8 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
 
   const [personnelList, setPersonnelList] = useState(DEFAULT_PERSONNEL);
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
-  const [liveLocations, setLiveLocations] = useState(DEFAULT_LOCATIONS_LIST);
-  const [liveProcesses, setLiveProcesses] = useState(DEFAULT_PROCESS_LIST);
+  const [liveLocations, setLiveLocations] = useState([]);
+  const [liveProcesses, setLiveProcesses] = useState([]);
   const [productAttrs, setProductAttrs] = useState(DEFAULT_PRODUCT_ATTRIBUTES);
 
   useEffect(() => {

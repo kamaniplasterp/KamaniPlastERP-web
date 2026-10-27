@@ -148,7 +148,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const allJobWorkData = liveJobWorks.map(jw => {
     const grossWeight = Number(
       jw.grossWeight !== undefined && jw.grossWeight !== null ? jw.grossWeight : 
-      (jw.sentQtyKg || 1000)
+      (jw.sentQtyKg !== undefined ? jw.sentQtyKg : 0)
     );
 
     const boraCount = Number(
@@ -232,7 +232,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       department: jw.department || 'Job Work Extrusion',
       date: jw.date || '2026-08-01',
       party: jw.partyName || jw.vendor || 'Job Worker',
-      material: jw.itemName || jw.rawMat || 'GRANUALS-HDPE ^ HD',
+      material: jw.rawMat || jw.material || jw.itemName || '-',
       grade: jw.grade || '',
       process: jw.processName || jw.process || 'GRANUAL - FISHING YARN',
       batch: jw.batch || 'BATCH-RM-JW',

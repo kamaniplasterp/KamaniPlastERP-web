@@ -68,7 +68,7 @@ export default function AddBagBatchModal({ isOpen, onClose, currentMaxBagNumber 
           id: `BAG-LOCAL-${Date.now()}-${bagNum}`,
           bagNumber: bagNum,
           inwardSlipNo: inwardSlipNo.trim(),
-          productName: 'Fishing Twine',
+          productName: `${quality.trim()} ${formType.trim()} ${size.trim()}`,
           quality: quality.trim(),
           form: formType.trim(),
           size: size.trim(),

@@ -12,6 +12,7 @@ import {
   limit
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { addLocation } from './locations.api';
 
 /**
  * Subscribe to real-time vendors collection with optional limit
@@ -50,7 +51,7 @@ export function subscribeBuyers(callback, limitCount = 100) {
 }
 
 /**
- * Add a new vendor document
+ * Add a new vendor document and automatically create corresponding Godown location (Change 2)
  */
 export async function addVendor(vendorData) {
   if (!db) throw new Error('Firestore not initialized');
@@ -58,7 +59,29 @@ export async function addVendor(vendorData) {
     ...vendorData,
     createdAt: serverTimestamp()
   });
-  return ref.id;
+
+  // Auto-create Godown location for this Job Worker / Vendor
+  let createdLocationId = null;
+  try {
+    const cleanName = (vendorData.name || 'Job Worker').trim();
+    const slug = cleanName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+    createdLocationId = await addLocation({
+      locationCode: `LOC-${slug || Math.floor(100 + Math.random() * 900)}`,
+      name: `${cleanName} (Job Worker)`,
+      type: 'JOB_WORKER',
+      address: vendorData.location || vendorData.address || 'Outside Job Worker Unit',
+      contactPerson: vendorData.contactPerson || vendorData.phone || '',
+      phone: vendorData.phone || '',
+      vendorId: ref.id,
+      vendorName: cleanName,
+      capacityKg: 50000,
+      isDefault: false
+    });
+  } catch (locErr) {
+    console.warn('Auto-create godown for vendor notice:', locErr);
+  }
+
+  return { id: ref.id, locationId: createdLocationId };
 }
 
 /**
@@ -183,12 +206,31 @@ export async function deleteJwValueMaster(id) {
   await deleteDoc(doc(db, 'jwValueMasters', id));
 }
 
-// ─── PACKAGING TARE STANDARDS PERSISTENCE ───
+/**
+ * Find party-specific rate for a given process from rate records (Change 1)
+ */
+export function getPartyRateByProcess(partyNameOrId, processNameOrCode, ratesList = []) {
+  if (!partyNameOrId || !processNameOrCode || !Array.isArray(ratesList)) return null;
+  const pNorm = String(partyNameOrId).toLowerCase().trim();
+  const prNorm = String(processNameOrCode).toLowerCase().trim();
+
+  const match = ratesList.find(r => {
+    const partyMatch = String(r.party || r.vendorName || r.vendorId || '').toLowerCase().trim() === pNorm;
+    const procMatch = String(r.process || r.processName || r.processCode || '').toLowerCase().trim() === prNorm;
+    return partyMatch && procMatch;
+  });
+
+  return match ? Number(match.rate) : null;
+}
+
+// ─── PACKAGING TARE STANDARDS PERSISTENCE (Change 4) ───
 export const DEFAULT_TARE_STANDARDS = {
   bora: 0.200,
   plasticCone: 0.025,
   khaliBag: 0.120,
-  theli: 0.015
+  theli: 0.015,
+  varianceAllowanceKg: 50, // Max allowable tare variance in KG before warning alert
+  varianceAllowancePct: 2.0 // Max allowable tare variance in % before warning alert
 };
 
 export function subscribeTareStandards(callback) {
@@ -214,6 +256,8 @@ export async function updateTareStandards(tareData) {
     plasticCone: Number(tareData.plasticCone !== undefined ? tareData.plasticCone : 0.025),
     khaliBag: Number(tareData.khaliBag !== undefined ? tareData.khaliBag : 0.120),
     theli: Number(tareData.theli !== undefined ? tareData.theli : 0.015),
+    varianceAllowanceKg: Number(tareData.varianceAllowanceKg !== undefined ? tareData.varianceAllowanceKg : 50),
+    varianceAllowancePct: Number(tareData.varianceAllowancePct !== undefined ? tareData.varianceAllowancePct : 2.0),
     updatedAt: serverTimestamp()
   }, { merge: true });
 }

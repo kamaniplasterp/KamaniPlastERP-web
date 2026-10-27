@@ -815,8 +815,8 @@ export function printJobWorkChallan(data = {}) {
   const rawMat = data.inputMaterialName || data.rawMat || data.material || 'GRANUALS-HDPE ^ HD';
   const grade = data.grade || 'HD';
   
-  const grossWght = parseVal(data.grossWeight || data.grossWght || data.dispatchedQty || data.sentQtyKg || data.inputQty || 5000);
-  const boraCount = parseVal(data.boraCount || data.noOfBora || 200);
+  const grossWght = parseVal(data.grossWeight || data.grossWght || data.dispatchedQty || data.sentQtyKg || data.inputQty || 0);
+  const boraCount = parseVal(data.boraCount || data.noOfBora || 0);
   const articleWeight = parseVal(data.articleWeight) || (boraCount * 0.2);
   const sentQty = parseVal(data.sentQtyKg || data.inputQty || data.dispatchedQty) || (grossWght > 0 ? Math.max(0, grossWght - articleWeight) : 0);
   const bLossPct = parseVal(data.bLossPct !== undefined ? data.bLossPct : (data.wastage || 0));
@@ -825,14 +825,14 @@ export function printJobWorkChallan(data = {}) {
   
   const charges = typeof data.ratePerKg === 'string'
     ? data.ratePerKg
-    : (data.charges || data.ratePerKg || data.processingRate ? `₹${data.charges || data.ratePerKg || data.processingRate} / KG` : '₹17.50 / KG');
+    : (data.charges || data.ratePerKg || data.processingRate ? `₹${data.charges || data.ratePerKg || data.processingRate} / KG` : '-');
   const vehicle = data.vehicleNo || data.vehicle || '-';
   const date = data.date || data.challanDate || new Date().toISOString().split('T')[0];
-  const expectedReturn = data.expectedReturn || '2025-04-30';
-  const batch = data.batch || data.batchNo || 'BATCH-2026-904';
+  const expectedReturn = data.expectedReturn || '-';
+  const batch = data.batch || data.batchNo || '-';
   const issuedBy = data.issuedBy || 'SURESHBHAI';
-  const samplePcs = parseVal(data.samplePcs) || 10;
-  const sampleWeight = parseVal(data.sampleWeight) || 0.5;
+  const samplePcs = parseVal(data.samplePcs !== undefined ? data.samplePcs : 0);
+  const sampleWeight = parseVal(data.sampleWeight !== undefined ? data.sampleWeight : 0);
 
 
   const html = `
@@ -1171,32 +1171,32 @@ export function printInwardDeliverySlip(slip = {}, jwData = {}) {
   const subChal = jwData.subChalNo || slip.subChalNo || '1';
   const slipNo = slip.slipNo || slip.inwardSlipNo || `SLIP-${challanNo}`;
   const date = slip.date || slip.inwardDate || new Date().toISOString().split('T')[0];
-  const party = jwData.party || jwData.vendor || slip.party || 'Radhe Rope Synthetics';
-  const process = jwData.process || jwData.processType || slip.process || 'ROPE COIL - 404';
-  const workOrder = jwData.workOrder || slip.workOrder || 'WO-6612';
+  const party = jwData.party || jwData.vendor || slip.party || 'Job Worker';
+  const process = jwData.process || jwData.processType || slip.process || '-';
+  const workOrder = jwData.workOrder || slip.workOrder || '-';
   const department = slip.department || jwData.department || 'Job Work Extrusion';
   const vehicle = jwData.vehicleNo || jwData.vehicle || slip.vehicleNo || '-';
   const receivedBy = slip.receivedBy || 'RAMILBHAI';
-  const rawMat = jwData.inputMaterialName || jwData.rawMat || 'HDPE Granules (IOCL F5400)';
-  const returnedItem = slip.itemLabel || slip.itemDescription || 'ANCHOR YARN / FISHING YARN';
+  const rawMat = jwData.inputMaterialName || jwData.rawMat || jwData.material || '-';
+  const returnedItem = slip.itemLabel || slip.itemDescription || 'Finished Goods';
   
-  const grossWght = parseVal(slip.grossWeight || slip.recGrossWeight) || 1202.5;
-  const boraCount = parseVal(slip.boraCount || slip.recBoraCount) || 10;
-  const articleType = slip.articleType || slip.recArticleType || 'BORA + CONES';
-  const articleWeight = parseVal(slip.articleWeight || slip.recArticleWeight) || 2.5;
-  const netQtyKg = parseVal(slip.netQtyKg || slip.recQtyKg || slip.receivedQty) || (grossWght > 0 ? Math.max(0, grossWght - articleWeight) : 1200);
+  const grossWght = parseVal(slip.grossWeight || slip.recGrossWeight) || 0;
+  const boraCount = parseVal(slip.boraCount || slip.recBoraCount) || 0;
+  const articleType = slip.articleType || slip.recArticleType || 'BORA';
+  const articleWeight = parseVal(slip.articleWeight || slip.recArticleWeight) || 0;
+  const netQtyKg = parseVal(slip.netQtyKg || slip.recQtyKg || slip.receivedQty) || (grossWght > 0 ? Math.max(0, grossWght - articleWeight) : 0);
   const reworkKg = parseVal(slip.reworkQtyKg || 0);
   const rejectionKg = parseVal(slip.rejectionQtyKg || 0);
   const scrapKg = parseVal(slip.scrapQtyKg || slip.scrapQty || 0);
-  const samplePcs = parseVal(slip.samplePcs || jwData.samplePcs) || 10;
-  const sampleWeight = parseVal(slip.sampleWeight || jwData.sampleWeight) || 0.5;
+  const samplePcs = parseVal(slip.samplePcs !== undefined ? slip.samplePcs : (jwData.samplePcs || 0));
+  const sampleWeight = parseVal(slip.sampleWeight !== undefined ? slip.sampleWeight : (jwData.sampleWeight || 0));
 
-  let chargeRate = parseVal(slip.ratePerKg || jwData.ratePerKg || 16);
+  let chargeRate = parseVal(slip.ratePerKg || jwData.ratePerKg || 0);
   const totalValue = parseVal(slip.value) || Math.round(netQtyKg * chargeRate);
   const remarks = slip.remarks || slip.notes || 'Process return logged in system.';
   const qualityStatus = slip.status || slip.qualityStatus || 'Approved';
 
-  const dispatchedNet = parseVal(jwData.netOutwardKg || jwData.netOutwardExpected || jwData.sentQtyKg || 2925);
+  const dispatchedNet = parseVal(jwData.netOutwardKg || jwData.netOutwardExpected || jwData.sentQtyKg || 0);
   const cumulativeRec = parseVal(jwData.recQtyKg || jwData.receivedQty || netQtyKg);
   const balPending = parseVal(jwData.pendingQty || jwData.balQtyKg || Math.max(0, dispatchedNet - cumulativeRec));
 

@@ -1,23 +1,41 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Cog, Layers, DollarSign, Scale, Percent, FileText, CheckCircle2 } from 'lucide-react';
 import { addProcess, updateProcess } from '../api/process.api';
 import '../styles/Modals.css';
 
-export default function ProcessMasterModal({ processToEdit, onClose, onSaved }) {
-  const isEditing = Boolean(processToEdit?.id);
+export default function ProcessMasterModal({ processToEdit, process, onClose, onSaved }) {
+  const targetProcess = processToEdit || process;
+  const isEditing = Boolean(targetProcess && (targetProcess.id || targetProcess.processCode));
 
   const [formData, setFormData] = useState({
-    processCode: processToEdit?.processCode || `PROC-${Math.floor(100 + Math.random() * 900)}`,
-    processName: processToEdit?.processName || '',
-    inputItemType: processToEdit?.inputItemType || 'PP/HDPE Granules',
-    outputItemType: processToEdit?.outputItemType || 'Fishing Yarn',
-    defaultRatePerKg: processToEdit?.defaultRatePerKg !== undefined ? String(processToEdit.defaultRatePerKg) : '5.00',
-    isFixedWeight: processToEdit?.isFixedWeight !== undefined ? processToEdit.isFixedWeight : true,
-    standardBagWeightKg: processToEdit?.standardBagWeightKg !== undefined ? String(processToEdit.standardBagWeightKg) : '50.0',
-    toleranceKg: processToEdit?.toleranceKg !== undefined ? String(processToEdit.toleranceKg) : '1.0',
-    expectedScrapPct: processToEdit?.expectedScrapPct !== undefined ? String(processToEdit.expectedScrapPct) : '1.0',
-    description: processToEdit?.description || ''
+    processCode: targetProcess?.processCode || `PROC-${Math.floor(100 + Math.random() * 900)}`,
+    processName: targetProcess?.processName || '',
+    inputItemType: targetProcess?.inputItemType || 'PP/HDPE Granules',
+    outputItemType: targetProcess?.outputItemType || 'Fishing Yarn',
+    defaultRatePerKg: targetProcess?.defaultRatePerKg !== undefined ? String(targetProcess.defaultRatePerKg) : '5.00',
+    isFixedWeight: targetProcess?.isFixedWeight !== undefined ? targetProcess.isFixedWeight : true,
+    standardBagWeightKg: targetProcess?.standardBagWeightKg !== undefined ? String(targetProcess.standardBagWeightKg) : '50.0',
+    toleranceKg: targetProcess?.toleranceKg !== undefined ? String(targetProcess.toleranceKg) : '1.0',
+    expectedScrapPct: targetProcess?.expectedScrapPct !== undefined ? String(targetProcess.expectedScrapPct) : '1.0',
+    description: targetProcess?.description || ''
   });
+
+  useEffect(() => {
+    if (targetProcess) {
+      setFormData({
+        processCode: targetProcess.processCode || `PROC-${Math.floor(100 + Math.random() * 900)}`,
+        processName: targetProcess.processName || '',
+        inputItemType: targetProcess.inputItemType || 'PP/HDPE Granules',
+        outputItemType: targetProcess.outputItemType || 'Fishing Yarn',
+        defaultRatePerKg: targetProcess.defaultRatePerKg !== undefined ? String(targetProcess.defaultRatePerKg) : '5.00',
+        isFixedWeight: targetProcess.isFixedWeight !== undefined ? targetProcess.isFixedWeight : true,
+        standardBagWeightKg: targetProcess.standardBagWeightKg !== undefined ? String(targetProcess.standardBagWeightKg) : '50.0',
+        toleranceKg: targetProcess.toleranceKg !== undefined ? String(targetProcess.toleranceKg) : '1.0',
+        expectedScrapPct: targetProcess.expectedScrapPct !== undefined ? String(targetProcess.expectedScrapPct) : '1.0',
+        description: targetProcess.description || ''
+      });
+    }
+  }, [targetProcess]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -44,7 +62,8 @@ export default function ProcessMasterModal({ processToEdit, onClose, onSaved }) 
       };
 
       if (isEditing) {
-        await updateProcess(processToEdit.id, payload);
+        const targetId = targetProcess.id || targetProcess.processCode;
+        await updateProcess(targetId, payload);
         alert(`Process "${formData.processName}" updated successfully!`);
       } else {
         await addProcess(payload);
@@ -71,8 +90,14 @@ export default function ProcessMasterModal({ processToEdit, onClose, onSaved }) 
               <Cog size={16} />
             </div>
             <div>
-              <h2 className="modal-title">{isEditing ? 'Edit Process Master' : 'Add New Process Master'}</h2>
-              <p className="modal-subtitle">Define conversion rates, fixed bag weight rules, and input/output mapping</p>
+              <h2 className="modal-title">
+                {isEditing ? `Edit Process: ${targetProcess?.processName || formData.processName}` : 'Add New Process Master'}
+              </h2>
+              <p className="modal-subtitle">
+                {isEditing 
+                  ? `Editing: "${targetProcess?.processName || formData.processName}" (${targetProcess?.processCode || formData.processCode})` 
+                  : 'Define conversion rates, fixed bag weight rules, and input/output mapping'}
+              </p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -82,6 +107,40 @@ export default function ProcessMasterModal({ processToEdit, onClose, onSaved }) 
 
         {/* Form */}
         <form className="modal-body" onSubmit={handleSubmit}>
+          {isEditing && (
+            <div style={{
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div>
+                <span style={{ fontSize: '0.7rem', color: '#2563eb', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Current Process
+                </span>
+                <div style={{ color: '#1e3a8a', fontWeight: 700, fontSize: '0.98rem' }}>
+                  {targetProcess?.processName || formData.processName}
+                </div>
+              </div>
+              <span style={{
+                background: '#dbeafe',
+                border: '1px solid #93c5fd',
+                color: '#1d4ed8',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                padding: '3px 10px',
+                borderRadius: '6px'
+              }}>
+                {targetProcess?.processCode || formData.processCode}
+              </span>
+            </div>
+          )}
+
           <div className="mform-row mform-col-2">
             <div className="mform-field">
               <label className="mform-label">Process Code <span className="req">*</span></label>
@@ -126,55 +185,61 @@ export default function ProcessMasterModal({ processToEdit, onClose, onSaved }) 
 
           <div className="mform-row mform-col-2">
             <div className="mform-field">
-              <label className="mform-label">Input Material Type <span className="req">*</span></label>
+              <label className="mform-label">Input Material Type <span style={{ fontSize: '0.72rem', color: '#64748b' }}>(Optional)</span></label>
               <input
                 type="text"
                 className="mform-input"
                 placeholder="e.g. PP/HDPE Granules or Fishing Yarn"
                 value={formData.inputItemType}
                 onChange={e => handleChange('inputItemType', e.target.value)}
-                required
               />
             </div>
             <div className="mform-field">
-              <label className="mform-label">Output Product Type <span className="req">*</span></label>
+              <label className="mform-label">Output Product Type <span style={{ fontSize: '0.72rem', color: '#64748b' }}>(Optional)</span></label>
               <input
                 type="text"
                 className="mform-input"
                 placeholder="e.g. Fishing Yarn or 3x3 Twine Hank"
                 value={formData.outputItemType}
                 onChange={e => handleChange('outputItemType', e.target.value)}
-                required
               />
             </div>
           </div>
 
           {/* Fixed Weight Configuration Section */}
           <div style={{ 
-            background: 'rgba(15, 23, 42, 0.6)', 
-            border: '1px solid rgba(51, 65, 85, 0.7)', 
-            borderRadius: '8px', 
-            padding: '12px 14px', 
+            background: formData.isFixedWeight ? '#f8fafc' : '#f8fafc', 
+            border: formData.isFixedWeight ? '1px solid #cbd5e1' : '1px solid #e2e8f0', 
+            borderRadius: '10px', 
+            padding: '14px 16px', 
             marginTop: '8px',
-            marginBottom: '8px'
+            marginBottom: '8px',
+            transition: 'all 0.15s ease'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: formData.isFixedWeight ? 10 : 0 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: 600, color: '#f8fafc', fontSize: '13px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: formData.isFixedWeight ? 12 : 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: 600, color: '#0f172a', fontSize: '13px' }}>
                 <input
                   type="checkbox"
-                  style={{ width: 16, height: 16, accentColor: '#3b82f6', cursor: 'pointer' }}
+                  style={{ width: 16, height: 16, accentColor: '#2563eb', cursor: 'pointer' }}
                   checked={formData.isFixedWeight}
                   onChange={e => handleChange('isFixedWeight', e.target.checked)}
                 />
                 Fixed Weight Process (Bags stored in Main Stock)
               </label>
-              <span style={{ fontSize: '11px', color: formData.isFixedWeight ? '#38bdf8' : '#94a3b8' }}>
+              <span style={{ 
+                fontSize: '11px', 
+                fontWeight: 600,
+                color: formData.isFixedWeight ? '#0284c7' : '#64748b',
+                background: formData.isFixedWeight ? '#e0f2fe' : '#f1f5f9',
+                padding: '3px 8px',
+                borderRadius: '4px'
+              }}>
                 {formData.isFixedWeight ? '✓ Fixed Bag Standard Active' : 'Variable Weight Only'}
               </span>
             </div>
 
             {formData.isFixedWeight && (
-              <div className="mform-row mform-col-2" style={{ marginTop: '10px' }}>
+              <div className="mform-row mform-col-2" style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
                 <div className="mform-field">
                   <label className="mform-label">Standard Bag Weight (KG) <span className="req">*</span></label>
                   <input
@@ -187,7 +252,7 @@ export default function ProcessMasterModal({ processToEdit, onClose, onSaved }) 
                     onChange={e => handleChange('standardBagWeightKg', e.target.value)}
                     required={formData.isFixedWeight}
                   />
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>Standard weight per bag (e.g. 50 KG)</span>
+                  <span style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', display: 'block' }}>Standard weight per bag (e.g. 50 KG)</span>
                 </div>
                 <div className="mform-field">
                   <label className="mform-label">Tolerance (± KG)</label>
@@ -200,7 +265,7 @@ export default function ProcessMasterModal({ processToEdit, onClose, onSaved }) 
                     value={formData.toleranceKg}
                     onChange={e => handleChange('toleranceKg', e.target.value)}
                   />
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>Allowable variation (e.g. 49.0 - 51.0 KG)</span>
+                  <span style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', display: 'block' }}>Allowable variation (e.g. 49.0 - 51.0 KG)</span>
                 </div>
               </div>
             )}

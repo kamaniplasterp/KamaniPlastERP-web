@@ -2,6 +2,7 @@ import {
   collection, 
   onSnapshot, 
   addDoc, 
+  setDoc,
   updateDoc, 
   deleteDoc,
   doc, 
@@ -14,6 +15,7 @@ import { db } from '../firebase/firebase';
 
 export const DEFAULT_PROCESS_LIST = [
   {
+    id: 'PROC-001',
     processCode: 'PROC-001',
     processName: 'Granules to Fishing Yarn',
     inputItemType: 'PP/HDPE Granules',
@@ -26,6 +28,7 @@ export const DEFAULT_PROCESS_LIST = [
     description: 'Extrusion of raw granules into continuous fishing yarn spools'
   },
   {
+    id: 'PROC-002',
     processCode: 'PROC-002',
     processName: 'Fishing Yarn to Twine (3x3)',
     inputItemType: 'Fishing Yarn',
@@ -38,6 +41,7 @@ export const DEFAULT_PROCESS_LIST = [
     description: 'Twisting & bundling fishing yarn into 3x3 twine hanks'
   },
   {
+    id: 'PROC-003',
     processCode: 'PROC-003',
     processName: 'Fishing Yarn to Twine (4x3)',
     inputItemType: 'Fishing Yarn',
@@ -50,6 +54,7 @@ export const DEFAULT_PROCESS_LIST = [
     description: 'Twisting & bundling fishing yarn into 4x3 twine bags'
   },
   {
+    id: 'PROC-004',
     processCode: 'PROC-004',
     processName: 'VIP Yarn to Twine Hank',
     inputItemType: 'VIP Yarn',
@@ -62,6 +67,7 @@ export const DEFAULT_PROCESS_LIST = [
     description: 'Hank conversion of VIP grade twine'
   },
   {
+    id: 'PROC-005',
     processCode: 'PROC-005',
     processName: 'VIP Yarn to Twine Cone',
     inputItemType: 'VIP Yarn',
@@ -74,6 +80,7 @@ export const DEFAULT_PROCESS_LIST = [
     description: 'Precision cone winding on 25g/100g spools'
   },
   {
+    id: 'PROC-006',
     processCode: 'PROC-006',
     processName: 'Monofilament Extrusion',
     inputItemType: 'HDPE Granules',
@@ -86,6 +93,7 @@ export const DEFAULT_PROCESS_LIST = [
     description: 'High tensile monofilament drawing'
   },
   {
+    id: 'PROC-007',
     processCode: 'PROC-007',
     processName: 'Rope Winding & Packing',
     inputItemType: 'Twine / Strands',
@@ -100,38 +108,40 @@ export const DEFAULT_PROCESS_LIST = [
 ];
 
 /**
- * Subscribe to real-time processes collection with fallback to defaults
+ * Subscribe to real-time processes collection directly from Firestore database
  */
 export function subscribeProcesses(callback, limitCount = 100) {
   if (!db) {
     callback(DEFAULT_PROCESS_LIST);
     return () => {};
   }
+
   const q = query(collection(db, 'processes'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
-    if (snapshot.empty) {
-      callback(DEFAULT_PROCESS_LIST);
-    } else {
-      const list = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      callback(list);
-    }
+    const list = snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    // Sort by processCode
+    list.sort((a, b) => (a.processCode || '').localeCompare(b.processCode || ''));
+    callback(list);
   }, (error) => {
     console.error('Error fetching processes:', error);
-    callback(DEFAULT_PROCESS_LIST);
+    callback([]);
   });
 }
 
 /**
- * Add a new Process Master record
+ * Add a new Process Master record directly to Firestore
  */
 export async function addProcess(data) {
   if (!db) throw new Error('Firestore not initialized');
-  const ref = await addDoc(collection(db, 'processes'), {
+  const code = data.processCode || `PROC-${Math.floor(100 + Math.random() * 900)}`;
+  const procRef = doc(db, 'processes', code);
+  await setDoc(procRef, {
     ...data,
-    processCode: data.processCode || `PROC-${Math.floor(100 + Math.random() * 900)}`,
+    processCode: code,
     defaultRatePerKg: Number(data.defaultRatePerKg || 0),
     isFixedWeight: Boolean(data.isFixedWeight),
     standardBagWeightKg: Number(data.standardBagWeightKg || 0),
@@ -139,47 +149,33 @@ export async function addProcess(data) {
     expectedScrapPct: Number(data.expectedScrapPct || 0),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
-  });
-  return ref.id;
+  }, { merge: true });
+  return code;
 }
 
 /**
- * Update an existing Process Master record
+ * Update an existing Process Master record directly in Firestore
  */
 export async function updateProcess(id, data) {
   if (!db) throw new Error('Firestore not initialized');
-  const procRef = doc(db, 'processes', id);
-  await updateDoc(procRef, {
+  const docId = id || data.processCode;
+  const procRef = doc(db, 'processes', docId);
+  await setDoc(procRef, {
     ...data,
+    processCode: data.processCode || docId,
     defaultRatePerKg: Number(data.defaultRatePerKg || 0),
     isFixedWeight: Boolean(data.isFixedWeight),
     standardBagWeightKg: Number(data.standardBagWeightKg || 0),
     toleranceKg: Number(data.toleranceKg || 1.0),
     expectedScrapPct: Number(data.expectedScrapPct || 0),
     updatedAt: serverTimestamp()
-  });
+  }, { merge: true });
 }
 
 /**
- * Delete a Process Master record
+ * Delete a Process Master record directly from Firestore
  */
 export async function deleteProcess(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'processes', id));
-}
-
-/**
- * Seed default processes if collection is empty
- */
-export async function seedDefaultProcesses() {
-  if (!db) return;
-  const snap = await getDocs(collection(db, 'processes'));
-  if (snap.empty) {
-    for (const proc of DEFAULT_PROCESS_LIST) {
-      await addDoc(collection(db, 'processes'), {
-        ...proc,
-        createdAt: serverTimestamp()
-      });
-    }
-  }
 }

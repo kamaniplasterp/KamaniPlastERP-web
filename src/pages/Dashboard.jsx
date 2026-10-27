@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Sidebar from '../layouts/Sidebar';
@@ -7,6 +7,7 @@ import NewJobWorkModal from '../modals/NewJobWorkModal';
 import SalesOrderModal from '../modals/SalesOrderModal';
 import JobWorkHubView from '../views/JobWorkHubView';
 import { useWorkflow } from '../context/WorkflowContext';
+import { subscribeQcChecks } from '../api/qc.api';
 import {
   FlaskConical, Plus, Package, Users, Boxes, Truck,
   ArrowUpRight, AlertTriangle,
@@ -318,6 +319,15 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
     simulatedSalesOrders,
     simulatedDispatches
   } = useWorkflow();
+
+  const [qcList, setQcList] = useState([]);
+  useEffect(() => {
+    const unsub = subscribeQcChecks(setQcList);
+    return () => unsub();
+  }, []);
+
+  const pendingQc = qcList.filter(q => q.status === 'PENDING');
+  const overdueQc = qcList.filter(q => q.isOverdue);
 
   const rawSum = (rmList || []).reduce((sum, rm) => {
     return sum + ((Number(rm.availFactory) || 0) * (Number(rm.rate) || 112));
@@ -782,6 +792,62 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
           </div>
         </div>
       </div>
+
+      {/* ── Quality Control SLA Alerts Banner (Change 5) ── */}
+      {(overdueQc.length > 0 || pendingQc.length > 0) && (
+        <div className="section-card" style={{
+          background: overdueQc.length > 0 ? '#fff1f2' : '#fefce8',
+          border: `1px solid ${overdueQc.length > 0 ? '#fecdd3' : '#fef08a'}`,
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                background: overdueQc.length > 0 ? '#fee2e2' : '#fef3c7',
+                color: overdueQc.length > 0 ? '#dc2626' : '#d97706',
+                padding: '8px',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center'
+              }}>
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: overdueQc.length > 0 ? '#9f1239' : '#854d0e' }}>
+                  {overdueQc.length > 0 
+                    ? `⚠️ ${overdueQc.length} RAW MATERIAL QC INSPECTION${overdueQc.length > 1 ? 'S' : ''} OVERDUE (24h SLA)`
+                    : `${pendingQc.length} RAW MATERIAL QC INSPECTION${pendingQc.length > 1 ? 'S' : ''} AWAITING EVALUATION`}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: overdueQc.length > 0 ? '#be123c' : '#a16207', marginTop: '2px' }}>
+                  {overdueQc.length > 0 
+                    ? 'Inbound material GRNs have exceeded the 24-hour mandatory testing window. Immediate sign-off required.' 
+                    : 'Material inward completed. Inspector sign-off required within 24 hours of gate inward.'}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/inventory', { state: { tab: 'qc' } })}
+              style={{
+                background: overdueQc.length > 0 ? '#dc2626' : '#d97706',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '8px 16px',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              Open QC Inspection Hub →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Full-Width Reorder Alerts Banner ── */}
       {reorderAlerts.length > 0 && (

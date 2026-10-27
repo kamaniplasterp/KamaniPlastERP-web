@@ -3,7 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Layers, Package, History, GitBranch, Search, Plus, ArrowUpRight,
   AlertTriangle, ArrowUpDown, ChevronRight, Filter, Download,
-  CheckCircle2, ArrowRight, Truck, FileText, Scale, BookOpen, Edit3, Check, Calendar
+  CheckCircle2, ArrowRight, Truck, FileText, Scale, BookOpen, Edit3, Check, Calendar,
+  Printer, Clock, ShieldCheck, X, CheckSquare, XCircle
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import SalesOrderModal from '../modals/SalesOrderModal';
@@ -15,6 +16,8 @@ import MaterialDetailDrawer from '../drawers/MaterialDetailDrawer';
 import BagDetailDrawer from '../drawers/BagDetailDrawer';
 import AddFinishedGoodsStockModal from '../modals/AddFinishedGoodsStockModal';
 import AddBagBatchModal from '../modals/AddBagBatchModal';
+import QcCheckModal from '../modals/QcCheckModal';
+import QuickBagLookupModal from '../modals/QuickBagLookupModal';
 import { useWorkflow } from '../context/WorkflowContext';
 import { 
   subscribeRawMaterials, 
@@ -32,6 +35,8 @@ import {
 } from '../api/inventory.api';
 import { subscribeJobWorks } from '../api/jobwork.api';
 import { subscribeSalesOrders, subscribeDispatches } from '../api/sales.api';
+import { subscribeQcChecks } from '../api/qc.api';
+import { printMultipleBagStickers, printSingleBagSticker } from '../utils/stickerPdf';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { exportToCsv } from '../utils/exportCsv';
@@ -55,6 +60,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [liveRmInwards, setLiveRmInwards] = useState([]);
   const [liveRmIssues, setLiveRmIssues] = useState([]);
   const [liveBags, setLiveBags] = useState([]);
+  const [liveQcChecks, setLiveQcChecks] = useState([]);
   const [scrapInfo, setScrapInfo] = useState({ totalScrapKg: 0, defaultRate: 70 });
 
   useEffect(() => {
@@ -74,6 +80,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     const unsubIss = subscribeRmFactoryIssues(setLiveRmIssues);
     const unsubBags = subscribeInventoryBags(setLiveBags);
     const unsubScrap = subscribeScrapStock(setScrapInfo);
+    const unsubQc = subscribeQcChecks(setLiveQcChecks);
     return () => {
       unsubRm();
       unsubFg();
@@ -85,6 +92,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       unsubIss();
       unsubBags();
       unsubScrap();
+      unsubQc();
     };
   }, []);
 
@@ -98,10 +106,23 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [bagSearch, setBagSearch] = useState('');
   const [bagStockTypeFilter, setBagStockTypeFilter] = useState('All');
   const [bagLocationFilter, setBagLocationFilter] = useState('All');
+  const [qcSearch, setQcSearch] = useState('');
+  const [qcStatusFilter, setQcStatusFilter] = useState('All');
+  const [showQcModal, setShowQcModal] = useState(false);
+  const [selectedQcForModal, setSelectedQcForModal] = useState(null);
   const [bagViewMode, setBagViewMode] = useState('diary'); // 'diary' | 'flat'
+  const [showBagFilters, setShowBagFilters] = useState(false);
   const [showAddBagBatchModal, setShowAddBagBatchModal] = useState(false);
+  const [showQuickLookupModal, setShowQuickLookupModal] = useState(false);
   const [editingBagWeightId, setEditingBagWeightId] = useState(null);
   const [editingBagWeightVal, setEditingBagWeightVal] = useState('');
+
+  const handleLocateBagInDiary = (bag) => {
+    setActiveTab('bags');
+    setBagViewMode('diary');
+    setBagSearch(String(bag.bagNumber || ''));
+    setShowBagFilters(true);
+  };
 
   const handleStartEditWeight = (bag) => {
     setEditingBagWeightId(bag.id || `bag-${bag.bagNumber}`);
@@ -193,7 +214,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         category: formData.category,
         brand: formData.brand,
         grade: formData.grade,
-        availFactory: Number(formData.initialStock || 0),
+        availFactory: Number(formData.openingStock !== undefined ? formData.openingStock : (formData.initialStock || 0)),
         rate: Number(formData.rate || 0),
         reorderLevel: Number(formData.reorderLevel || 1000)
       });
@@ -300,7 +321,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       id: rm.id,
       code: rm.code || 'RM-SKU',
       name: rawName || 'Raw Material',
-      desc: rm.desc || `Polymer ${rm.category || 'Granules'}`,
+      desc: rm.desc || rm.description || (rm.category ? `Polymer ${rm.category}` : 'Raw Material'),
       brand: rm.brand || 'Generic',
       grade: rawGrade || 'Standard',
       inwardKg: `${totalInwardKg.toLocaleString()} KG`,
@@ -386,10 +407,10 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
     // Job work movements for this item
     const matchingJobWorks = liveJobWorks.filter(jw => 
-      (jw.material || '').toLowerCase().includes(itemName.toLowerCase()) ||
+      (jw.rawMat || jw.material || jw.itemName || '').toLowerCase().includes(itemName.toLowerCase()) ||
       (jw.rawMaterialId && jw.rawMaterialId === rm.id)
     );
-    const jwOutwardKg = matchingJobWorks.reduce((s, jw) => s + (Number(jw.inputQty) || 0), 0);
+    const jwOutwardKg = matchingJobWorks.reduce((s, jw) => s + (Number(jw.sentQtyKg) || Number(jw.inputQty) || 0), 0);
     const jwInwardKg = matchingJobWorks.reduce((s, jw) => s + (Number(jw.recQtyKg) || Number(jw.receivedQty) || 0), 0);
 
     const initialStock = Number(rm.initialStock) || 0;
@@ -511,7 +532,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       code: fg.code || 'FG-SKU',
       name: fg.name || 'Finished Good',
       sub: fg.desc || `${fg.category || 'Danline Rope'} • Length: KG/Coil`,
-      diaColor: fg.diaColor || '6 mm • Bright Yellow',
+      diaColor: fg.diaColor || (fg.size ? `${fg.size} • ${fg.color || ''}` : '') || (fg.diaSize ? `${fg.diaSize} • ${fg.colorTracer || ''}` : '') || '-',
       physicalStock: `${physicalQty.toLocaleString()} Coils`,
       physicalStockNum: physicalQty,
       reserved: `${finalReservedCoils.toLocaleString()} Coils`,
@@ -653,6 +674,36 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
   const uniqueBagLocations = Array.from(new Set(liveBags.map(b => b.location).filter(Boolean)));
 
+  // QC Module Calculations (Change 5)
+  const pendingQcChecks = liveQcChecks.filter(q => q.status === 'PENDING');
+  const sentForApprovalQc = liveQcChecks.filter(q => q.status === 'SENT_FOR_APPROVAL');
+  const approvedQcChecks = liveQcChecks.filter(q => q.status === 'APPROVED');
+  const overdueQcChecks = liveQcChecks.filter(q => q.isOverdue);
+  const passedQcChecks = liveQcChecks.filter(q => q.result === 'PASS');
+  const failedQcChecks = liveQcChecks.filter(q => q.result === 'FAIL');
+
+  const filteredQcChecks = liveQcChecks.filter(q => {
+    const query = (qcSearch || '').toLowerCase();
+    const matchesQuery = 
+      (q.grnNo || '').toLowerCase().includes(query) ||
+      (q.challanNo || '').toLowerCase().includes(query) ||
+      (q.supplierName || '').toLowerCase().includes(query) ||
+      (q.itemName || '').toLowerCase().includes(query) ||
+      (q.grade || '').toLowerCase().includes(query) ||
+      (q.batchNumber || '').toLowerCase().includes(query) ||
+      (q.notes || '').toLowerCase().includes(query);
+
+    let matchesStatus = true;
+    if (qcStatusFilter === 'PENDING') matchesStatus = q.status === 'PENDING';
+    else if (qcStatusFilter === 'SENT_FOR_APPROVAL') matchesStatus = q.status === 'SENT_FOR_APPROVAL';
+    else if (qcStatusFilter === 'APPROVED') matchesStatus = q.status === 'APPROVED';
+    else if (qcStatusFilter === 'OVERDUE') matchesStatus = q.isOverdue;
+    else if (qcStatusFilter === 'PASS') matchesStatus = q.result === 'PASS';
+    else if (qcStatusFilter === 'FAIL') matchesStatus = q.result === 'FAIL';
+
+    return matchesQuery && matchesStatus;
+  });
+
   return (
     <div className="inv-hub-container">
       {/* ── Page Header ── */}
@@ -681,7 +732,57 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
       {/* ── Contextual Metric Area (No Stacked Duplicates) ── */}
       <div className="inv-top-kpis">
-        {activeTab === 'bags' ? (
+        {activeTab === 'qc' ? (
+          <>
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Total Inward Inspections</span>
+                <div className="inv-kpi-icon inv-icon-blue"><CheckCircle2 size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num">{liveQcChecks.length}</span>
+                <span className="inv-kpi-sublabel">GRN Checks</span>
+              </div>
+              <div className="inv-kpi-sub">Auto-created per GRN inward</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Pending 24h SLA</span>
+                <div className="inv-kpi-icon inv-icon-orange"><Clock size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-orange">{pendingQcChecks.length}</span>
+                <span className="inv-kpi-sublabel">Awaiting Evaluation</span>
+              </div>
+              <div className="inv-kpi-sub inv-text-orange">24-hour mandatory window</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Overdue Deadlines</span>
+                <div className="inv-kpi-icon" style={{ background: '#fee2e2', color: '#dc2626' }}><AlertTriangle size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num" style={{ color: '#dc2626' }}>{overdueQcChecks.length}</span>
+                <span className="inv-kpi-sublabel">Past SLA Limit</span>
+              </div>
+              <div className="inv-kpi-sub" style={{ color: '#dc2626' }}>Requires immediate sign-off</div>
+            </div>
+
+            <div className="inv-kpi-card">
+              <div className="inv-kpi-card-header">
+                <span className="inv-kpi-title">Approved &amp; Certified</span>
+                <div className="inv-kpi-icon inv-icon-green"><ShieldCheck size={16} /></div>
+              </div>
+              <div className="inv-kpi-val-row">
+                <span className="inv-kpi-num inv-text-green">{approvedQcChecks.length}</span>
+                <span className="inv-kpi-sublabel">Passed ({passedQcChecks.length})</span>
+              </div>
+              <div className="inv-kpi-sub inv-text-green">{sentForApprovalQc.length} Pending Approval</div>
+            </div>
+          </>
+        ) : activeTab === 'bags' ? (
           <>
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -982,6 +1083,23 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           <GitBranch size={14} />
           <span>Batch Traceability</span>
         </button>
+
+        <button
+          className={`inv-tab-btn ${activeTab === 'qc' ? 'active' : ''}`}
+          onClick={() => setActiveTab('qc')}
+        >
+          <CheckCircle2 size={14} />
+          <span>Quality Control (QC)</span>
+          {overdueQcChecks.length > 0 ? (
+            <span style={{ background: '#fee2e2', color: '#dc2626', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', marginLeft: '6px' }}>
+              {overdueQcChecks.length} OVERDUE
+            </span>
+          ) : pendingQcChecks.length > 0 ? (
+            <span style={{ background: '#fef3c7', color: '#b45309', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', marginLeft: '6px' }}>
+              {pendingQcChecks.length}
+            </span>
+          ) : null}
+        </button>
       </div>
 
       {/* ── TAB 1: Raw Materials (RM) ── */}
@@ -1130,6 +1248,39 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             </button>
           </div>
 
+          {/* Change 9: Active Filters Bar */}
+          {(rmSearch || (rmSubView === 'ledger' && rmCategoryFilter !== 'All')) && (
+            <div className="inv-active-filters-bar">
+              <span style={{ color: '#64748b', fontWeight: 600 }}>Active Filters:</span>
+              {rmSearch && (
+                <span className="inv-filter-chip">
+                  Search: "{rmSearch}"
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setRmSearch('')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {rmSubView === 'ledger' && rmCategoryFilter !== 'All' && (
+                <span className="inv-filter-chip">
+                  Category: {rmCategoryFilter}
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setRmCategoryFilter('All')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              <button
+                type="button"
+                className="inv-filter-clear-all-btn"
+                onClick={() => {
+                  setRmSearch('');
+                  setRmCategoryFilter('All');
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+          )}
+
           {/* SUB-VIEW 1: RM Stock Balance Ledger (Sheets: RM Stock & RM stock comp) */}
           {rmSubView === 'ledger' && (
             <div className="inv-table-container">
@@ -1205,16 +1356,16 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 <thead>
                   <tr>
                     <th>GRN NO.</th>
+                    <th>BATCH NO.</th>
                     <th>CHALLAN NO.</th>
                     <th>DATE</th>
                     <th>SUPPLIER NAME</th>
                     <th>ITEM NAME</th>
-                    <th>GRADE</th>
+                    <th>ATTRIBUTES</th>
                     <th style={{ textAlign: 'right' }}>GROSS WEIGHT</th>
-                    <th style={{ textAlign: 'right' }}>NO. OF ARTICLES</th>
-                    <th>ARTICLE TYPE</th>
-                    <th style={{ textAlign: 'right' }}>ARTICLE WEIGHT</th>
+                    <th style={{ textAlign: 'right' }}>TARE DEDUCT</th>
                     <th style={{ textAlign: 'right' }}>NET WEIGHT</th>
+                    <th style={{ textAlign: 'center' }}>DUAL STOCK (BAGS / LOOSE)</th>
                     <th>RECEIVED BY</th>
                     <th>REMARKS</th>
                   </tr>
@@ -1222,7 +1373,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 <tbody>
                   {filteredRmInwards.length === 0 ? (
                     <tr>
-                      <td colSpan="13" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                      <td colSpan="14" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                         No Raw Material Inward records found. Click <strong>+ Inward RM (GRN)</strong> to record your first polymer receipt.
                       </td>
                     </tr>
@@ -1230,21 +1381,45 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     filteredRmInwards.map((inw, idx) => (
                       <tr key={inw.id || idx}>
                         <td className="td-code" style={{ fontWeight: '700', color: '#16a34a' }}>{inw.grnNo}</td>
+                        <td style={{ fontWeight: '700', color: '#2563eb', fontSize: '0.78rem' }}>{inw.batchNumber || '—'}</td>
                         <td>{inw.challanNo || '-'}</td>
                         <td>{inw.date}</td>
                         <td style={{ fontWeight: '600' }}>{inw.supplierName}</td>
                         <td>{inw.itemName}</td>
                         <td>
-                          <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600' }}>
-                            {inw.grade}
-                          </span>
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                            <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600' }}>
+                              {inw.materialForm || inw.grade || 'Granule'}
+                            </span>
+                            {inw.materialColor && (
+                              <span style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '1px 5px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600' }}>
+                                {inw.materialColor}
+                              </span>
+                            )}
+                            {inw.packaging && (
+                              <span style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '1px 5px', borderRadius: '4px', fontSize: '0.72rem' }}>
+                                {inw.packaging}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ textAlign: 'right' }}>{Number(inw.grossWeight || 0).toLocaleString()} KG</td>
-                        <td style={{ textAlign: 'right' }}>{inw.noOfArticles || 0}</td>
-                        <td>{inw.articleType || 'BORA'}</td>
-                        <td style={{ textAlign: 'right', color: '#dc2626' }}>-{inw.articleWeight || 0} KG</td>
+                        <td style={{ textAlign: 'right', color: '#dc2626' }}>
+                          -{inw.articleWeight || 0} KG
+                          <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>{inw.noOfArticles || 0} {inw.articleType || 'BORA'}</div>
+                        </td>
                         <td style={{ textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>
                           {Number(inw.netWeight || 0).toLocaleString()} KG
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{ background: 'rgba(22, 163, 74, 0.1)', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '700', marginRight: '4px' }}>
+                            🎒 {inw.bagCount ?? inw.noOfArticles ?? 0} Bags ({Number(inw.bagStockKg ?? inw.netWeight ?? 0).toLocaleString()} kg)
+                          </span>
+                          {Number(inw.looseStockKg || 0) > 0 && (
+                            <span style={{ background: 'rgba(234, 88, 12, 0.1)', color: '#c2410c', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '700' }}>
+                              🌾 {Number(inw.looseStockKg).toLocaleString()} kg Loose
+                            </span>
+                          )}
                         </td>
                         <td>
                           <span style={{ fontSize: '0.75rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
@@ -1326,14 +1501,13 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     <th style={{ textAlign: 'right' }}>JW INWARD (KG)</th>
                     <th style={{ textAlign: 'right' }}>COMPUTED BAL</th>
                     <th style={{ textAlign: 'right' }}>LEDGER BAL</th>
-                    <th style={{ textAlign: 'right' }}>VARIANCE</th>
                     <th style={{ textAlign: 'center' }}>AUDIT STATUS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRmComp.length === 0 ? (
                     <tr>
-                      <td colSpan="12" style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
+                      <td colSpan="11" style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
                         No matching raw materials found for reconciliation.
                       </td>
                     </tr>
@@ -1363,9 +1537,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: '800', color: '#0284c7', background: '#f0f9ff' }}>
                             {comp.ledgerBal.toLocaleString()} KG
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '800', color: isMatch ? '#16a34a' : '#dc2626' }}>
-                            {isMatch ? '0.00 KG' : `${comp.variance > 0 ? '+' : ''}${comp.variance.toLocaleString()} KG`}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             {isMatch ? (
@@ -1432,6 +1603,39 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               ))}
             </select>
           </div>
+
+          {/* Change 9: Active Filters Bar */}
+          {(fgSearch || fgCategoryFilter !== 'All') && (
+            <div className="inv-active-filters-bar">
+              <span style={{ color: '#64748b', fontWeight: 600 }}>Active Filters:</span>
+              {fgSearch && (
+                <span className="inv-filter-chip">
+                  Search: "{fgSearch}"
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setFgSearch('')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {fgCategoryFilter !== 'All' && (
+                <span className="inv-filter-chip">
+                  Category: {fgCategoryFilter}
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setFgCategoryFilter('All')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              <button
+                type="button"
+                className="inv-filter-clear-all-btn"
+                onClick={() => {
+                  setFgSearch('');
+                  setFgCategoryFilter('All');
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+          )}
 
           {/* Table */}
           <div className="inv-table-container">
@@ -1775,6 +1979,222 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       )}
 
+      {/* ── TAB: Quality Control (QC) Register & 24h SLA (Change 5) ── */}
+      {activeTab === 'qc' && (
+        <div className="inv-section-card">
+          <div className="inv-section-header">
+            <div className="inv-title-group">
+              <div className="inv-title-row-inner">
+                <h2 className="inv-section-title">Raw Material Quality Control (QC) Register</h2>
+                <span className="inv-badge-blue">{filteredQcChecks.length} Records</span>
+                {overdueQcChecks.length > 0 && (
+                  <span style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700 }}>
+                    ⚠️ {overdueQcChecks.length} SLA Overdue
+                  </span>
+                )}
+              </div>
+              <p className="inv-section-subtitle">
+                Mandatory 24-hour inbound material inspection workflow: Pending evaluation → Inspector Pass/Fail → Plant Manager Approval.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button 
+                type="button" 
+                className="inv-btn-ghost"
+                onClick={() => exportToCsv('RM_Quality_Control_Register.csv', filteredQcChecks)}
+              >
+                <Download size={14} /> Export CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="inv-filter-bar">
+            <div className="inv-search-input-wrap">
+              <Search size={14} className="inv-search-icon" />
+              <input
+                type="text"
+                placeholder="Search by GRN #, Challan #, Supplier, Material, Batch #, Inspector..."
+                className="inv-filter-search"
+                value={qcSearch}
+                onChange={e => setQcSearch(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="inv-filter-select"
+              value={qcStatusFilter}
+              onChange={e => setQcStatusFilter(e.target.value)}
+            >
+              <option value="All">All QC Statuses ({liveQcChecks.length})</option>
+              <option value="PENDING">Pending Evaluation ({pendingQcChecks.length})</option>
+              <option value="SENT_FOR_APPROVAL">Sent for Approval ({sentForApprovalQc.length})</option>
+              <option value="APPROVED">Approved ({approvedQcChecks.length})</option>
+              <option value="OVERDUE">⚠️ SLA Overdue ({overdueQcChecks.length})</option>
+              <option value="PASS">Result: PASS ({passedQcChecks.length})</option>
+              <option value="FAIL">Result: FAIL ({failedQcChecks.length})</option>
+            </select>
+          </div>
+
+          {/* Change 9: Active Filter Chips */}
+          {(qcSearch || qcStatusFilter !== 'All') && (
+            <div className="inv-active-filters-bar">
+              <span style={{ color: '#64748b', fontWeight: 600 }}>Active Filters:</span>
+              {qcSearch && (
+                <span className="inv-filter-chip">
+                  Search: "{qcSearch}"
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setQcSearch('')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {qcStatusFilter !== 'All' && (
+                <span className="inv-filter-chip">
+                  Status: {qcStatusFilter}
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setQcStatusFilter('All')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              <button
+                type="button"
+                className="inv-filter-clear-all-btn"
+                onClick={() => {
+                  setQcSearch('');
+                  setQcStatusFilter('All');
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+          )}
+
+          {/* QC Checks Table */}
+          <div className="inv-table-container" style={{ marginTop: '12px' }}>
+            <table className="inv-table">
+              <thead>
+                <tr>
+                  <th>GRN &amp; CHALLAN</th>
+                  <th>SUPPLIER</th>
+                  <th>MATERIAL &amp; GRADE</th>
+                  <th>BATCH NO</th>
+                  <th>ATTRIBUTES</th>
+                  <th style={{ textAlign: 'right' }}>INWARD WT</th>
+                  <th style={{ textAlign: 'center' }}>QC RESULT</th>
+                  <th>STATUS</th>
+                  <th>24-HR SLA DEADLINE</th>
+                  <th style={{ textAlign: 'center' }}>ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredQcChecks.length > 0 ? (
+                  filteredQcChecks.map(qc => {
+                    const deadline = qc.deadlineDate || (qc.deadlineAt?.toDate ? qc.deadlineAt.toDate() : null);
+                    let hoursDiff = null;
+                    if (deadline) {
+                      hoursDiff = Math.round((deadline.getTime() - Date.now()) / (1000 * 60 * 60));
+                    }
+                    const isOverdue = qc.isOverdue || (hoursDiff !== null && hoursDiff < 0 && qc.status !== 'APPROVED');
+
+                    return (
+                      <tr key={qc.id} style={{ cursor: 'pointer' }} onClick={() => { setSelectedQcForModal(qc); setShowQcModal(true); }}>
+                        <td>
+                          <div style={{ fontWeight: 700, color: '#0f172a' }}>{qc.grnNo || 'GRN-N/A'}</div>
+                          <div style={{ fontSize: '0.73rem', color: '#64748b' }}>Challan: {qc.challanNo || '—'}</div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600, color: '#1e293b' }}>{qc.supplierName || '—'}</div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 700, color: '#0f172a' }}>{qc.itemName || 'Raw Material'}</div>
+                          <div style={{ fontSize: '0.73rem', color: '#64748b' }}>Grade: {qc.grade || 'Standard'}</div>
+                        </td>
+                        <td>
+                          <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 700, color: '#1e293b' }}>
+                            {qc.batchNumber || '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontSize: '0.75rem', color: '#475569' }}>
+                            <span>{qc.materialForm || 'Granule'}</span> • <span>{qc.materialColor || 'Natural'}</span>
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{qc.packaging || 'Woven Bag'}</div>
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
+                          {Number(qc.netWeight || 0).toLocaleString()} KG
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {qc.result === 'PASS' ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '2px 8px', borderRadius: '12px', fontSize: '0.73rem', fontWeight: 700 }}>
+                              <CheckCircle2 size={12} /> PASS
+                            </span>
+                          ) : qc.result === 'FAIL' ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '12px', fontSize: '0.73rem', fontWeight: 700 }}>
+                              <XCircle size={12} /> FAIL
+                            </span>
+                          ) : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#fef3c7', color: '#b45309', border: '1px solid #fcd34d', padding: '2px 8px', borderRadius: '12px', fontSize: '0.73rem', fontWeight: 600 }}>
+                              <Clock size={12} /> Awaiting Test
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            background: qc.status === 'APPROVED' ? '#dcfce7' : (qc.status === 'SENT_FOR_APPROVAL' ? '#eff6ff' : '#fef3c7'),
+                            color: qc.status === 'APPROVED' ? '#15803d' : (qc.status === 'SENT_FOR_APPROVAL' ? '#1d4ed8' : '#b45309'),
+                            border: '1px solid currentColor'
+                          }}>
+                            {qc.status === 'SENT_FOR_APPROVAL' ? 'SENT FOR APPROVAL' : qc.status}
+                          </span>
+                        </td>
+                        <td>
+                          {qc.status === 'APPROVED' ? (
+                            <div style={{ fontSize: '0.75rem', color: '#15803d', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <ShieldCheck size={14} /> Approved by {qc.approvedBy || 'Manager'}
+                            </div>
+                          ) : isOverdue ? (
+                            <div style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <AlertTriangle size={14} /> Overdue by {Math.abs(hoursDiff || 0)}h
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.75rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Clock size={14} style={{ color: '#2563eb' }} /> {hoursDiff !== null ? `${hoursDiff}h left` : 'Within 24h'}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSelectedQcForModal(qc); setShowQcModal(true); }}
+                            className="inv-btn-dark"
+                            style={{ padding: '4px 10px', fontSize: '0.73rem' }}
+                          >
+                            {qc.status === 'PENDING' ? 'Inspect' : (qc.status === 'SENT_FOR_APPROVAL' ? 'Approve' : 'View')}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={10} style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
+                      <CheckCircle2 size={32} style={{ opacity: 0.4, marginBottom: '8px' }} />
+                      <div>No Quality Control records found for the selected filter.</div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* ── TAB: Bags & Dual Stock (Fixed vs Loose) ── */}
       {activeTab === 'bags' && (
         <div className="inv-section-card">
@@ -1789,7 +2209,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               </p>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <div className="inv-view-toggle-wrap">
                 <button
                   type="button"
@@ -1807,6 +2227,70 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 </button>
               </div>
 
+              {/* Item 15: Quick Bag / Batch / Barcode Lookup Tool */}
+              <button
+                type="button"
+                className="inv-btn-primary"
+                onClick={() => setShowQuickLookupModal(true)}
+                style={{
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '0.8rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+                title="Fast Bag / Batch / Barcode Lookup Tool (Item 15)"
+              >
+                <Search size={14} /> Quick Bag Lookup
+              </button>
+
+              {/* Change 7: Bulk Sticker Print Button */}
+              <button 
+                type="button"
+                className="inv-btn-primary"
+                onClick={() => printMultipleBagStickers(filteredBags)}
+                style={{ background: '#2563eb', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                title="Print Barcode Stickers (100mm x 75mm) for all filtered bags"
+              >
+                <Printer size={14} /> Print Stickers ({filteredBags.length})
+              </button>
+
+              {/* Item 14: Collapsible Filter Toggle */}
+              <button
+                type="button"
+                className="inv-btn-ghost"
+                onClick={() => setShowBagFilters(prev => !prev)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: showBagFilters ? '#eff6ff' : '#ffffff',
+                  color: showBagFilters ? '#2563eb' : '#475569',
+                  borderColor: showBagFilters ? '#93c5fd' : '#cbd5e1',
+                  fontWeight: 600,
+                  fontSize: '0.8rem'
+                }}
+                title="Toggle search and filters in Bag Serials view"
+              >
+                <Filter size={13} />
+                {showBagFilters ? 'Hide Filters' : 'Show Filters'}
+                {(bagSearch || bagStockTypeFilter !== 'All' || bagLocationFilter !== 'All') && (
+                  <span style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: '#2563eb',
+                    display: 'inline-block'
+                  }} />
+                )}
+              </button>
+
               <button 
                 type="button"
                 className="inv-btn-ghost"
@@ -1817,7 +2301,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             </div>
           </div>
 
-          {/* Filter Bar */}
+          {/* Collapsible Filter Bar & Variant Summaries (Item 14) */}
+          {showBagFilters && (
+            <>
           <div className="inv-filter-bar">
             <div className="inv-search-input-wrap">
               <Search size={14} className="inv-search-icon" />
@@ -1851,6 +2337,48 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               ))}
             </select>
           </div>
+
+          {/* Change 9: Active Filters Bar */}
+          {(bagSearch || bagStockTypeFilter !== 'All' || bagLocationFilter !== 'All') && (
+            <div className="inv-active-filters-bar">
+              <span style={{ color: '#64748b', fontWeight: 600 }}>Active Filters:</span>
+              {bagSearch && (
+                <span className="inv-filter-chip">
+                  Search: "{bagSearch}"
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setBagSearch('')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {bagStockTypeFilter !== 'All' && (
+                <span className="inv-filter-chip">
+                  Type: {bagStockTypeFilter}
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setBagStockTypeFilter('All')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {bagLocationFilter !== 'All' && (
+                <span className="inv-filter-chip">
+                  Godown: {bagLocationFilter}
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setBagLocationFilter('All')}>
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              <button
+                type="button"
+                className="inv-filter-clear-all-btn"
+                onClick={() => {
+                  setBagSearch('');
+                  setBagStockTypeFilter('All');
+                  setBagLocationFilter('All');
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+          )}
 
           {/* Aggregated Variant Summary Cards */}
           {(() => {
@@ -1912,6 +2440,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               </div>
             );
           })()}
+            </>
+          )}
 
           {/* ─────────────────────────────────────────────────────────── */}
           {/* GROUPED LOT REGISTER CARDS (DIARY) VS UNIFIED (FLAT) VIEW     */}
@@ -1959,15 +2489,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                           <span className="inv-lot-stat-val">{lot.avgWeightKg} KG</span>
                         </div>
                         <div className="inv-lot-stat-item">
-                          <span className="inv-lot-stat-label">Variance:</span>
-                          <span 
-                            className="inv-lot-stat-val" 
-                            style={{ color: lot.totalVariance >= 0 ? '#16a34a' : '#ef4444' }}
-                          >
-                            {lot.totalVariance >= 0 ? `+${lot.totalVariance.toFixed(1)}` : lot.totalVariance.toFixed(1)} KG
-                          </span>
-                        </div>
-                        <div className="inv-lot-stat-item">
                           <span className="inv-lot-stat-label">Coils:</span>
                           <span className="inv-lot-stat-val">{lot.totalCoils}</span>
                         </div>
@@ -1975,6 +2496,15 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                           <span className="inv-lot-stat-label">Location:</span>
                           <span className="inv-lot-stat-val">{lot.location}</span>
                         </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); printMultipleBagStickers(lot.bags); }}
+                          className="inv-btn-ghost"
+                          style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}
+                          title="Print stickers for all bags in this lot"
+                        >
+                          <Printer size={12} /> Stickers ({lot.bags.length})
+                        </button>
                       </div>
                     </div>
 
@@ -1989,11 +2519,10 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             <th style={{ width: '80px' }}>SIZE</th>
                             <th style={{ width: '100px', textAlign: 'right' }}>STD WT</th>
                             <th style={{ width: '130px', textAlign: 'right' }}>ACTUAL WT (KG)</th>
-                            <th style={{ width: '100px', textAlign: 'right' }}>VARIANCE</th>
                             <th style={{ width: '90px', textAlign: 'center' }}>COILS</th>
                             <th style={{ width: '120px' }}>STOCK TYPE</th>
                             <th>GODOWN / BAY</th>
-                            <th style={{ width: '70px', textAlign: 'center' }}>ACTION</th>
+                            <th style={{ width: '85px', textAlign: 'center' }}>ACTION</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2073,11 +2602,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                                     </span>
                                   )}
                                 </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  <span className={`var-badge ${variance === 0 ? 'var-badge-exact' : variance > 0 ? 'var-badge-plus' : 'var-badge-minus'}`}>
-                                    {variance > 0 ? `+${variance.toFixed(1)}` : variance.toFixed(1)} KG
-                                  </span>
-                                </td>
                                 <td style={{ textAlign: 'center', fontWeight: 600, color: '#475569' }}>
                                   {bag.coilCount || lot.coilCount}
                                 </td>
@@ -2098,17 +2622,31 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                                   </span>
                                 </td>
                                 <td style={{ textAlign: 'center' }}>
-                                  <button
-                                    type="button"
-                                    className="inv-icon-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleStartEditWeight(bag);
-                                    }}
-                                    title="Edit scale weight"
-                                  >
-                                    <Edit3 size={12} />
-                                  </button>
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                    <button
+                                      type="button"
+                                      className="inv-icon-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        printSingleBagSticker(bag);
+                                      }}
+                                      title="Print Bag Barcode Sticker (100x75mm)"
+                                      style={{ color: '#2563eb' }}
+                                    >
+                                      <Printer size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="inv-icon-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartEditWeight(bag);
+                                      }}
+                                      title="Edit scale weight"
+                                    >
+                                      <Edit3 size={12} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -2124,9 +2662,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             </td>
                             <td style={{ textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>
                               {lot.totalActualKg.toFixed(1)} KG Net
-                            </td>
-                            <td style={{ textAlign: 'right', color: lot.totalVariance >= 0 ? '#16a34a' : '#ef4444' }}>
-                              {lot.totalVariance >= 0 ? `+${lot.totalVariance.toFixed(1)}` : lot.totalVariance.toFixed(1)} KG
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               {lot.totalCoils} Coils
@@ -2163,12 +2698,11 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     <th>SIZE</th>
                     <th style={{ textAlign: 'right' }}>STD WT</th>
                     <th style={{ textAlign: 'right' }}>ACTUAL WT</th>
-                    <th style={{ textAlign: 'right' }}>VARIANCE</th>
                     <th style={{ textAlign: 'center' }}>COILS</th>
                     <th>GODOWN / BAY</th>
                     <th>STATUS</th>
                     <th>INWARD DATE</th>
-                    <th style={{ textAlign: 'center', width: '70px' }}>ACTION</th>
+                    <th style={{ textAlign: 'center', width: '85px' }}>ACTION</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2221,11 +2755,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                               {actWt.toFixed(1)} KG
                             </span>
                           </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <span className={`var-badge ${variance === 0 ? 'var-badge-exact' : variance > 0 ? 'var-badge-plus' : 'var-badge-minus'}`}>
-                              {variance > 0 ? `+${variance.toFixed(1)}` : variance.toFixed(1)} KG
-                            </span>
-                          </td>
                           <td style={{ textAlign: 'center', fontWeight: 600, color: '#475569' }}>
                             {bag.coilCount || 10}
                           </td>
@@ -2247,17 +2776,31 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             {bag.inwardDate || '2026-03-30'}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              className="inv-icon-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenBagDrawer(bag);
-                              }}
-                              title="View full bag details"
-                            >
-                              <ChevronRight size={14} />
-                            </button>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                              <button
+                                type="button"
+                                className="inv-icon-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  printSingleBagSticker(bag);
+                                }}
+                                title="Print Bag Barcode Sticker (100x75mm)"
+                                style={{ color: '#2563eb' }}
+                              >
+                                <Printer size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                className="inv-icon-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenBagDrawer(bag);
+                                }}
+                                title="View full bag details"
+                              >
+                                <ChevronRight size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2310,6 +2853,25 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         onUpdateBagWeight={handleUpdateBagWeightFromDrawer}
         onUpdateBagLocation={handleUpdateBagLocationFromDrawer}
       />
+      {showQcModal && (
+        <QcCheckModal
+          qcCheck={selectedQcForModal}
+          onClose={() => {
+            setShowQcModal(false);
+            setSelectedQcForModal(null);
+          }}
+          onSuccess={() => {}}
+        />
+      )}
+      {showQuickLookupModal && (
+        <QuickBagLookupModal
+          isOpen={showQuickLookupModal}
+          onClose={() => setShowQuickLookupModal(false)}
+          liveBags={liveBags}
+          onOpenBagDrawer={handleOpenBagDrawer}
+          onLocateInDiary={handleLocateBagInDiary}
+        />
+      )}
     </div>
   );
 }

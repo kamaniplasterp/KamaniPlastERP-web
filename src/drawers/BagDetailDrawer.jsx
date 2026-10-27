@@ -1,15 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   X, Scale, Package, Calendar, MapPin, Tag, 
   Layers, CheckCircle2, Edit3, Check, Printer, FileText, ArrowRight 
 } from 'lucide-react';
-import { subscribeLocations, DEFAULT_LOCATIONS_LIST } from '../api/locations.api';
+import { subscribeLocations } from '../api/locations.api';
+import { printSingleBagSticker } from '../utils/stickerPdf';
 import '../styles/MaterialDetailDrawer.css';
 
 export default function BagDetailDrawer({ bag, isOpen, onClose, onUpdateBagWeight, onUpdateBagLocation }) {
   if (!isOpen || !bag) return null;
 
-  const [liveLocations, setLiveLocations] = useState(DEFAULT_LOCATIONS_LIST);
+  const [liveLocations, setLiveLocations] = useState([]);
 
   useEffect(() => {
     const unsub = subscribeLocations(setLiveLocations);
@@ -363,10 +364,10 @@ export default function BagDetailDrawer({ bag, isOpen, onClose, onUpdateBagWeigh
             <button 
               type="button" 
               className="inv-btn-ghost" 
-              style={{ flex: 1, justifyContent: 'center' }}
-              onClick={() => alert(`Printing Bag Barcode Tag for Bag #${bag.bagNumber} (${bag.quality} ${bag.form} ${bag.size})`)}
+              style={{ flex: 1, justifyContent: 'center', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}
+              onClick={() => printSingleBagSticker(bag)}
             >
-              <Printer size={15} /> Print Bag Barcode
+              <Printer size={15} /> Print Bag Sticker (PDF)
             </button>
             <button 
               type="button" 

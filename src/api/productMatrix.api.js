@@ -16,7 +16,8 @@ export const DEFAULT_PRODUCT_ATTRIBUTES = {
   colors: ['Bright Yellow', 'Fluorescent Orange', 'Ocean Blue', 'Emerald Green', 'Milky White', 'Jet Black'],
   sizes: ['3x3', '4x3', '1.5', '2', '4', '6', '7.5'],
   lengths: ['100 Mtr', '200 Mtr', '300 Mtr', '500 Mtr', 'Standard'],
-  tracerLines: ['No Tracer Line', 'Single Red Line', 'Double Blue Line', 'Green Tracer', 'Black Tracer']
+  tracerLines: ['No Tracer Line', 'Single Red Line', 'Double Blue Line', 'Green Tracer', 'Black Tracer'],
+  meterMarkings: ['Meter Marking', 'Non-Meter Marking']
 };
 
 /**
@@ -33,19 +34,15 @@ export function subscribeProductAttributes(callback) {
     if (snap.exists()) {
       const data = snap.data();
       callback({
-        qualities: data.qualities?.length ? data.qualities : DEFAULT_PRODUCT_ATTRIBUTES.qualities,
-        forms: data.forms?.length ? data.forms : DEFAULT_PRODUCT_ATTRIBUTES.forms,
-        colors: data.colors?.length ? data.colors : DEFAULT_PRODUCT_ATTRIBUTES.colors,
-        sizes: data.sizes?.length ? data.sizes : DEFAULT_PRODUCT_ATTRIBUTES.sizes,
-        lengths: data.lengths?.length ? data.lengths : DEFAULT_PRODUCT_ATTRIBUTES.lengths,
-        tracerLines: data.tracerLines?.length ? data.tracerLines : DEFAULT_PRODUCT_ATTRIBUTES.tracerLines
+        qualities: Array.isArray(data.qualities) ? data.qualities : DEFAULT_PRODUCT_ATTRIBUTES.qualities,
+        forms: Array.isArray(data.forms) ? data.forms : DEFAULT_PRODUCT_ATTRIBUTES.forms,
+        colors: Array.isArray(data.colors) ? data.colors : DEFAULT_PRODUCT_ATTRIBUTES.colors,
+        sizes: Array.isArray(data.sizes) ? data.sizes : DEFAULT_PRODUCT_ATTRIBUTES.sizes,
+        lengths: Array.isArray(data.lengths) ? data.lengths : DEFAULT_PRODUCT_ATTRIBUTES.lengths,
+        tracerLines: Array.isArray(data.tracerLines) ? data.tracerLines : DEFAULT_PRODUCT_ATTRIBUTES.tracerLines,
+        meterMarkings: Array.isArray(data.meterMarkings) ? data.meterMarkings : DEFAULT_PRODUCT_ATTRIBUTES.meterMarkings
       });
     } else {
-      // Initialize with default
-      setDoc(docRef, {
-        ...DEFAULT_PRODUCT_ATTRIBUTES,
-        createdAt: serverTimestamp()
-      }).catch(err => console.warn('Could not seed product attributes:', err));
       callback(DEFAULT_PRODUCT_ATTRIBUTES);
     }
   }, (err) => {
@@ -69,23 +66,35 @@ export async function updateProductAttributes(attributes) {
 /**
  * Helper to generate SKU code from combination
  */
-export function generateSkuCode(quality, form, color, size, length, tracerLine) {
+export function generateSkuCode(quality, form, color, size, length, tracerLine, meterMarking) {
   const qCode = (quality || 'GEN').slice(0, 4).toUpperCase();
   const fCode = (form || 'HNK').slice(0, 3).toUpperCase();
   const cCode = (color || 'CLR').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const sCode = (size || 'STD').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   const lCode = length && length !== 'Standard' ? `-${length.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()}` : '';
   const tCode = tracerLine && tracerLine !== 'No Tracer Line' ? `-${tracerLine.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}` : '';
-  return `FG-${qCode}-${fCode}-${cCode}-${sCode}${lCode}${tCode}`;
+  const mCode = meterMarking && meterMarking === 'Meter Marking' ? '-MM' : '';
+  return `FG-${qCode}-${fCode}-${cCode}-${sCode}${lCode}${tCode}${mCode}`;
 }
 
 /**
  * Generate Cartesian Matrix of SKUs
  */
-export function generateMatrixCombinations(selectedQualities, selectedForms, selectedColors, selectedSizes, baseRate = 220, bagWeight = 50.0, selectedLengths = ['Standard'], selectedTracers = ['No Tracer Line']) {
+export function generateMatrixCombinations(
+  selectedQualities,
+  selectedForms,
+  selectedColors,
+  selectedSizes,
+  baseRate = 220,
+  bagWeight = 50.0,
+  selectedLengths = ['Standard'],
+  selectedTracers = ['No Tracer Line'],
+  selectedMeterMarkings = ['Non-Meter Marking']
+) {
   const combinations = [];
   const lengths = selectedLengths?.length ? selectedLengths : ['Standard'];
   const tracers = selectedTracers?.length ? selectedTracers : ['No Tracer Line'];
+  const meterMarkings = selectedMeterMarkings?.length ? selectedMeterMarkings : ['Non-Meter Marking'];
 
   for (const q of selectedQualities) {
     for (const f of selectedForms) {
@@ -93,24 +102,31 @@ export function generateMatrixCombinations(selectedQualities, selectedForms, sel
         for (const s of selectedSizes) {
           for (const l of lengths) {
             for (const t of tracers) {
-              const skuCode = generateSkuCode(q, f, c, s, l, t);
-              const extraDesc = [l !== 'Standard' ? l : '', t !== 'No Tracer Line' ? t : ''].filter(Boolean).join(' • ');
-              const name = `${q} ${f} - ${s} (${c})${extraDesc ? ' [' + extraDesc + ']' : ''}`;
-              combinations.push({
-                id: skuCode,
-                skuCode,
-                name,
-                quality: q,
-                form: f,
-                color: c,
-                size: s,
-                length: l,
-                tracerLine: t,
-                category: 'Danline & Fishing Twine',
-                standardBagWeightKg: Number(bagWeight) || 50.0,
-                ratePerKg: Number(baseRate) || 220,
-                stockQty: 0
-              });
+              for (const m of meterMarkings) {
+                const skuCode = generateSkuCode(q, f, c, s, l, t, m);
+                const extraDesc = [
+                  l !== 'Standard' ? l : '',
+                  t !== 'No Tracer Line' ? t : '',
+                  m !== 'Non-Meter Marking' ? m : ''
+                ].filter(Boolean).join(' • ');
+                const name = `${q} ${f} - ${s} (${c})${extraDesc ? ' [' + extraDesc + ']' : ''}`;
+                combinations.push({
+                  id: skuCode,
+                  skuCode,
+                  name,
+                  quality: q,
+                  form: f,
+                  color: c,
+                  size: s,
+                  length: l,
+                  tracerLine: t,
+                  meterMarking: m,
+                  category: 'Danline & Fishing Twine',
+                  standardBagWeightKg: Number(bagWeight) || 50.0,
+                  ratePerKg: Number(baseRate) || 220,
+                  stockQty: 0
+                });
+              }
             }
           }
         }
@@ -146,6 +162,7 @@ export async function syncMatrixToFinishedGoods(skuList, maxLimit = 1500) {
         size: sku.size,
         length: sku.length || 'Standard',
         tracerLine: sku.tracerLine || 'None',
+        meterMarking: sku.meterMarking || 'Non-Meter Marking',
         rate: sku.ratePerKg,
         standardBagWeightKg: sku.standardBagWeightKg,
         stockQty: 0,
