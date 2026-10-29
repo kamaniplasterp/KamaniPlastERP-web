@@ -12,6 +12,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { logAuditEvent } from './audit.api';
 
 export const DEFAULT_PROCESS_LIST = [
   {
@@ -150,6 +151,15 @@ export async function addProcess(data) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'PROCESS_MASTER_CREATED',
+    summary: `Created plant process master: ${data.processName || code} (${code})`,
+    targetId: code,
+    details: data
+  });
+
   return code;
 }
 
@@ -170,6 +180,14 @@ export async function updateProcess(id, data) {
     expectedScrapPct: Number(data.expectedScrapPct || 0),
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'PROCESS_MASTER_UPDATED',
+    summary: `Updated process master ${data.processName || docId}`,
+    targetId: docId,
+    details: data
+  });
 }
 
 /**
@@ -178,4 +196,11 @@ export async function updateProcess(id, data) {
 export async function deleteProcess(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'processes', id));
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'PROCESS_MASTER_DELETED',
+    summary: `Deleted process master ${id}`,
+    targetId: id
+  });
 }

@@ -15,6 +15,8 @@ import {
   DEFAULT_PERSONNEL, 
   DEFAULT_TARE_STANDARDS 
 } from '../api/directory.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 function today() {
@@ -22,7 +24,7 @@ function today() {
 }
 
 export const CORE_POLYMER_ITEMS = ['PP', 'HDPE', 'HDPP MIX', 'REPROCESSED'];
-export const MATERIAL_FORMS = ['Granule', 'Powder', 'Mumri', 'Grinder'];
+export const MATERIAL_FORMS = ['Granule', 'Powder', 'Mamri', 'Grinder'];
 export const MATERIAL_COLORS = ['Natural / White', 'Red', 'Black', 'Yellow', 'Green', 'Silver'];
 export const PACKAGING_OPTIONS = [
   { id: 'Woven Bag', label: 'Woven Bag', tareKey: 'bora', defaultTare: 0.200 },
@@ -81,6 +83,7 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
     materialForm: 'Granule',
     materialColor: 'Natural / White',
     packaging: 'Woven Bag',
+    laminationType: 'Non-Laminated',
     batchNumber: `BATCH-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
     challanWeight: '', // Item 8: Supplier Challan Billed Net Weight (KG)
     grossWeight: '',
@@ -122,7 +125,7 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (grossWght <= 0) {
-      alert('Please enter a valid Gross Weight.');
+      await showAlert('Please enter a valid Gross Weight.', { type: 'warning', title: 'Required Field' });
       return;
     }
 
@@ -137,6 +140,8 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
         materialForm: form.materialForm,
         materialColor: isReprocessed ? 'Mix' : form.materialColor,
         packaging: form.packaging,
+        laminationType: form.laminationType || 'Non-Laminated',
+        isLaminated: form.laminationType === 'Laminated',
         batchNumber: form.batchNumber,
         challanWeight: challanNetKg,
         shortfallKg,
@@ -154,12 +159,15 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
         remarks: form.remarks
       });
 
-      alert(`Raw Material Inward GRN ${form.grnNo} recorded successfully!\n• Net Inward: ${netInwardKg.toLocaleString()} KG\n• Bags: ${boraCount} bags (${bagStockKg.toLocaleString()} KG)\n• Loose: ${looseKg.toLocaleString()} KG${isShortDelivery ? `\n⚠️ SHORT DELIVERY RECORDED: Shortfall ${Math.abs(shortfallKg).toFixed(1)} KG vs Challan` : ''}\n✓ QC Check auto-scheduled with 24-hr deadline.`);
+      await showAlert(`Raw Material Inward GRN ${form.grnNo} recorded successfully!\n• Net Inward: ${netInwardKg.toLocaleString()} KG\n• Bags: ${boraCount} bags (${bagStockKg.toLocaleString()} KG)\n• Loose: ${looseKg.toLocaleString()} KG${isShortDelivery ? `\n⚠️ SHORT DELIVERY RECORDED: Shortfall ${Math.abs(shortfallKg).toFixed(1)} KG vs Challan` : ''}\n✓ QC Check auto-scheduled with 24-hr deadline.`, {
+        type: 'success',
+        title: 'GRN Inward Recorded'
+      });
       if (onSaved) onSaved();
       onClose();
     } catch (err) {
       console.error('Error saving RM Inward:', err);
-      alert(`Error recording RM Inward: ${err.message}`);
+      await showAlert(`Error recording RM Inward: ${err.message}`, { type: 'error' });
     }
   };
 
@@ -238,29 +246,25 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
           <div className="mform-row mform-col-3">
             <div className="mform-field">
               <label className="mform-label">Supplier Name <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={form.supplierName}
-                onChange={e => set('supplierName', e.target.value)}
+                onChange={val => set('supplierName', val)}
+                options={liveVendors.map(v => ({ value: v.name || v.id, label: v.name || v.id, sublabel: v.location || '' }))}
+                placeholder="-- Select Supplier --"
+                searchPlaceholder="Search supplier name or city..."
                 required
-              >
-                {liveVendors.map(v => (
-                  <option key={v.id || v.name} value={v.name || v.id}>{v.name || v.id}</option>
-                ))}
-              </select>
+              />
             </div>
             <div className="mform-field">
               <label className="mform-label">Item Name <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={form.itemName}
-                onChange={e => set('itemName', e.target.value)}
+                onChange={val => set('itemName', val)}
+                options={CORE_POLYMER_ITEMS}
+                placeholder="-- Select Item --"
+                searchPlaceholder="Search item..."
                 required
-              >
-                {CORE_POLYMER_ITEMS.map(core => (
-                  <option key={core} value={core}>{core}</option>
-                ))}
-              </select>
+              />
             </div>
 
             {/* Item 7: Conditional Grade vs Color */}
@@ -279,16 +283,14 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
             ) : (
               <div className="mform-field">
                 <label className="mform-label">Material Color <span className="req">*</span></label>
-                <select
-                  className="mform-select"
+                <SearchableSelect
                   value={form.materialColor}
-                  onChange={e => set('materialColor', e.target.value)}
+                  onChange={val => set('materialColor', val)}
+                  options={MATERIAL_COLORS}
+                  placeholder="-- Select Color --"
+                  searchPlaceholder="Search color..."
                   required
-                >
-                  {MATERIAL_COLORS.map(mc => (
-                    <option key={mc} value={mc}>{mc}</option>
-                  ))}
-                </select>
+                />
               </div>
             )}
           </div>
@@ -297,29 +299,62 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
           <div className="mform-row mform-col-4" style={{ marginTop: '4px' }}>
             <div className="mform-field">
               <label className="mform-label">Material Form <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={form.materialForm}
-                onChange={e => set('materialForm', e.target.value)}
+                onChange={val => set('materialForm', val)}
+                options={MATERIAL_FORMS}
+                placeholder="-- Select Form --"
+                searchPlaceholder="Search form (Granule, Mamri...)..."
                 required
-              >
-                {MATERIAL_FORMS.map(mf => (
-                  <option key={mf} value={mf}>{mf}</option>
-                ))}
-              </select>
+              />
             </div>
             <div className="mform-field">
               <label className="mform-label">Packaging Type <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={form.packaging}
-                onChange={e => set('packaging', e.target.value)}
+                onChange={val => set('packaging', val)}
+                options={PACKAGING_OPTIONS.map(opt => ({ value: opt.id, label: opt.label }))}
+                placeholder="-- Select Packaging --"
+                searchPlaceholder="Search packaging..."
                 required
+              />
+              {/* Radio button under packaging type for Laminated or Non-Laminated */}
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px', 
+                  marginTop: '6px',
+                  padding: '4px 8px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  width: 'fit-content'
+                }}
               >
-                {PACKAGING_OPTIONS.map(opt => (
-                  <option key={opt.id} value={opt.id}>{opt.label}</option>
-                ))}
-              </select>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', cursor: 'pointer', color: form.laminationType === 'Laminated' ? '#0f172a' : '#64748b', fontWeight: form.laminationType === 'Laminated' ? 600 : 500 }}>
+                  <input
+                    type="radio"
+                    name="laminationType"
+                    value="Laminated"
+                    checked={form.laminationType === 'Laminated'}
+                    onChange={() => set('laminationType', 'Laminated')}
+                    style={{ accentColor: '#0f172a', cursor: 'pointer' }}
+                  />
+                  <span>Laminated</span>
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', cursor: 'pointer', color: form.laminationType === 'Non-Laminated' ? '#0f172a' : '#64748b', fontWeight: form.laminationType === 'Non-Laminated' ? 600 : 500 }}>
+                  <input
+                    type="radio"
+                    name="laminationType"
+                    value="Non-Laminated"
+                    checked={form.laminationType === 'Non-Laminated'}
+                    onChange={() => set('laminationType', 'Non-Laminated')}
+                    style={{ accentColor: '#0f172a', cursor: 'pointer' }}
+                  />
+                  <span>Non-Laminated</span>
+                </label>
+              </div>
             </div>
             <div className="mform-field">
               <label className="mform-label">Batch Number <span className="req">*</span></label>
@@ -518,15 +553,13 @@ export default function RawMaterialInwardModal({ onClose, onSaved }) {
             </div>
             <div className="mform-field">
               <label className="mform-label">Received By</label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={form.receivedBy}
-                onChange={e => set('receivedBy', e.target.value)}
-              >
-                {personnelList.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+                onChange={val => set('receivedBy', val)}
+                options={personnelList}
+                placeholder="-- Select Signatory --"
+                searchPlaceholder="Search supervisor..."
+              />
             </div>
           </div>
 

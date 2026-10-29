@@ -1,8 +1,23 @@
 import { useState, useEffect } from 'react';
 import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
-  Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck, MessageSquare
+  Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck, MessageSquare,
+  Shield, Check, X, Lock, Unlock, UserCheck, ShieldAlert, Activity, Eye, Copy, Filter, Clock
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { 
+  subscribeUsers, 
+  updateUserAccess, 
+  ERP_MODULES, 
+  ROLE_DEFAULT_MODULES, 
+  ROLE_LABELS, 
+  ROLE_COLORS 
+} from '../api/rbac.api';
+import { 
+  subscribeAuditLogs, 
+  logAuditEvent, 
+  AUDIT_CATEGORIES 
+} from '../api/audit.api';
 import { 
   subscribeVendors, 
   subscribeBuyers, 
@@ -48,6 +63,22 @@ export default function DirectorySettingsView() {
   const [liveRates, setLiveRates] = useState([]);
   const [liveValueMasters, setLiveValueMasters] = useState([]);
 
+  // RBAC User Permissions State
+  const { isAdmin } = useAuth();
+  const [liveUsers, setLiveUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [selectedUserForRbac, setSelectedUserForRbac] = useState(null);
+  const [editRole, setEditRole] = useState('employee');
+  const [editAssignedModules, setEditAssignedModules] = useState([]);
+  const [isSavingRbac, setIsSavingRbac] = useState(false);
+
+  // Audit Trail State (Admin Only)
+  const [liveAuditLogs, setLiveAuditLogs] = useState([]);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditCategoryFilter, setAuditCategoryFilter] = useState('ALL');
+  const [selectedAuditDetail, setSelectedAuditDetail] = useState(null);
+  const [copiedAuditJson, setCopiedAuditJson] = useState(false);
+
   const [showAddVendorModal, setShowAddVendorModal] = useState(false);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showAddRateModal, setShowAddRateModal] = useState(false);
@@ -77,6 +108,8 @@ export default function DirectorySettingsView() {
     const unsubTare = subscribeTareStandards(setTareStandards);
     const unsubPers = subscribePersonnel(setPersonnelList);
     const unsubProf = subscribeCompanyProfile(setCompanyProfile);
+    const unsubUsers = subscribeUsers(setLiveUsers);
+    const unsubAudit = subscribeAuditLogs(setLiveAuditLogs);
     const unsubProc = subscribeProcesses((procs) => {
       setLiveProcesses(procs);
       if (procs?.length) setNewRateForm(f => f.process ? f : { ...f, process: procs[0].processName });
@@ -92,8 +125,69 @@ export default function DirectorySettingsView() {
       unsubPers();
       unsubProf();
       unsubProc();
+      unsubUsers();
+      unsubAudit();
     };
   }, []);
+
+  const handleOpenRbacModal = (u) => {
+    setSelectedUserForRbac(u);
+    setEditRole(u.role || 'employee');
+    setEditAssignedModules(
+      Array.isArray(u.assignedModules)
+        ? [...u.assignedModules]
+        : [...(ROLE_DEFAULT_MODULES[u.role || 'employee'] || [])]
+    );
+  };
+
+  const handleRoleChange = (newRole) => {
+    setEditRole(newRole);
+    if (newRole === 'admin') {
+      setEditAssignedModules(ERP_MODULES.map(m => m.id));
+    } else {
+      setEditAssignedModules([...(ROLE_DEFAULT_MODULES[newRole] || [])]);
+    }
+  };
+
+  const handleToggleModule = (modId) => {
+    if (editRole === 'admin') return;
+    setEditAssignedModules(prev =>
+      prev.includes(modId) ? prev.filter(id => id !== modId) : [...prev, modId]
+    );
+  };
+
+  const handleSaveRbac = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!selectedUserForRbac) return;
+    setIsSavingRbac(true);
+    try {
+      await updateUserAccess(selectedUserForRbac.uid || selectedUserForRbac.id, {
+        role: editRole,
+        assignedModules: editRole === 'admin' ? ERP_MODULES.map(m => m.id) : editAssignedModules,
+        status: selectedUserForRbac.status || 'ACTIVE'
+      });
+
+      logAuditEvent({
+        category: 'SECURITY',
+        action: 'RBAC_PERMISSIONS_UPDATED',
+        summary: `Updated role to "${editRole.toUpperCase()}" with ${editAssignedModules.length} assigned modules for ${selectedUserForRbac.displayName || selectedUserForRbac.email}`,
+        targetId: selectedUserForRbac.displayName || selectedUserForRbac.email,
+        details: {
+          userUid: selectedUserForRbac.uid || selectedUserForRbac.id,
+          role: editRole,
+          assignedModules: editAssignedModules
+        }
+      });
+
+      alert(`Permissions updated successfully for ${selectedUserForRbac.displayName || selectedUserForRbac.email}!`);
+      setSelectedUserForRbac(null);
+    } catch (err) {
+      console.error('Failed to update user RBAC:', err);
+      alert('Failed to update permissions: ' + err.message);
+    } finally {
+      setIsSavingRbac(false);
+    }
+  };
 
   const handleSaveVendor = async (data) => {
     try {
@@ -106,6 +200,15 @@ export default function DirectorySettingsView() {
         rate: Number(data.rate || 17.5),
         pendingKg: 0
       });
+
+      logAuditEvent({
+        category: 'MASTER_DATA',
+        action: 'VENDOR_CREATED',
+        summary: `Added vendor "${data.name}" (${data.location || 'Rajkot'}) - Processing Rate: ₹${data.rate || 17.5}/KG`,
+        targetId: data.name,
+        details: data
+      });
+
       alert(`Vendor "${data.name}" added successfully!\n✓ Godown location auto-created for "${data.name}" for instant inventory tracking.`);
     } catch (err) {
       console.error('Error adding vendor:', err);
@@ -132,6 +235,14 @@ export default function DirectorySettingsView() {
         totalOrders: 0,
         outstandingAmount: '₹0.00L'
       });
+
+      logAuditEvent({
+        category: 'MASTER_DATA',
+        action: 'CUSTOMER_CREATED',
+        summary: `Added buyer "${data.name}" (${data.category || 'Wholesale'}) - Terms: ${data.paymentTerms || 'Standard'}`,
+        targetId: data.name,
+        details: data
+      });
     } catch (err) {
       console.error('Error adding customer:', err);
     }
@@ -141,6 +252,15 @@ export default function DirectorySettingsView() {
     e.preventDefault();
     try {
       await addJobWorkRate(newRateForm);
+
+      logAuditEvent({
+        category: 'MASTER_DATA',
+        action: 'JW_RATE_CONTRACT_CREATED',
+        summary: `Configured Job Work Rate for ${newRateForm.party}: ₹${newRateForm.rate}/${newRateForm.uom} for process ${newRateForm.process}`,
+        targetId: newRateForm.party,
+        details: newRateForm
+      });
+
       setShowAddRateModal(false);
       alert('Job Work Rate Master entry created successfully!');
     } catch (err) {
@@ -152,6 +272,15 @@ export default function DirectorySettingsView() {
     e.preventDefault();
     try {
       await updateCompanyProfile(companyProfile);
+
+      logAuditEvent({
+        category: 'MASTER_DATA',
+        action: 'COMPANY_SETTINGS_UPDATED',
+        summary: `Updated Company & Plant Master Profile: ${companyProfile.name}`,
+        targetId: companyProfile.name,
+        details: companyProfile
+      });
+
       alert('Factory company profile configuration saved to database successfully!');
     } catch (err) {
       console.error('Error saving company profile:', err);
@@ -267,6 +396,32 @@ export default function DirectorySettingsView() {
     (v.itemDescription || '').toLowerCase().includes(valueSearch.toLowerCase())
   );
 
+  const filteredUsers = (liveUsers || []).filter(u => {
+    const q = (userSearch || '').toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (u.displayName || '').toLowerCase().includes(q) ||
+      (u.email || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q) ||
+      (u.role || '').toLowerCase().includes(q)
+    );
+  });
+
+  const filteredAuditLogs = (liveAuditLogs || []).filter(log => {
+    const q = (auditSearch || '').toLowerCase().trim();
+    const matchesSearch = !q ||
+      (log.summary || '').toLowerCase().includes(q) ||
+      (log.action || '').toLowerCase().includes(q) ||
+      (log.targetId || '').toLowerCase().includes(q) ||
+      (log.user?.name || '').toLowerCase().includes(q) ||
+      (log.user?.email || '').toLowerCase().includes(q) ||
+      (log.user?.role || '').toLowerCase().includes(q);
+
+    const matchesCategory = auditCategoryFilter === 'ALL' || log.category === auditCategoryFilter;
+
+    return matchesSearch && matchesCategory;
+  });
+
   return (
     <div className="ds-container">
       {/* ── Page Header ── */}
@@ -327,6 +482,36 @@ export default function DirectorySettingsView() {
           <ShieldCheck size={14} />
           ERP Settings
         </button>
+        {isAdmin && (
+          <button
+            className={`ds-tab-btn ${activeTab === 'rbac' ? 'active' : ''}`}
+            onClick={() => setActiveTab('rbac')}
+            style={{
+              borderColor: activeTab === 'rbac' ? '#dc2626' : undefined,
+              color: activeTab === 'rbac' ? '#dc2626' : undefined,
+              fontWeight: 700
+            }}
+          >
+            <Shield size={14} style={{ color: '#dc2626' }} />
+            User Permissions (RBAC)
+            <span className="ds-tab-count" style={{ background: '#fee2e2', color: '#dc2626' }}>{liveUsers.length}</span>
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            className={`ds-tab-btn ${activeTab === 'audit' ? 'active' : ''}`}
+            onClick={() => setActiveTab('audit')}
+            style={{
+              borderColor: activeTab === 'audit' ? '#0284c7' : undefined,
+              color: activeTab === 'audit' ? '#0284c7' : undefined,
+              fontWeight: 700
+            }}
+          >
+            <Activity size={14} style={{ color: '#0284c7' }} />
+            Audit Trail
+            <span className="ds-tab-count" style={{ background: '#e0f2fe', color: '#0284c7' }}>{liveAuditLogs.length}</span>
+          </button>
+        )}
       </div>
 
       {/* ── TAB 1: Processing Vendors ── */}
@@ -1032,6 +1217,880 @@ export default function DirectorySettingsView() {
           </div>
 
 
+        </div>
+      )}
+
+      {/* ── TAB 8: Role-Based Access Control (RBAC) ── */}
+      {activeTab === 'rbac' && isAdmin && (
+        <>
+          <div className="ds-filter-row">
+            <div className="ds-search-wrap">
+              <Search className="ds-search-icon" size={15} />
+              <input
+                type="text"
+                placeholder="Search staff by name, email, or role..."
+                className="ds-search-input"
+                value={userSearch}
+                onChange={e => setUserSearch(e.target.value)}
+              />
+            </div>
+            <div className="ds-count-badge">
+              {filteredUsers.length} Users Registered
+            </div>
+          </div>
+
+          <div className="ds-table-card">
+            <div className="ds-table-wrap">
+              <table className="ds-table">
+                <thead>
+                  <tr>
+                    <th>User / Staff</th>
+                    <th>Email Address</th>
+                    <th>Assigned Role</th>
+                    <th>Accessible Modules</th>
+                    <th>Account Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                        No user accounts found matching &quot;{userSearch}&quot;.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredUsers.map(u => {
+                      const roleConfig = ROLE_COLORS[u.role || 'employee'] || ROLE_COLORS.employee;
+                      const roleLabel = ROLE_LABELS[u.role || 'employee'] || 'Employee';
+                      const userMods = u.role === 'admin' 
+                        ? ERP_MODULES.map(m => m.id)
+                        : (Array.isArray(u.assignedModules) ? u.assignedModules : (ROLE_DEFAULT_MODULES[u.role || 'employee'] || []));
+
+                      return (
+                        <tr key={u.uid || u.id}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '50%',
+                                background: roleConfig.bg,
+                                color: roleConfig.text,
+                                border: `1px solid ${roleConfig.border}`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 700,
+                                fontSize: '0.8rem'
+                              }}>
+                                {(u.displayName || u.email || 'U').slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.875rem' }}>
+                                  {u.displayName || 'Unnamed User'}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                  UID: {(u.uid || u.id || '').slice(0, 8)}...
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ fontSize: '0.8125rem', color: '#334155' }}>
+                            {u.email || '-'}
+                          </td>
+                          <td>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              padding: '3px 8px',
+                              borderRadius: '9999px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              background: roleConfig.bg,
+                              color: roleConfig.text,
+                              border: `1px solid ${roleConfig.border}`
+                            }}>
+                              <Shield size={11} />
+                              {roleLabel}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '380px' }}>
+                              {ERP_MODULES.map(m => {
+                                const isPermitted = userMods.includes(m.id);
+                                return (
+                                  <span
+                                    key={m.id}
+                                    style={{
+                                      fontSize: '0.7rem',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontWeight: 500,
+                                      background: isPermitted ? '#ecfdf5' : '#f1f5f9',
+                                      color: isPermitted ? '#047857' : '#94a3b8',
+                                      border: isPermitted ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                                      opacity: isPermitted ? 1 : 0.65
+                                    }}
+                                  >
+                                    {isPermitted ? '✓ ' : '✕ '} {m.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '9999px',
+                              fontSize: '0.7rem',
+                              fontWeight: 600,
+                              background: u.status === 'DISABLED' ? '#fee2e2' : '#dcfce7',
+                              color: u.status === 'DISABLED' ? '#b91c1c' : '#15803d'
+                            }}>
+                              {u.status === 'DISABLED' ? 'DISABLED' : 'ACTIVE'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRbacModal(u)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '6px 12px',
+                                background: '#f8fafc',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                fontSize: '0.8125rem',
+                                fontWeight: 600,
+                                color: '#1e293b',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s'
+                              }}
+                              onMouseOver={e => { e.currentTarget.style.background = '#e2e8f0'; }}
+                              onMouseOut={e => { e.currentTarget.style.background = '#f8fafc'; }}
+                            >
+                              <Shield size={13} style={{ color: '#0284c7' }} />
+                              Assign Modules
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── TAB 9: Audit Trail (Admin Only) ── */}
+      {activeTab === 'audit' && isAdmin && (
+        <>
+          <div className="ds-filter-row" style={{ flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+            <div className="ds-search-wrap" style={{ flex: '1 1 280px' }}>
+              <Search className="ds-search-icon" size={15} />
+              <input
+                type="text"
+                placeholder="Search audit trail by user, action, target, or keywords..."
+                className="ds-search-input"
+                value={auditSearch}
+                onChange={e => setAuditSearch(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', color: '#475569', fontWeight: 600 }}>
+                <Filter size={14} /> Filter:
+              </div>
+              <select
+                className="ds-filter-select"
+                value={auditCategoryFilter}
+                onChange={e => setAuditCategoryFilter(e.target.value)}
+                style={{
+                  padding: '7px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: '#1e293b'
+                }}
+              >
+                <option value="ALL">All Categories ({liveAuditLogs.length})</option>
+                <option value="SECURITY">Security &amp; RBAC</option>
+                <option value="QUALITY_CONTROL">Quality Control (QC)</option>
+                <option value="INVENTORY">Inventory &amp; Inward</option>
+                <option value="JOB_WORK">Job Work Operations</option>
+                <option value="SALES">Sales &amp; Dispatch</option>
+                <option value="MASTER_DATA">Master Configurations</option>
+              </select>
+
+              <button
+                type="button"
+                className="ds-btn-export"
+                onClick={() => {
+                  const exportRows = filteredAuditLogs.map(l => ({
+                    'Date & Time': l.timestamp ? new Date(l.timestamp).toLocaleString('en-IN') : '-',
+                    'User Name': l.user?.name || 'System',
+                    'User Email': l.user?.email || '-',
+                    'User Role': l.user?.role || '-',
+                    'Category': l.category || '-',
+                    'Action Code': l.action || '-',
+                    'Target ID': l.targetId || '-',
+                    'Summary': l.summary || '-'
+                  }));
+                  exportToCsv('Kamani_ERP_Audit_Trail.csv', exportRows);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  color: '#334155',
+                  cursor: 'pointer'
+                }}
+              >
+                <Download size={14} />
+                Export Audit Log
+              </button>
+            </div>
+          </div>
+
+          {/* Category Pill Summary Bar */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingBottom: '4px' }}>
+            {['ALL', 'SECURITY', 'QUALITY_CONTROL', 'INVENTORY', 'JOB_WORK', 'SALES', 'MASTER_DATA'].map(cat => {
+              const count = cat === 'ALL' 
+                ? liveAuditLogs.length 
+                : liveAuditLogs.filter(l => l.category === cat).length;
+              const catCfg = cat === 'ALL' 
+                ? { label: 'All Events', color: '#0f172a', bg: '#f1f5f9', border: '#cbd5e1' }
+                : (AUDIT_CATEGORIES[cat] || { label: cat, color: '#475569', bg: '#f8fafc', border: '#e2e8f0' });
+              const isActive = auditCategoryFilter === cat;
+
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setAuditCategoryFilter(cat)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '9999px',
+                    fontSize: '0.725rem',
+                    fontWeight: 600,
+                    border: isActive ? `2px solid ${catCfg.color}` : `1px solid ${catCfg.border}`,
+                    background: isActive ? catCfg.bg : '#ffffff',
+                    color: catCfg.color,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {catCfg.label}
+                  <span style={{
+                    background: isActive ? catCfg.color : '#e2e8f0',
+                    color: isActive ? '#ffffff' : '#475569',
+                    borderRadius: '9999px',
+                    padding: '0 5px',
+                    fontSize: '0.675rem'
+                  }}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="ds-table-card">
+            <div className="ds-table-wrap">
+              <table className="ds-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '150px', minWidth: '140px' }}>Timestamp</th>
+                    <th style={{ minWidth: '180px' }}>User / Operator</th>
+                    <th style={{ minWidth: '150px' }}>Category</th>
+                    <th style={{ minWidth: '160px' }}>Action</th>
+                    <th style={{ minWidth: '130px' }}>Target Record</th>
+                    <th style={{ minWidth: '340px' }}>Event Summary</th>
+                    <th style={{ textAlign: 'right', width: '100px', minWidth: '100px' }}>Payload</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAuditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '50px 20px', color: '#64748b' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                          <Activity size={32} style={{ color: '#cbd5e1' }} />
+                          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#334155' }}>
+                            No audit trail events found
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                            {auditSearch ? `No events match "${auditSearch}"` : 'Audit trail is active and capturing all user actions automatically.'}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAuditLogs.map(log => {
+                      const catConfig = AUDIT_CATEGORIES[log.category] || AUDIT_CATEGORIES.MASTER_DATA;
+                      const logDate = log.timestamp ? new Date(log.timestamp) : new Date();
+                      const dateStr = logDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                      const timeStr = logDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      const userInitial = (log.user?.name || log.user?.email || 'U').slice(0, 2).toUpperCase();
+
+                      return (
+                        <tr key={log.id}>
+                          <td style={{ minWidth: '140px' }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0f172a' }}>
+                              {dateStr}
+                            </div>
+                            <div style={{ fontSize: '0.725rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              <Clock size={11} /> {timeStr}
+                            </div>
+                          </td>
+                          <td style={{ minWidth: '180px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{
+                                width: '30px',
+                                height: '30px',
+                                borderRadius: '50%',
+                                background: '#f1f5f9',
+                                color: '#1e293b',
+                                border: '1px solid #cbd5e1',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 700,
+                                fontSize: '0.75rem'
+                              }}>
+                                {userInitial}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.825rem' }}>
+                                  {log.user?.name || 'System User'}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                                  {log.user?.role ? log.user.role.toUpperCase() : 'USER'} • {log.user?.email || ''}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ minWidth: '150px' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '2px 8px',
+                              borderRadius: '9999px',
+                              fontSize: '0.725rem',
+                              fontWeight: 600,
+                              background: catConfig.bg,
+                              color: catConfig.color,
+                              border: `1px solid ${catConfig.border}`
+                            }}>
+                              {catConfig.label}
+                            </span>
+                          </td>
+                          <td style={{ minWidth: '160px' }}>
+                            <span style={{
+                              fontFamily: 'monospace',
+                              fontSize: '0.725rem',
+                              fontWeight: 700,
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              color: '#334155'
+                            }}>
+                              {log.action || 'ACTION'}
+                            </span>
+                          </td>
+                          <td style={{ minWidth: '130px' }}>
+                            <span style={{
+                              fontWeight: 600,
+                              fontSize: '0.775rem',
+                              color: '#0369a1',
+                              background: '#f0f9ff',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              border: '1px solid #bae6fd',
+                              display: 'inline-block'
+                            }}>
+                              {log.targetId || '-'}
+                            </span>
+                          </td>
+                          <td style={{
+                            fontSize: '0.8125rem',
+                            color: '#1e293b',
+                            minWidth: '340px',
+                            whiteSpace: 'normal',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.45
+                          }}>
+                            {log.summary || '-'}
+                          </td>
+                          <td style={{ textAlign: 'right', width: '100px', minWidth: '100px', whiteSpace: 'nowrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAuditDetail(log)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '5px 12px',
+                                background: '#f8fafc',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: '#1e293b',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s'
+                              }}
+                              onMouseOver={e => { e.currentTarget.style.background = '#e2e8f0'; }}
+                              onMouseOut={e => { e.currentTarget.style.background = '#f8fafc'; }}
+                              title="Inspect payload"
+                            >
+                              <Eye size={12} style={{ color: '#0284c7' }} />
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Audit Event Detail Drawer / Modal ── */}
+      {selectedAuditDetail && (
+        <div
+          className="modal-overlay"
+          onClick={e => e.target === e.currentTarget && setSelectedAuditDetail(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: '20px'
+          }}
+        >
+          <div
+            className="modal-dialog"
+            style={{
+              background: '#ffffff',
+              borderRadius: '12px',
+              maxWidth: '640px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+              overflow: 'hidden'
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              borderBottom: '1px solid #e2e8f0',
+              background: '#f8fafc'
+            }}>
+              <div>
+                <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  Audit Event Details
+                </h2>
+                <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0' }}>
+                  Log ID: {selectedAuditDetail.id}
+                </p>
+              </div>
+              <button
+                className="modal-close-btn"
+                onClick={() => setSelectedAuditDetail(null)}
+                style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Timestamp</div>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#0f172a', marginTop: '2px' }}>
+                    {selectedAuditDetail.timestamp ? new Date(selectedAuditDetail.timestamp).toLocaleString('en-IN') : '-'}
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Operator</div>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#0f172a', marginTop: '2px' }}>
+                    {selectedAuditDetail.user?.name || 'System'} ({selectedAuditDetail.user?.role || 'user'})
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{selectedAuditDetail.user?.email}</div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Action Code</div>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#2563eb', fontFamily: 'monospace', marginTop: '2px' }}>
+                    {selectedAuditDetail.action}
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Target ID</div>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0369a1', marginTop: '2px' }}>
+                    {selectedAuditDetail.targetId || '-'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                  Summary
+                </div>
+                <div style={{ background: '#f1f5f9', padding: '10px 12px', borderRadius: '6px', fontSize: '0.85rem', color: '#0f172a', fontWeight: 500 }}>
+                  {selectedAuditDetail.summary}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#334155' }}>
+                    Event Payload / Metadata
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(selectedAuditDetail, null, 2));
+                      setCopiedAuditJson(true);
+                      setTimeout(() => setCopiedAuditJson(false), 2000);
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Copy size={11} />
+                    {copiedAuditJson ? 'Copied!' : 'Copy JSON'}
+                  </button>
+                </div>
+                <pre style={{
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  overflowX: 'auto',
+                  margin: 0,
+                  fontFamily: 'monospace',
+                  maxHeight: '220px'
+                }}>
+                  {JSON.stringify(selectedAuditDetail.details || {}, null, 2)}
+                </pre>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedAuditDetail(null)}
+                style={{
+                  padding: '6px 16px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RBAC Module Assignment Modal ── */}
+      {selectedUserForRbac && (
+        <div 
+          className="modal-overlay" 
+          onClick={e => e.target === e.currentTarget && setSelectedUserForRbac(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px'
+          }}
+        >
+          <div 
+            className="modal-dialog"
+            style={{
+              background: '#ffffff',
+              borderRadius: '12px',
+              maxWidth: '560px',
+              width: '100%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              overflow: 'hidden'
+            }}
+          >
+            <div 
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                borderBottom: '1px solid #e2e8f0',
+                background: '#f8fafc'
+              }}
+            >
+              <div>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                  Assign User Role &amp; Module Access
+                </h2>
+                <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0' }}>
+                  Configure role and module permissions for {selectedUserForRbac.displayName || selectedUserForRbac.email}
+                </p>
+              </div>
+              <button 
+                className="modal-close-btn" 
+                onClick={() => setSelectedUserForRbac(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '18px',
+                  cursor: 'pointer',
+                  color: '#64748b'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRbac} style={{ padding: '20px' }}>
+              {/* User details snippet */}
+              <div style={{
+                background: '#f1f5f9',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+                    {selectedUserForRbac.displayName || 'No Name Set'}
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                    {selectedUserForRbac.email}
+                  </div>
+                </div>
+                <span style={{
+                  padding: '3px 8px',
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '9999px',
+                  fontSize: '0.7rem',
+                  fontWeight: 600,
+                  color: '#475569'
+                }}>
+                  {selectedUserForRbac.uid?.slice(0, 10)}...
+                </span>
+              </div>
+
+              {/* 1. Select Role */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '8px' }}>
+                  1. Select Primary Role
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {[
+                    { id: 'admin', label: 'Admin', desc: 'Full System Access' },
+                    { id: 'accountant', label: 'Accountant', desc: 'Finance & Operations' },
+                    { id: 'employee', label: 'Employee', desc: 'Floor & Job Work' }
+                  ].map(r => {
+                    const isSelected = editRole === r.id;
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => handleRoleChange(r.id)}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                          background: isSelected ? '#eff6ff' : '#ffffff',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: isSelected ? '#1d4ed8' : '#1e293b' }}>
+                          {r.label}
+                        </span>
+                        <span style={{ fontSize: '0.7rem', color: isSelected ? '#3b82f6' : '#64748b', marginTop: '2px' }}>
+                          {r.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {editRole === 'admin' && (
+                  <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <ShieldAlert size={13} />
+                    Admins automatically have access to all modules and configurations.
+                  </p>
+                )}
+              </div>
+
+              {/* 2. Assign Modules */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#334155', margin: 0 }}>
+                    2. Permitted Modules ({editRole === 'admin' ? ERP_MODULES.length : editAssignedModules.length}/{ERP_MODULES.length})
+                  </label>
+                  {editRole !== 'admin' && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditAssignedModules(ERP_MODULES.map(m => m.id))}
+                        style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                      >
+                        Select All
+                      </button>
+                      <span style={{ color: '#cbd5e1' }}>|</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditAssignedModules([])}
+                        style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {ERP_MODULES.map(m => {
+                    const isChecked = editRole === 'admin' || editAssignedModules.includes(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          border: isChecked ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                          background: isChecked ? '#f0f9ff' : '#f8fafc',
+                          cursor: editRole === 'admin' ? 'not-allowed' : 'pointer',
+                          userSelect: 'none'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input
+                            type="checkbox"
+                            disabled={editRole === 'admin'}
+                            checked={isChecked}
+                            onChange={() => handleToggleModule(m.id)}
+                            style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#0f172a' }}>
+                              {m.name}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                              {m.description}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 600,
+                          padding: '2px 8px',
+                          borderRadius: '9999px',
+                          background: isChecked ? '#dcfce7' : '#fee2e2',
+                          color: isChecked ? '#166534' : '#991b1b'
+                        }}>
+                          {isChecked ? 'Visible' : 'Hidden'}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                <button
+                  type="button"
+                  className="mfooter-btn cancel"
+                  onClick={() => setSelectedUserForRbac(null)}
+                  disabled={isSavingRbac}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.8125rem'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingRbac}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.8125rem'
+                  }}
+                >
+                  {isSavingRbac ? 'Saving Changes...' : 'Save Permissions'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

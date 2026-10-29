@@ -165,7 +165,7 @@ export default function QcCheckModal({ qcCheck, onClose, onSuccess }) {
             <div>
               <div style={{ color: '#64748b', fontSize: '0.72rem' }}>Form / Color / Packaging</div>
               <div style={{ fontWeight: 600, color: '#0f172a' }}>{qcCheck.materialForm || 'Granule'} • {qcCheck.materialColor || 'Natural'}</div>
-              <div style={{ fontSize: '0.75rem', color: '#475569' }}>{qcCheck.packaging || 'Woven Bag'}</div>
+              <div style={{ fontSize: '0.75rem', color: '#475569' }}>{qcCheck.packaging || 'Woven Bag'}{qcCheck.laminationType ? ` (${qcCheck.laminationType})` : ''}</div>
             </div>
             <div>
               <div style={{ color: '#64748b', fontSize: '0.72rem' }}>Batch &amp; Inward Weight</div>

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { X, Factory, Calculator, FileText, CheckCircle2 } from 'lucide-react';
 import { issueRmToFactory } from '../api/inventory.api';
 import { subscribePersonnel, DEFAULT_PERSONNEL } from '../api/directory.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 function today() {
@@ -38,12 +40,16 @@ export default function IssueToFactoryModal({ rmList = [], onClose, onSaved }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (grossWght <= 0) {
-      alert('Please enter a valid Gross Weight to issue.');
+      await showAlert('Please enter a valid Gross Weight to issue.', { type: 'warning', title: 'Required Field' });
       return;
     }
 
     if (selectedRm && netWght > (Number(selectedRm.availFactory) || 0)) {
-      if (!confirm(`Warning: Net issued weight (${netWght} KG) exceeds available factory stock (${selectedRm.availFactory} KG). Proceed anyway?`)) {
+      const proceed = await showConfirm(
+        `Warning: Net issued weight (${netWght} KG) exceeds available factory stock (${selectedRm.availFactory} KG). Proceed anyway?`,
+        { title: 'Stock Notice', confirmText: 'Proceed Anyway', type: 'warning' }
+      );
+      if (!proceed) {
         return;
       }
     }
@@ -63,12 +69,12 @@ export default function IssueToFactoryModal({ rmList = [], onClose, onSaved }) {
         remarks: form.remarks
       });
 
-      alert(`Issue Slip ${form.slipNo} recorded successfully! Issued ${netWght.toLocaleString()} KG to factory.`);
+      await showAlert(`Issue Slip ${form.slipNo} recorded successfully! Issued ${netWght.toLocaleString()} KG to factory.`, { type: 'success' });
       if (onSaved) onSaved();
       onClose();
     } catch (err) {
       console.error('Error saving factory issue:', err);
-      alert(`Error issuing material to factory: ${err.message}`);
+      await showAlert(`Error issuing material to factory: ${err.message}`, { type: 'error' });
     }
   };
 
@@ -122,18 +128,18 @@ export default function IssueToFactoryModal({ rmList = [], onClose, onSaved }) {
           {/* Row 2: Select Material */}
           <div className="mform-field">
             <label className="mform-label">Item Name <span className="req">*</span></label>
-            <select
-              className="mform-select"
+            <SearchableSelect
               value={form.rawMaterialId}
-              onChange={e => set('rawMaterialId', e.target.value)}
+              onChange={val => set('rawMaterialId', val)}
+              options={rmList.map(rm => ({
+                value: rm.id,
+                label: `${rm.name} ^ ${rm.grade || rm.brand || ''}`,
+                sublabel: `Avail: ${Number(rm.availFactory || 0).toLocaleString()} KG`
+              }))}
+              placeholder="-- Select Raw Material --"
+              searchPlaceholder="Search material name, grade, brand..."
               required
-            >
-              {rmList.map(rm => (
-                <option key={rm.id} value={rm.id}>
-                  {rm.name} ^ {rm.grade || rm.brand} (Avail: {Number(rm.availFactory || 0).toLocaleString()} KG)
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* Row 3: Scale Weights */}
@@ -195,15 +201,13 @@ export default function IssueToFactoryModal({ rmList = [], onClose, onSaved }) {
           <div className="mform-row mform-col-2" style={{ marginTop: '14px' }}>
             <div className="mform-field">
               <label className="mform-label">Issued By</label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={form.issuedBy}
-                onChange={e => set('issuedBy', e.target.value)}
-              >
-                {personnelList.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+                onChange={val => set('issuedBy', val)}
+                options={personnelList}
+                placeholder="-- Select Supervisor --"
+                searchPlaceholder="Search personnel..."
+              />
             </div>
             <div className="mform-field">
               <label className="mform-label">Remarks</label>

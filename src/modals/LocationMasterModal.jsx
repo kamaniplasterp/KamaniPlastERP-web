@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, MapPin, Building, Warehouse, User, Phone, CheckCircle2 } from 'lucide-react';
 import { addLocation, updateLocation } from '../api/locations.api';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function LocationMasterModal({ locationToEdit, location, onClose, onSaved }) {
@@ -42,7 +43,7 @@ export default function LocationMasterModal({ locationToEdit, location, onClose,
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      alert('Please enter a location name.');
+      await showAlert('Please enter a location name.', { type: 'warning', title: 'Required Field' });
       return;
     }
 
@@ -57,17 +58,17 @@ export default function LocationMasterModal({ locationToEdit, location, onClose,
       if (isEditing) {
         const targetId = targetLoc.id || targetLoc.locationCode;
         await updateLocation(targetId, payload);
-        alert(`Location "${formData.name}" updated successfully!`);
+        await showAlert(`Location "${formData.name}" updated successfully!`, { type: 'success', title: 'Location Updated' });
       } else {
         await addLocation(payload);
-        alert(`Location "${formData.name}" created successfully!`);
+        await showAlert(`Location "${formData.name}" created successfully!`, { type: 'success', title: 'Location Created' });
       }
 
       if (onSaved) onSaved(payload);
       onClose();
     } catch (err) {
       console.error('Error saving location master:', err);
-      alert('Failed to save location. Check console for details.');
+      await showAlert('Failed to save location. Check console for details.', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }

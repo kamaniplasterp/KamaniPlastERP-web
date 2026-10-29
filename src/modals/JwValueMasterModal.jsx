@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, DollarSign, Tag, Calendar, Layers } from 'lucide-react';
 import { RM_ITEM_NAMES } from '../api/inventory.api';
 import { addJwValueMaster } from '../api/directory.api';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function JwValueMasterModal({ onClose, onSaved }) {
@@ -20,16 +21,16 @@ export default function JwValueMasterModal({ onClose, onSaved }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.code.trim()) {
-      alert('Please provide a unique code.');
+      await showAlert('Please provide a unique code.', { type: 'warning', title: 'Required Field' });
       return;
     }
     if (!formData.itemDescription.trim()) {
-      alert('Please select or specify an item description.');
+      await showAlert('Please select or specify an item description.', { type: 'warning', title: 'Required Field' });
       return;
     }
     const numVal = Number(formData.value);
     if (isNaN(numVal) || numVal <= 0) {
-      alert('Please enter a valid valuation amount.');
+      await showAlert('Please enter a valid valuation amount.', { type: 'warning', title: 'Invalid Value' });
       return;
     }
 
@@ -37,11 +38,11 @@ export default function JwValueMasterModal({ onClose, onSaved }) {
       setIsSubmitting(true);
       await addJwValueMaster(formData);
       if (onSaved) onSaved(formData);
-      alert(`JW Value Master record (${formData.code}) created successfully!`);
+      await showAlert(`JW Value Master record (${formData.code}) created successfully!`, { type: 'success', title: 'Valuation Created' });
       onClose();
     } catch (err) {
       console.error('Error creating JW Value Master record:', err);
-      alert('Failed to save JW Value Master. Please check console for details.');
+      await showAlert('Failed to save JW Value Master. Please check console for details.', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }

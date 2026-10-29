@@ -3,6 +3,8 @@ import { X, ShoppingCart, Plus, Trash2 } from 'lucide-react';
 import { createSalesOrder } from '../api/sales.api';
 import { subscribeBuyers } from '../api/directory.api';
 import { subscribeFinishedGoods } from '../api/inventory.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 const GST_RATE = 0.18;
@@ -119,9 +121,13 @@ export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
       } else {
         await createSalesOrder(payload);
       }
-      alert(`${isDispatch ? 'Dispatch Order' : 'Sales Order'} confirmed for ${custLabel}!`);
+      await showAlert(`${isDispatch ? 'Dispatch Order' : 'Sales Order'} confirmed for ${custLabel}!`, {
+        type: 'success',
+        title: isDispatch ? 'Dispatch Order Confirmed' : 'Sales Order Confirmed'
+      });
     } catch (err) {
       console.error('Error creating sales order:', err);
+      await showAlert('Failed to confirm order.', { type: 'error' });
     }
     onClose();
   };
@@ -155,14 +161,18 @@ export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
           <div className="mform-row mform-col-3">
             <div className="mform-field">
               <label className="mform-label">Customer <span className="req">*</span></label>
-              <select className="mform-select" value={form.customer} onChange={e => set('customer', e.target.value)} required>
-                <option value="">-- Select Customer --</option>
-                {liveBuyers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name || 'Buyer'} ({c.location || 'Gujarat'})
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={form.customer}
+                onChange={val => set('customer', val)}
+                options={liveBuyers.map(c => ({
+                  value: c.id,
+                  label: c.name || 'Buyer',
+                  sublabel: `${c.location || 'Gujarat'} • ${c.category || 'Buyer'}`
+                }))}
+                placeholder="-- Select Customer --"
+                searchPlaceholder="Search customer name, location..."
+                required
+              />
             </div>
             <div className="mform-field">
               <label className="mform-label">Customer PO Number <span className="req">*</span></label>
@@ -191,18 +201,17 @@ export default function SalesOrderModal({ onClose, onSave, mode = 'sales' }) {
                   <div className="mform-line-grid">
                     <div className="mform-field mform-field-wide">
                       <label className="mform-label-sm">Product SKU</label>
-                      <select
-                        className="mform-select mform-select-sm"
+                      <SearchableSelect
                         value={line.productId}
-                        onChange={e => handleProductChange(line.id, e.target.value)}
-                      >
-                        <option value="">-- Select Product --</option>
-                        {liveProducts.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.name || 'Finished Good'} ({p.code || p.id})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={val => handleProductChange(line.id, val)}
+                        options={liveProducts.map(p => ({
+                          value: p.id,
+                          label: `${p.name || 'Finished Good'} (${p.code || p.id})`,
+                          sublabel: `Rate: ₹${p.rate || 0} • Stock: ${p.stockQty || 0}`
+                        }))}
+                        placeholder="-- Select Product --"
+                        searchPlaceholder="Search product name, code..."
+                      />
                     </div>
                     <div className="mform-field">
                       <label className="mform-label-sm">Quantity</label>

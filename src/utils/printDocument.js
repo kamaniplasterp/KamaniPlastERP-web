@@ -1,3 +1,5 @@
+import { showAlert } from '../context/CustomAlertContext';
+
 /**
  * Kamani Plastic ERP - Statutory Document & PDF Print Engine
  * Generates Tax Invoices, Delivery Challans, Job Work Challans, Sales Order Acknowledgements, and GRNs.
@@ -381,7 +383,7 @@ const BASE_STYLES = `
 function openPrintWindow(title, htmlBody) {
   const win = window.open('', '_blank', 'width=900,height=800');
   if (!win) {
-    alert('Popup blocker prevented opening the print preview. Please allow popups for this site.');
+    showAlert('Popup blocker prevented opening the print preview. Please allow popups for this site.', { type: 'warning', title: 'Pop-up Blocked' });
     return;
   }
 

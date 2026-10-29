@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Truck } from 'lucide-react';
 import { createDispatch, subscribeSalesOrders } from '../api/sales.api';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }) {
@@ -76,12 +77,12 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
     const enteredQty = Number(quantities[itemId] !== undefined ? quantities[itemId] : remainingBalance);
 
     if (enteredQty <= 0) {
-      alert('Please enter a valid dispatch quantity greater than 0 Coils.');
+      await showAlert('Please enter a valid dispatch quantity greater than 0 Coils.', { type: 'warning', title: 'Required Field' });
       return;
     }
 
     if (remainingBalance > 0 && enteredQty > remainingBalance) {
-      alert(`Cannot dispatch ${enteredQty} Coils! Remaining balance on order is only ${remainingBalance} Coils.`);
+      await showAlert(`Cannot dispatch ${enteredQty} Coils! Remaining balance on order is only ${remainingBalance} Coils.`, { type: 'warning', title: 'Balance Exceeded' });
       return;
     }
 
@@ -124,9 +125,13 @@ export default function DispatchChallanModal({ onClose, onSave, defaultOrderId }
       } else {
         await createDispatch(dispatchPayload);
       }
-      alert(`Outward Dispatch Challan for ${targetOrder.customer || 'Customer'} (₹${dispatchTotal.toLocaleString('en-IN')}) generated successfully!`);
+      await showAlert(`Outward Dispatch Challan for ${targetOrder.customer || 'Customer'} (₹${dispatchTotal.toLocaleString('en-IN')}) generated successfully!`, {
+        type: 'success',
+        title: 'Dispatch Challan Generated'
+      });
     } catch (err) {
       console.error('Error creating dispatch:', err);
+      await showAlert('Failed to create dispatch challan.', { type: 'error' });
     }
     onClose();
   };

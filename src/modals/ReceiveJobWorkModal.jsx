@@ -11,6 +11,8 @@ import {
 import { subscribeLocations } from '../api/locations.api';
 import { subscribeProductAttributes, DEFAULT_PRODUCT_ATTRIBUTES } from '../api/productMatrix.api';
 import { subscribeProcesses } from '../api/process.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
@@ -270,12 +272,16 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
     if (isSubmitting) return;
 
     if (calculatedNetKg <= 0 && gross <= 0) {
-      alert('Please enter a valid Gross / Inward quantity greater than 0 KG.');
+      await showAlert('Please enter a valid Gross / Inward quantity greater than 0 KG.', { type: 'warning', title: 'Required Field' });
       return;
     }
 
     if (pendingMax > 0 && calculatedNetKg > pendingMax * 1.05) {
-      if (!confirm(`Received Net weight (${calculatedNetKg.toFixed(2)} KG) exceeds pending balance (${pendingMax.toFixed(2)} KG) by more than 5%. Do you wish to proceed?`)) {
+      const proceed = await showConfirm(
+        `Received Net weight (${calculatedNetKg.toFixed(2)} KG) exceeds pending balance (${pendingMax.toFixed(2)} KG) by more than 5%. Do you wish to proceed?`,
+        { title: 'Tolerance Warning', confirmText: 'Proceed Anyway', type: 'warning' }
+      );
+      if (!proceed) {
         return;
       }
     }
@@ -406,17 +412,14 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
                 <Building size={12} style={{ display: 'inline', marginRight: 4 }} />
                 Department <span className="req">*</span>
               </label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={form.department}
-                onChange={e => set('department', e.target.value)}
+                onChange={val => set('department', val)}
+                options={liveProcesses.map(proc => proc.processName || proc.name || proc)}
+                placeholder="-- Select Department / Process --"
+                searchPlaceholder="Search processes..."
                 required
-              >
-                {liveProcesses.map(proc => {
-                  const pName = proc.processName || proc.name || proc;
-                  return <option key={proc.id || pName} value={pName}>{pName}</option>;
-                })}
-              </select>
+              />
             </div>
 
             <div className="mform-field">
@@ -676,11 +679,17 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
               </div>
               <div className="mform-field">
                 <label className="mform-label">Quality Status</label>
-                <select className="mform-select" value={form.qualityStatus} onChange={e => set('qualityStatus', e.target.value)}>
-                  <option value="Approved">Approved (A-Grade Passed)</option>
-                  <option value="Rework">Rework Required</option>
-                  <option value="Rejected">Rejected Consignment</option>
-                </select>
+                <SearchableSelect
+                  value={form.qualityStatus}
+                  onChange={val => set('qualityStatus', val)}
+                  options={[
+                    { value: 'Approved', label: 'Approved (A-Grade Passed)' },
+                    { value: 'Rework', label: 'Rework Required' },
+                    { value: 'Rejected', label: 'Rejected Consignment' }
+                  ]}
+                  placeholder="-- Select Quality Status --"
+                  searchPlaceholder="Search status..."
+                />
               </div>
             </div>
           </div>
@@ -942,9 +951,14 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
 
             <div className="mform-field">
               <label className="mform-label">Received By <span className="req">*</span></label>
-              <select className="mform-select" value={form.receivedBy} onChange={e => set('receivedBy', e.target.value)}>
-                {personnelList.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
+              <SearchableSelect
+                value={form.receivedBy}
+                onChange={val => set('receivedBy', val)}
+                options={personnelList}
+                placeholder="-- Select Signatory --"
+                searchPlaceholder="Search supervisor..."
+                required
+              />
             </div>
           </div>
 

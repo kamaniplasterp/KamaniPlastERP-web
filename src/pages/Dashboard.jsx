@@ -165,6 +165,17 @@ function DonutChart({ rmStock = 0, fgStock = 0, jobWorkStock = 0 }) {
   );
 }
 
+function formatFgShortName(raw = '') {
+  let cleaned = (raw || '')
+    .replace(/\^/g, '')
+    .replace(/\*/g, ' ')
+    .replace(/--+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  cleaned = cleaned.replace(/\b([A-Z])([A-Z]+)\b/g, (_, f, r) => f + r.toLowerCase());
+  return cleaned.length > 16 ? `${cleaned.slice(0, 15)}…` : cleaned;
+}
+
 function BarChart({ fgStock = 0, fgList = [] }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
 
@@ -177,7 +188,7 @@ function BarChart({ fgStock = 0, fgList = [] }) {
         const free = Math.max(0, stock - reserved);
         const name = fg.name || fg.code || 'Finished Good';
         return {
-          label: name,
+          label: formatFgShortName(name),
           fullLabel: `${name} (${fg.code || 'FG'})`,
           free,
           reserved,
@@ -191,7 +202,7 @@ function BarChart({ fgStock = 0, fgList = [] }) {
     : Math.max(100, fgStock || 100);
   const max = Math.ceil(maxVal / 100) * 100 || 100;
 
-  const chartH = 125, paddingL = 36, paddingB = 64, paddingTop = 10, paddingR = 12;
+  const chartH = 125, paddingL = 36, paddingB = 56, paddingTop = 10, paddingR = 12;
   const svgW = Math.max(360, bars.length * 85);
   const svgH = chartH + paddingB + paddingTop;
   const barGroupW = bars.length > 0 ? (svgW - paddingL - paddingR) / bars.length : 60;
@@ -271,9 +282,9 @@ function BarChart({ fgStock = 0, fgList = [] }) {
                 fontSize={bars.length > 3 ? "8" : "8.5"}
                 fontWeight="600"
                 fill={hoveredIdx === i ? '#2563eb' : '#64748b'}
-                transform={`rotate(-35, ${cx}, ${paddingTop + chartH + 12})`}
+                transform={`rotate(-25, ${cx}, ${paddingTop + chartH + 12})`}
               >
-                {b.label.length > 20 ? `${b.label.slice(0, 18)}…` : b.label}
+                {b.label}
               </text>
             </g>
           );
@@ -321,6 +332,7 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
   } = useWorkflow();
 
   const [qcList, setQcList] = useState([]);
+  const [showAllReorders, setShowAllReorders] = useState(false);
   useEffect(() => {
     const unsub = subscribeQcChecks(setQcList);
     return () => unsub();
@@ -634,173 +646,172 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
         </div>
       </div>
 
-      {/* ── Main operational row ── */}
-      <div className="ops-row">
+      {/* ── Row 1: Operations Overview (Job Work + Recent Dispatches) ── */}
+      <div className="ops-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(320px, 1fr)', gap: '16px', alignItems: 'stretch' }}>
         {/* Left: Job Work Table */}
-        <div className="ops-main">
-          <div className="section-card">
-            <div className="section-header">
-              <div>
-                <div className="section-title">Active Job Work Lifecycle</div>
-                <div className="section-sub">Live processing status at external vendors</div>
-              </div>
-              <button
-                className="section-link"
-                onClick={() => navigate('/job-work', { state: { tab: 'orders' } })}
-              >
-                View Ledger →
-              </button>
+        <div className="section-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div className="section-header">
+            <div>
+              <div className="section-title">Active Job Work Lifecycle</div>
+              <div className="section-sub">Live processing status at external vendors</div>
             </div>
-            <div className="erp-table-wrap">
-              <table className="erp-table">
-                <thead>
-                  <tr>
-                    <th>JW NO.</th>
-                    <th>PARTY NAME</th>
-                    <th>MATERIAL</th>
-                    <th>SENT QTY</th>
-                    <th>RCVD QTY</th>
-                    <th>STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayJobWorkList.slice(0, 5).map(jw => (
-                    <tr
-                      key={jw.id}
-                      onClick={() => navigate('/job-work', { state: { selectedJwId: jw.id || jw.rawDocId } })}
-                      style={{ cursor: 'pointer' }}
-                      title={`View detail page for ${jw.id}`}
-                    >
-                      <td><span className="jw-link">{jw.id}</span></td>
-                      <td>{jw.party}</td>
-                      <td className="td-material">{jw.material}</td>
-                      <td>{jw.sent}</td>
-                      <td className={jw.status === 'OVERDUE' ? 'td-overdue' : ''}>{jw.recd}</td>
-                      <td><StatusBadge status={jw.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <button
+              className="section-link"
+              onClick={() => navigate('/job-work', { state: { tab: 'orders' } })}
+            >
+              View Ledger →
+            </button>
           </div>
-
-          {/* Charts row */}
-          <div className="charts-row">
-            <div className="section-card chart-card">
-              <div className="section-header">
-                <div className="section-title">Inventory Distribution</div>
-                <div className="section-sub">KG &amp; Units</div>
-              </div>
-              <DonutChart rmStock={rmStock} fgStock={fgStock} jobWorkStock={jobWorkStock} />
-            </div>
-            <div className="section-card chart-card">
-              <div className="section-header">
-                <div className="section-title">Finished Goods Allocation</div>
-                <button
-                  className="section-link"
-                  onClick={() => navigate('/inventory', { state: { tab: 'fg' } })}
-                  style={{ cursor: 'pointer' }}
-                >
-                  View Stock →
-                </button>
-              </div>
-              <BarChart fgStock={fgStock} fgList={fgList} />
-            </div>
+          <div className="erp-table-wrap" style={{ flex: 1 }}>
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>JW NO.</th>
+                  <th>PARTY NAME</th>
+                  <th>MATERIAL</th>
+                  <th>SENT QTY</th>
+                  <th>RCVD QTY</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayJobWorkList.slice(0, 5).map(jw => (
+                  <tr
+                    key={jw.id}
+                    onClick={() => navigate('/job-work', { state: { selectedJwId: jw.id || jw.rawDocId } })}
+                    style={{ cursor: 'pointer' }}
+                    title={`View detail page for ${jw.id}`}
+                  >
+                    <td><span className="jw-link">{jw.id}</span></td>
+                    <td>{jw.party}</td>
+                    <td className="td-material">{jw.material}</td>
+                    <td>{jw.sent}</td>
+                    <td className={jw.status === 'OVERDUE' ? 'td-overdue' : ''}>{jw.recd}</td>
+                    <td><StatusBadge status={jw.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Right: Dispatches + Traceability */}
-        <div className="ops-sidebar">
-          {/* Recent Dispatches */}
-          <div className="section-card">
-            <div className="section-header">
-              <div className="section-title">Recent Dispatches</div>
-              <button
-                className="section-link"
-                onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
-                style={{ cursor: 'pointer' }}
-              >
-                All Challans →
-              </button>
-            </div>
-            <div className="dispatch-list">
-              {(simulatedDispatches || []).length === 0 ? (
-                <div style={{ color: '#94a3b8', fontSize: '0.78rem', padding: '12px 0', textAlign: 'center' }}>
-                  No recent dispatches recorded in database.
-                </div>
-              ) : (
-                (simulatedDispatches || []).slice(0, 5).map((d, i) => {
-                  const dQty = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 0;
-                  const dVal = (typeof d.totalValue === 'number' && d.totalValue > 0)
-                    ? `₹${d.totalValue.toLocaleString('en-IN')}`
-                    : ((d.value && d.value !== '₹0') ? d.value : `₹${Math.round(dQty * 2450 * 1.18).toLocaleString('en-IN')}`);
-                  return (
-                    <div
-                      key={d.id || i}
-                      className="dispatch-item"
-                      onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
-                      style={{ cursor: 'pointer' }}
-                      title={`View dispatches for ${d.customer}`}
-                    >
-                      <div className="dispatch-bar" />
-                      <div className="dispatch-info">
-                        <div className="dispatch-party">{d.customer}</div>
-                        <div className="dispatch-ref">{d.challanNo || d.dispatchNo} • {d.dispatchedQty || `${dQty} Coils`}</div>
-                      </div>
-                      <div className="dispatch-right">
-                        <div className="dispatch-amount">{dVal}</div>
-                        <StatusBadge status={d.status} />
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Material Traceability */}
-          <div className="section-card traceability-card">
-            <div className="trace-header">
-              <div className="section-title">Material Traceability</div>
-              <div className="section-sub">Real-time batch movement across Job Workers and Inventory.</div>
-            </div>
-            <div className="trace-steps">
-              {dynamicTraceabilitySteps.length > 0 ? (
-                dynamicTraceabilitySteps.map((step, i) => (
-                  <div key={i} className="trace-step">
-                    <div className={`trace-dot trace-dot-${step.color}`} />
-                    {i < dynamicTraceabilitySteps.length - 1 && <div className="trace-line" />}
-                    <div className="trace-step-info">
-                      <div className="trace-step-label">{step.label}</div>
-                      <div className="trace-step-sub">{step.sub}</div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div style={{ color: '#94a3b8', fontSize: '0.82rem', padding: '16px 0', textAlign: 'center' }}>
-                  No active material movements recorded yet.
-                </div>
-              )}
-            </div>
+        {/* Right: Recent Dispatches */}
+        <div className="section-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div className="section-header">
+            <div className="section-title">Recent Dispatches</div>
             <button
-              className="trace-open-btn"
-              onClick={() => navigate('/inventory', { state: { tab: 'traceability' } })}
+              className="section-link"
+              onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
               style={{ cursor: 'pointer' }}
             >
-              OPEN TRACE TOOL
+              All Challans →
             </button>
+          </div>
+          <div className="dispatch-list" style={{ flex: 1 }}>
+            {(simulatedDispatches || []).length === 0 ? (
+              <div style={{ color: '#94a3b8', fontSize: '0.78rem', padding: '12px 0', textAlign: 'center' }}>
+                No recent dispatches recorded in database.
+              </div>
+            ) : (
+              (simulatedDispatches || []).slice(0, 5).map((d, i) => {
+                const dQty = Number(d.dispatchedQtyCoils) || parseFloat(String(d.dispatchedQty || '').replace(/[^0-9.]/g, '')) || 0;
+                const dVal = (typeof d.totalValue === 'number' && d.totalValue > 0)
+                  ? `₹${d.totalValue.toLocaleString('en-IN')}`
+                  : ((d.value && d.value !== '₹0') ? d.value : `₹${Math.round(dQty * 2450 * 1.18).toLocaleString('en-IN')}`);
+                return (
+                  <div
+                    key={d.id || i}
+                    className="dispatch-item"
+                    onClick={() => navigate('/sales', { state: { tab: 'dispatches' } })}
+                    style={{ cursor: 'pointer' }}
+                    title={`View dispatches for ${d.customer}`}
+                  >
+                    <div className="dispatch-bar" />
+                    <div className="dispatch-info">
+                      <div className="dispatch-party">{d.customer}</div>
+                      <div className="dispatch-ref">{d.challanNo || d.dispatchNo} • {d.dispatchedQty || `${dQty} Coils`}</div>
+                    </div>
+                    <div className="dispatch-right">
+                      <div className="dispatch-amount">{dVal}</div>
+                      <StatusBadge status={d.status} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── Quality Control SLA Alerts Banner (Change 5) ── */}
+      {/* ── Row 2: Analytics & Traceability (3 Uniform Baseline Columns) ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '16px', marginTop: '16px', alignItems: 'stretch' }}>
+        {/* Card 1: Inventory Distribution */}
+        <div className="section-card chart-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div className="section-header">
+            <div className="section-title">Inventory Distribution</div>
+            <div className="section-sub">KG &amp; Units</div>
+          </div>
+          <DonutChart rmStock={rmStock} fgStock={fgStock} jobWorkStock={jobWorkStock} />
+        </div>
+
+        {/* Card 2: Finished Goods Allocation */}
+        <div className="section-card chart-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div className="section-header">
+            <div className="section-title">Finished Goods Allocation</div>
+            <button
+              className="section-link"
+              onClick={() => navigate('/inventory', { state: { tab: 'fg' } })}
+              style={{ cursor: 'pointer' }}
+            >
+              View Stock →
+            </button>
+          </div>
+          <BarChart fgStock={fgStock} fgList={fgList} />
+        </div>
+
+        {/* Card 3: Material Traceability */}
+        <div className="section-card traceability-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div className="trace-header">
+            <div className="section-title">Material Traceability</div>
+            <div className="section-sub">Real-time batch movement across Job Workers and Inventory.</div>
+          </div>
+          <div className="trace-steps" style={{ flex: 1 }}>
+            {dynamicTraceabilitySteps.length > 0 ? (
+              dynamicTraceabilitySteps.map((step, i) => (
+                <div key={i} className="trace-step">
+                  <div className={`trace-dot trace-dot-${step.color}`} />
+                  {i < dynamicTraceabilitySteps.length - 1 && <div className="trace-line" />}
+                  <div className="trace-step-info">
+                    <div className="trace-step-label">{step.label}</div>
+                    <div className="trace-step-sub">{step.sub}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div style={{ color: '#94a3b8', fontSize: '0.82rem', padding: '16px 0', textAlign: 'center' }}>
+                No active material movements recorded yet.
+              </div>
+            )}
+          </div>
+          <button
+            className="trace-open-btn"
+            onClick={() => navigate('/inventory', { state: { tab: 'traceability' } })}
+            style={{ cursor: 'pointer', marginTop: '12px' }}
+          >
+            OPEN TRACE TOOL
+          </button>
+        </div>
+      </div>
+
+      {/* ── Quality Control SLA Alerts Banner ── */}
       {(overdueQc.length > 0 || pendingQc.length > 0) && (
         <div className="section-card" style={{
           background: overdueQc.length > 0 ? '#fff1f2' : '#fefce8',
           border: `1px solid ${overdueQc.length > 0 ? '#fecdd3' : '#fef08a'}`,
           borderRadius: '12px',
-          padding: '16px 20px',
-          marginBottom: '20px'
+          padding: '14px 20px',
+          marginTop: '16px',
+          marginBottom: '16px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -828,7 +839,7 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
               </div>
             </div>
             <button
-              onClick={() => navigate('/inventory', { state: { tab: 'qc' } })}
+              onClick={() => navigate('/inventory', { state: { tab: 'rm', subView: 'inward' } })}
               style={{
                 background: overdueQc.length > 0 ? '#dc2626' : '#d97706',
                 color: '#ffffff',
@@ -843,21 +854,50 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
                 gap: '6px'
               }}
             >
-              Open QC Inspection Hub →
+              Review QC Inwards →
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Full-Width Reorder Alerts Banner ── */}
+      {/* ── Full-Width Reorder Alerts Banner (Clean & Collapsible) ── */}
       {reorderAlerts.length > 0 && (
-        <div className="section-card reorder-banner-card">
-          <div className="reorder-header">
-            <AlertTriangle size={15} className="reorder-icon" />
-            <span className="reorder-title">INVENTORY BELOW REORDER THRESHOLDS ({reorderAlerts.length} ITEMS)</span>
+        <div className="section-card reorder-banner-card" style={{ marginTop: '0px' }}>
+          <div className="reorder-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={15} className="reorder-icon" />
+              <span className="reorder-title">INVENTORY BELOW REORDER THRESHOLDS ({reorderAlerts.length} ITEMS)</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {reorderAlerts.length > 4 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllReorders(prev => !prev)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#dc2626',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  {showAllReorders ? 'Show Top 4 Critical' : `Expand All (${reorderAlerts.length})`}
+                </button>
+              )}
+              <button
+                type="button"
+                className="section-link"
+                onClick={() => navigate('/inventory', { state: { tab: 'rm' } })}
+                style={{ cursor: 'pointer', color: '#dc2626', fontWeight: 700, fontSize: '0.78rem' }}
+              >
+                View Inventory Ledger →
+              </button>
+            </div>
           </div>
           <div className="reorder-grid">
-            {reorderAlerts.map((alert, i) => (
+            {(showAllReorders ? reorderAlerts : reorderAlerts.slice(0, 4)).map((alert, i) => (
               <div key={i} className="reorder-item">
                 <div className="reorder-item-left">
                   <div className="reorder-name">

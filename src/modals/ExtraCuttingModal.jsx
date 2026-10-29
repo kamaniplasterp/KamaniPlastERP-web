@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Scissors, Calendar, User, FileText, DollarSign, Weight, AlertCircle } from 'lucide-react';
 import { addExtraCutting } from '../api/jobwork.api';
 import { subscribeVendors } from '../api/directory.api';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
@@ -37,15 +38,15 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.partyName.trim()) {
-      alert('Please select or specify a Job Work party name.');
+      await showAlert('Please select or specify a Job Work party name.', { type: 'warning', title: 'Required Field' });
       return;
     }
     if (weightNum <= 0) {
-      alert('Please enter a valid weight greater than 0 KG.');
+      await showAlert('Please enter a valid weight greater than 0 KG.', { type: 'warning', title: 'Invalid Weight' });
       return;
     }
     if (rateNum < 0) {
-      alert('Rate cannot be negative.');
+      await showAlert('Rate cannot be negative.', { type: 'warning', title: 'Invalid Rate' });
       return;
     }
 
@@ -58,11 +59,11 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
         totalAmount: parseFloat(calculatedTotal)
       });
       if (onSaved) onSaved(formData);
-      alert(`Extra Cutting entry of ${weightNum} KG (₹${calculatedTotal}) saved for ${formData.partyName}!`);
+      await showAlert(`Extra Cutting entry of ${weightNum} KG (₹${calculatedTotal}) saved for ${formData.partyName}!`, { type: 'success', title: 'Deduction Saved' });
       onClose();
     } catch (err) {
       console.error('Error saving extra cutting deduction:', err);
-      alert('Failed to save record. Please check console.');
+      await showAlert('Failed to save record. Please check console.', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }

@@ -1,18 +1,34 @@
-import { useState, useEffect } from 'react';
-import { X, Cog, Layers, DollarSign, Scale, Percent, FileText, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Cog, Layers, Scale, Percent, FileText, CheckCircle2 } from 'lucide-react';
 import { addProcess, updateProcess } from '../api/process.api';
+import { 
+  subscribeProcessMaterials, 
+  getInputMaterialNames, 
+  getOutputProductNames 
+} from '../api/processMaterials.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function ProcessMasterModal({ processToEdit, process, onClose, onSaved }) {
   const targetProcess = processToEdit || process;
   const isEditing = Boolean(targetProcess && (targetProcess.id || targetProcess.processCode));
 
+  const [liveMaterials, setLiveMaterials] = useState([]);
+
+  useEffect(() => {
+    const unsub = subscribeProcessMaterials(setLiveMaterials);
+    return () => unsub();
+  }, []);
+
+  const inputOptions = useMemo(() => getInputMaterialNames(liveMaterials), [liveMaterials]);
+  const outputOptions = useMemo(() => getOutputProductNames(liveMaterials), [liveMaterials]);
+
   const [formData, setFormData] = useState({
     processCode: targetProcess?.processCode || `PROC-${Math.floor(100 + Math.random() * 900)}`,
     processName: targetProcess?.processName || '',
     inputItemType: targetProcess?.inputItemType || 'PP/HDPE Granules',
     outputItemType: targetProcess?.outputItemType || 'Fishing Yarn',
-    defaultRatePerKg: targetProcess?.defaultRatePerKg !== undefined ? String(targetProcess.defaultRatePerKg) : '5.00',
     isFixedWeight: targetProcess?.isFixedWeight !== undefined ? targetProcess.isFixedWeight : true,
     standardBagWeightKg: targetProcess?.standardBagWeightKg !== undefined ? String(targetProcess.standardBagWeightKg) : '50.0',
     toleranceKg: targetProcess?.toleranceKg !== undefined ? String(targetProcess.toleranceKg) : '1.0',
@@ -27,7 +43,6 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
         processName: targetProcess.processName || '',
         inputItemType: targetProcess.inputItemType || 'PP/HDPE Granules',
         outputItemType: targetProcess.outputItemType || 'Fishing Yarn',
-        defaultRatePerKg: targetProcess.defaultRatePerKg !== undefined ? String(targetProcess.defaultRatePerKg) : '5.00',
         isFixedWeight: targetProcess.isFixedWeight !== undefined ? targetProcess.isFixedWeight : true,
         standardBagWeightKg: targetProcess.standardBagWeightKg !== undefined ? String(targetProcess.standardBagWeightKg) : '50.0',
         toleranceKg: targetProcess.toleranceKg !== undefined ? String(targetProcess.toleranceKg) : '1.0',
@@ -46,7 +61,7 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.processName.trim()) {
-      alert('Please enter a valid process name.');
+      await showAlert('Please enter a valid process name.', { type: 'warning', title: 'Required Field' });
       return;
     }
 
@@ -54,7 +69,6 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
       setIsSubmitting(true);
       const payload = {
         ...formData,
-        defaultRatePerKg: Number(formData.defaultRatePerKg || 0),
         isFixedWeight: Boolean(formData.isFixedWeight),
         standardBagWeightKg: formData.isFixedWeight ? Number(formData.standardBagWeightKg || 50) : 0,
         toleranceKg: formData.isFixedWeight ? Number(formData.toleranceKg || 1) : 0,
@@ -64,17 +78,17 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
       if (isEditing) {
         const targetId = targetProcess.id || targetProcess.processCode;
         await updateProcess(targetId, payload);
-        alert(`Process "${formData.processName}" updated successfully!`);
+        await showAlert(`Process "${formData.processName}" updated successfully!`, { type: 'success', title: 'Process Updated' });
       } else {
         await addProcess(payload);
-        alert(`Process "${formData.processName}" created successfully!`);
+        await showAlert(`Process "${formData.processName}" created successfully!`, { type: 'success', title: 'Process Created' });
       }
 
       if (onSaved) onSaved(payload);
       onClose();
     } catch (err) {
       console.error('Error saving process master:', err);
-      alert('Failed to save process master. Check console for details.');
+      await showAlert('Failed to save process master. Check console for details.', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -96,7 +110,7 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
               <p className="modal-subtitle">
                 {isEditing 
                   ? `Editing: "${targetProcess?.processName || formData.processName}" (${targetProcess?.processCode || formData.processCode})` 
-                  : 'Define conversion rates, fixed bag weight rules, and input/output mapping'}
+                  : 'Define fixed bag weight rules, scrap loss parameters, and input/output mapping'}
               </p>
             </div>
           </div>
@@ -153,55 +167,43 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
               />
             </div>
             <div className="mform-field">
-              <label className="mform-label">Processing Rate (₹ / KG) <span className="req">*</span></label>
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 13 }}>₹</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  style={{ paddingLeft: 24 }}
-                  className="mform-input"
-                  placeholder="e.g. 5.00"
-                  value={formData.defaultRatePerKg}
-                  onChange={e => handleChange('defaultRatePerKg', e.target.value)}
-                  required
-                />
-              </div>
+              <label className="mform-label">Process Name <span className="req">*</span></label>
+              <input
+                type="text"
+                className="mform-input"
+                placeholder="e.g. Granules to Fishing Yarn or Fishing Yarn to Twine 3x3"
+                value={formData.processName}
+                onChange={e => handleChange('processName', e.target.value)}
+                required
+              />
             </div>
-          </div>
-
-          <div className="mform-field">
-            <label className="mform-label">Process Name <span className="req">*</span></label>
-            <input
-              type="text"
-              className="mform-input"
-              placeholder="e.g. Granules to Fishing Yarn or Fishing Yarn to Twine 3x3"
-              value={formData.processName}
-              onChange={e => handleChange('processName', e.target.value)}
-              required
-            />
           </div>
 
           <div className="mform-row mform-col-2">
             <div className="mform-field">
-              <label className="mform-label">Input Material Type <span style={{ fontSize: '0.72rem', color: '#64748b' }}>(Optional)</span></label>
-              <input
-                type="text"
-                className="mform-input"
-                placeholder="e.g. PP/HDPE Granules or Fishing Yarn"
+              <label className="mform-label">
+                Input Material Type <span style={{ fontSize: '0.72rem', color: '#64748b' }}></span>
+              </label>
+              <SearchableSelect
                 value={formData.inputItemType}
-                onChange={e => handleChange('inputItemType', e.target.value)}
+                onChange={val => handleChange('inputItemType', val)}
+                options={inputOptions}
+                placeholder="-- Select Input Material Type --"
+                searchPlaceholder="Search input materials (e.g. PP, Granules, Yarn)..."
+                allowCustom={true}
               />
             </div>
             <div className="mform-field">
-              <label className="mform-label">Output Product Type <span style={{ fontSize: '0.72rem', color: '#64748b' }}>(Optional)</span></label>
-              <input
-                type="text"
-                className="mform-input"
-                placeholder="e.g. Fishing Yarn or 3x3 Twine Hank"
+              <label className="mform-label">
+                Output Product Type <span style={{ fontSize: '0.72rem', color: '#64748b' }}></span>
+              </label>
+              <SearchableSelect
                 value={formData.outputItemType}
-                onChange={e => handleChange('outputItemType', e.target.value)}
+                onChange={val => handleChange('outputItemType', val)}
+                options={outputOptions}
+                placeholder="-- Select Output Product Type --"
+                searchPlaceholder="Search output products (e.g. Twine, Rope, Yarn)..."
+                allowCustom={true}
               />
             </div>
           </div>

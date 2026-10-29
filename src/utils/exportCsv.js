@@ -1,3 +1,5 @@
+import { showAlert } from '../context/CustomAlertContext';
+
 /**
  * Helper utility to convert JSON array to CSV and trigger browser download.
  * @param {string} filename - Name of the exported file (e.g. 'Job_Work_Ledger.csv')
@@ -5,7 +7,7 @@
  */
 export function exportToCsv(filename, rows) {
   if (!rows || !rows.length) {
-    alert('No data available to export.');
+    showAlert('No data available to export.', { type: 'warning', title: 'Export Notice' });
     return;
   }
 

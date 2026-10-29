@@ -15,6 +15,8 @@ import {
 } from '../api/directory.api';
 import { subscribeProcesses } from '../api/process.api';
 import { subscribeLocations } from '../api/locations.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 function today() {
@@ -53,7 +55,6 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               department: first.processName || f.department,
               processType: first.processName,
               processId: first.processCode || first.id,
-              processingRate: String(first.defaultRatePerKg || '5.00'),
               isFixedWeight: Boolean(first.isFixedWeight),
               standardBagWeightKg: String(first.standardBagWeightKg || 50),
               bLossPct: first.expectedScrapPct !== undefined ? String(first.expectedScrapPct) : f.bLossPct
@@ -200,11 +201,10 @@ export default function NewJobWorkModal({ onClose, onSave }) {
     const p = displayVendors.find(v => v.id === partyId);
     const procKey = form.processId || form.processType;
     
-    // Priority: 1. Party-Specific Rate Master (Change 1) -> 2. Vendor Specific Contract Rate -> 3. Vendor Base Rate -> 4. Process Default Rate
+    // Priority: 1. Party-Specific Rate Master -> 2. Vendor Specific Contract Rate -> 3. Vendor Base Rate
     const partyMasterRate = getPartyRateByProcess(p?.name || partyId, form.processType, liveJwRates) ??
       getPartyRateByProcess(p?.name || partyId, form.processId, liveJwRates);
     const contractRate = p?.rateContracts?.[procKey] || p?.rateContracts?.[form.processType];
-    const matched = liveProcesses.find(proc => proc.id === form.processId || proc.processCode === form.processId || proc.processName === form.processType);
     
     const newRate = partyMasterRate !== null
       ? String(partyMasterRate)
@@ -212,7 +212,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
           ? String(contractRate) 
           : (p && p.rate !== undefined 
               ? String(p.rate) 
-              : (matched?.defaultRatePerKg !== undefined ? String(matched.defaultRatePerKg) : form.processingRate)));
+              : form.processingRate));
 
     setForm(f => ({
       ...f,
@@ -239,7 +239,7 @@ export default function NewJobWorkModal({ onClose, onSave }) {
           ? String(contractRate)
           : (p?.rate !== undefined
               ? String(p.rate)
-              : (matched?.defaultRatePerKg !== undefined ? String(matched.defaultRatePerKg) : form.processingRate)));
+              : form.processingRate));
 
     if (matched) {
       setForm(f => ({
@@ -284,12 +284,12 @@ export default function NewJobWorkModal({ onClose, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (netWeight <= 0 && grossWght <= 0) {
-      alert('Please enter a valid Gross Weight greater than 0 KG.');
+      await showAlert('Please enter a valid Gross Weight greater than 0 KG.', { type: 'warning', title: 'Required Field' });
       return;
     }
     const availInFactory = Number(selMaterial?.availFactory) || 0;
     if (selMaterial && netWeight > availInFactory) {
-      alert(`Cannot issue ${netWeight.toLocaleString()} KG! Factory stock only has ${availInFactory.toLocaleString()} KG available.`);
+      await showAlert(`Cannot issue ${netWeight.toLocaleString()} KG! Factory stock only has ${availInFactory.toLocaleString()} KG available.`, { type: 'warning', title: 'Insufficient Stock' });
       return;
     }
 
@@ -359,10 +359,13 @@ export default function NewJobWorkModal({ onClose, onSave }) {
       } else {
         await createJobWork(payload);
       }
-      alert(`Job Work Outward Challan ${payload.jwNo} generated successfully for ${vendorLabel} (${netWeight.toFixed(2)} KG)!`);
+      await showAlert(`Job Work Outward Challan ${payload.jwNo} generated successfully for ${vendorLabel} (${netWeight.toFixed(2)} KG)!`, {
+        type: 'success',
+        title: 'Challan Generated'
+      });
     } catch (err) {
       console.error('Error creating job work:', err);
-      alert('Failed to issue Job Work Challan. Please check connection.');
+      await showAlert('Failed to issue Job Work Challan. Please check connection.', { type: 'error' });
     }
     onClose();
   };
@@ -472,13 +475,18 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                   <Warehouse size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
                   Source Godown / Origin <span className="req">*</span>
                 </label>
-                <select className="mform-select" value={form.sourceLocation} onChange={e => handleSourceLocationSelect(e.target.value)} required>
-                  {liveLocations.map(loc => (
-                    <option key={loc.locationCode || loc.id} value={loc.name}>
-                      {loc.name} {loc.type === 'JOB_WORKER' ? '⚡ (Outside Job Worker / Double JW)' : '(Internal Godown)'}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  value={form.sourceLocation}
+                  onChange={val => handleSourceLocationSelect(val)}
+                  options={liveLocations.map(loc => ({
+                    value: loc.name,
+                    label: loc.name,
+                    sublabel: loc.type === 'JOB_WORKER' ? '⚡ Outside Job Worker / Double JW' : 'Internal Godown'
+                  }))}
+                  placeholder="-- Select Origin Location --"
+                  searchPlaceholder="Search warehouse, silo, job worker site..."
+                  required
+                />
                 {form.isDoubleJobWork && (
                   <div className="mform-hint" style={{ color: '#ea580c', fontWeight: 600 }}>
                     ⚡ Double Job Work Active: Dispatched directly from third-party processor site!
@@ -488,14 +496,18 @@ export default function NewJobWorkModal({ onClose, onSave }) {
 
               <div className="mform-field">
                 <label className="mform-label">Target Vendor / Job Worker <span className="req">*</span></label>
-                <select className="mform-select" value={form.jwParty} onChange={e => handlePartySelect(e.target.value)} required>
-                  <option value="">-- Select Vendor / Job Worker --</option>
-                  {displayVendors.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name || 'Vendor'} ({p.location || 'Gujarat'})
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  value={form.jwParty}
+                  onChange={val => handlePartySelect(val)}
+                  options={displayVendors.map(p => ({
+                    value: p.id,
+                    label: p.name || 'Vendor',
+                    sublabel: `${p.location || 'Gujarat'} • ${p.processBadge || 'Processor'}`
+                  }))}
+                  placeholder="-- Select Vendor / Job Worker --"
+                  searchPlaceholder="Search vendor name, city or process..."
+                  required
+                />
                 {selParty && (
                   <div className="mform-hint">
                     Location: {selParty.location || 'Gujarat'} • GST: {selParty.gst || 'N/A'}
@@ -507,14 +519,18 @@ export default function NewJobWorkModal({ onClose, onSave }) {
             <div className="mform-row mform-col-2" style={{ marginTop: '10px' }}>
               <div className="mform-field">
                 <label className="mform-label">Raw Material <span className="req">*</span></label>
-                <select className="mform-select" value={form.rawMaterial} onChange={e => handleMaterialSelect(e.target.value)} required>
-                  <option value="">-- Select Polymer Material --</option>
-                  {liveMaterials.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.name || 'Raw Material'} ({m.grade || m.code || m.id}) - Stock: {m.availFactory || 0} KG
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  value={form.rawMaterial}
+                  onChange={val => handleMaterialSelect(val)}
+                  options={liveMaterials.map(m => ({
+                    value: m.id,
+                    label: `${m.name || 'Raw Material'} (${m.grade || m.code || m.id})`,
+                    sublabel: `Stock: ${m.availFactory || 0} KG • ${m.brand || ''}`
+                  }))}
+                  placeholder="-- Select Polymer Material --"
+                  searchPlaceholder="Search raw material, grade, brand..."
+                  required
+                />
                 {selMaterial && (
                   <div className="mform-hint">
                     Grade: <span className="hint-green">{selMaterial.grade || 'Standard'}</span> • Available: <span className="hint-green">{selMaterial.availFactory || 0} KG</span>
@@ -527,14 +543,18 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                   <Scale size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
                   Process Master <span className="req">*</span>
                 </label>
-                <select className="mform-select" value={form.processType} onChange={e => handleProcessSelect(e.target.value)} required>
-                  {!form.processType && <option value="">-- Select Process Master --</option>}
-                  {liveProcesses.map(p => (
-                    <option key={p.id || p.processCode} value={p.processName}>
-                      {p.processName} • ₹{Number(p.defaultRatePerKg || 0).toFixed(2)}/kg {p.isFixedWeight ? `[Fixed: ${p.standardBagWeightKg}kg]` : '[Variable]'}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  value={form.processType}
+                  onChange={val => handleProcessSelect(val)}
+                  options={liveProcesses.map(p => ({
+                    value: p.processName,
+                    label: p.processName,
+                    sublabel: p.isFixedWeight ? `Fixed: ${p.standardBagWeightKg} KG/bag` : 'Variable weight'
+                  }))}
+                  placeholder="-- Select Process Master --"
+                  searchPlaceholder="Search processes (e.g. Yarn, Twine, Extrusion)..."
+                  required
+                />
                 {form.isFixedWeight && (
                   <div className="mform-hint" style={{ color: '#2563eb', fontWeight: 500 }}>
                     ✓ Standard Fixed Bag Weight: {form.standardBagWeightKg} KG per bag
@@ -572,14 +592,20 @@ export default function NewJobWorkModal({ onClose, onSave }) {
 
               <div className="mform-field">
                 <label className="mform-label">Article Type</label>
-                <select className="mform-select" value={form.articleType} onChange={e => set('articleType', e.target.value)}>
-                  <option value="BORA">BORA (0.200 KG / Bag)</option>
-                  <option value="PLASTIC CONE">PLASTIC CONE (0.025 KG / Cone)</option>
-                  <option value="KHALI BAG">KHALI BAG (0.120 KG / Bag)</option>
-                  <option value="THELI">THELI (0.015 KG / Bag)</option>
-                  <option value="CUSTOM">Custom Tare Rate</option>
-                  <option value="NONE">NONE (Zero Tare)</option>
-                </select>
+                <SearchableSelect
+                  value={form.articleType}
+                  onChange={val => set('articleType', val)}
+                  options={[
+                    { value: 'BORA', label: 'BORA (0.200 KG / Bag)' },
+                    { value: 'PLASTIC CONE', label: 'PLASTIC CONE (0.025 KG / Cone)' },
+                    { value: 'KHALI BAG', label: 'KHALI BAG (0.120 KG / Bag)' },
+                    { value: 'THELI', label: 'THELI (0.015 KG / Bag)' },
+                    { value: 'CUSTOM', label: 'Custom Tare Rate' },
+                    { value: 'NONE', label: 'NONE (Zero Tare)' }
+                  ]}
+                  placeholder="-- Select Article Type --"
+                  searchPlaceholder="Search article type..."
+                />
               </div>
 
               <div className="mform-field">
@@ -712,18 +738,21 @@ export default function NewJobWorkModal({ onClose, onSave }) {
                 {(() => {
                   const p = displayVendors.find(v => v.id === form.jwParty);
                   const procKey = form.processId || form.processType;
+                  const partyMasterRate = p ? (
+                    getPartyRateByProcess(p.name || p.id, form.processType, liveJwRates) ??
+                    getPartyRateByProcess(p.name || p.id, procKey, liveJwRates)
+                  ) : null;
+                  if (partyMasterRate !== null && String(partyMasterRate) === String(form.processingRate)) {
+                    return `✓ From JW Rate Master for ${form.processType} (${p?.name || 'Party'})`;
+                  }
                   const contractRate = p?.rateContracts?.[procKey] || p?.rateContracts?.[form.processType];
                   if (contractRate !== undefined && String(contractRate) === String(form.processingRate)) {
                     return `✓ Rate Contract for ${p?.name || 'Vendor'} (${form.processType})`;
                   }
-                  const matched = liveProcesses.find(proc => proc.id === form.processId || proc.processCode === form.processId || proc.processName === form.processType);
-                  if (matched && String(matched.defaultRatePerKg) === String(form.processingRate)) {
-                    return `✓ From JW Rate Master for ${matched.processName}`;
-                  }
                   if (p && String(p.rate) === String(form.processingRate)) {
                     return `✓ Vendor Base Rate for ${p.name || 'Vendor'}`;
                   }
-                  return `✓ Rate for ${form.processType}`;
+                  return form.processingRate ? `✓ Rate for ${form.processType}` : 'Rate from JW Rate Master';
                 })()}
               </div>
             </div>
@@ -756,9 +785,13 @@ export default function NewJobWorkModal({ onClose, onSave }) {
               </div>
               <div className="mform-field">
                 <label className="mform-label">Issued By</label>
-                <select className="mform-select" value={form.issuedBy} onChange={e => set('issuedBy', e.target.value)}>
-                  {personnelList.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                <SearchableSelect
+                  value={form.issuedBy}
+                  onChange={val => set('issuedBy', val)}
+                  options={personnelList}
+                  placeholder="-- Select Signatory --"
+                  searchPlaceholder="Search supervisor..."
+                />
               </div>
               <div className="mform-field">
                 <label className="mform-label">Final Approval</label>

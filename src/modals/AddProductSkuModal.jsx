@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { X, Layers, Sparkles } from 'lucide-react';
 import { subscribeProductAttributes, DEFAULT_PRODUCT_ATTRIBUTES } from '../api/productMatrix.api';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 const DEFAULT_BRAND_OPTIONS = ['LOTUS', 'ANCHOR', 'GALAXY', 'KPI', 'KAMANI'];
@@ -72,11 +73,11 @@ export default function AddProductSkuModal({ onClose, onSave }) {
           packWeightKg: formData.packWeightKg
         });
       }
-      alert(`Product SKU "${composedName}" created successfully!`);
+      await showAlert(`Product SKU "${composedName}" created successfully!`, { type: 'success', title: 'Product SKU Created' });
       onClose();
     } catch (err) {
       console.error('Error saving SKU:', err);
-      alert('Failed to save product SKU. Please check fields.');
+      await showAlert('Failed to save product SKU. Please check fields.', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }

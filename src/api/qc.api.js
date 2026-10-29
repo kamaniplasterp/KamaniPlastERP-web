@@ -12,6 +12,7 @@ import {
   Timestamp 
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { logAuditEvent } from './audit.api';
 
 /**
  * Real-time listener for QC Checks (Change 5)
@@ -58,6 +59,8 @@ export async function createQcCheck(grnId, grnData) {
       materialForm: grnData.materialForm || 'Granule',
       materialColor: grnData.materialColor || 'Natural',
       packaging: grnData.packaging || 'Woven Bag',
+      laminationType: grnData.laminationType || (grnData.isLaminated ? 'Laminated' : 'Non-Laminated'),
+      isLaminated: Boolean(grnData.isLaminated || grnData.laminationType === 'Laminated'),
       batchNumber: grnData.batchNumber || '',
       grossWeight: Number(grnData.grossWeight || 0),
       netWeight: Number(grnData.netWeight || 0),
@@ -70,6 +73,20 @@ export async function createQcCheck(grnId, grnData) {
       approvedAt: null,
       deadlineAt: Timestamp.fromDate(deadline),
       createdAt: serverTimestamp()
+    });
+
+    // Record Audit Trail
+    logAuditEvent({
+      category: 'QUALITY_CONTROL',
+      action: 'QC_INSPECTION_CREATED',
+      summary: `Mandatory QC inspection initiated for GRN ${grnData.grnNo || ''} (${grnData.itemName || ''} - ${grnData.netWeight || 0} KG) with 24-hr SLA`,
+      targetId: grnData.grnNo || docRef.id,
+      details: {
+        qcId: docRef.id,
+        grnNo: grnData.grnNo,
+        supplierName: grnData.supplierName,
+        netWeight: grnData.netWeight
+      }
     });
 
     return docRef.id;
@@ -95,6 +112,22 @@ export async function submitQcEvaluation(id, { result, notes, checkedBy, mfiRead
     checkedAt: serverTimestamp(),
     status: 'SENT_FOR_APPROVAL'
   });
+
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'QUALITY_CONTROL',
+    action: result === 'PASS' ? 'QC_INSPECTION_PASSED' : 'QC_INSPECTION_FAILED',
+    summary: `QC inspection evaluated as ${result} by inspector ${checkedBy || 'QC Inspector'} (Notes: ${notes || 'Standard evaluation'})`,
+    targetId: id,
+    details: {
+      qcId: id,
+      result,
+      checkedBy,
+      notes,
+      mfiReading,
+      uniformity
+    }
+  });
 }
 
 /**
@@ -108,6 +141,18 @@ export async function approveQcCheck(id, { approvedBy } = {}) {
     approvedAt: serverTimestamp(),
     status: 'APPROVED'
   });
+
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'QUALITY_CONTROL',
+    action: 'QC_INSPECTION_APPROVED',
+    summary: `Quality Inspection ${id} final sign-off APPROVED by ${approvedBy || 'Plant Head / Manager'}`,
+    targetId: id,
+    details: {
+      qcId: id,
+      approvedBy
+    }
+  });
 }
 
 /**
@@ -116,4 +161,12 @@ export async function approveQcCheck(id, { approvedBy } = {}) {
 export async function deleteQcCheck(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'qcChecks', id));
+
+  await logAuditEvent({
+    category: 'QUALITY_CONTROL',
+    action: 'QC_INSPECTION_DELETED',
+    summary: `Deleted Quality Inspection record ${id}`,
+    targetId: id,
+    details: { qcId: id }
+  });
 }

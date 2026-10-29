@@ -58,7 +58,7 @@ const navItems = [
 ];
 
 export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
-  const { user, logout } = useAuth();
+  const { user, logout, hasAccess, userRole } = useAuth();
   const { activeJobWorksCount, openOrdersCount, lowStockCount, mobileMenuOpen, setMobileMenuOpen } = useWorkflow();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -67,13 +67,15 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
 
   const dynamicNavItems = navItems.map(sec => ({
     ...sec,
-    items: sec.items.map(item => {
-      // Only emphasize urgent actionable alerts (e.g. low stock warnings)
-      if (item.id === 'inventory' && lowStockCount > 0) {
-        return { ...item, badge: { count: lowStockCount, type: 'low', text: `${lowStockCount} Low` } };
-      }
-      return { ...item, badge: null };
-    })
+    items: sec.items
+      .filter(item => hasAccess ? hasAccess(item.id) : true)
+      .map(item => {
+        // Only emphasize urgent actionable alerts (e.g. low stock warnings)
+        if (item.id === 'inventory' && lowStockCount > 0) {
+          return { ...item, badge: { count: lowStockCount, type: 'low', text: `${lowStockCount} Low` } };
+        }
+        return { ...item, badge: null };
+      })
   }));
 
   const handleNavClick = (itemId) => {

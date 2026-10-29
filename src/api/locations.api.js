@@ -12,6 +12,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { logAuditEvent } from './audit.api';
 
 export const DEFAULT_LOCATIONS_LIST = [
   {
@@ -108,6 +109,15 @@ export async function addLocation(data) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  await logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'LOCATION_CREATED',
+    summary: `Created Godown / Plant Location ${data.name || code} (${code}) - Type: ${data.type || 'INTERNAL'}`,
+    targetId: code,
+    details: { locationCode: code, name: data.name, type: data.type, capacityKg: data.capacityKg, address: data.address }
+  });
+
   return code;
 }
 
@@ -124,6 +134,14 @@ export async function updateLocation(id, data) {
     capacityKg: Number(data.capacityKg || 0),
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  await logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'LOCATION_UPDATED',
+    summary: `Updated Godown / Plant Location ${data.name || docId} (${docId})`,
+    targetId: docId,
+    details: { locationCode: docId, name: data.name, type: data.type, capacityKg: data.capacityKg }
+  });
 }
 
 /**
@@ -132,4 +150,12 @@ export async function updateLocation(id, data) {
 export async function deleteLocation(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'locations', id));
+
+  await logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'LOCATION_DELETED',
+    summary: `Deleted Godown / Plant Location ${id}`,
+    targetId: id,
+    details: { locationId: id }
+  });
 }

@@ -20,6 +20,7 @@ import {
   logStockMovement, 
   addInventoryBagsBatch 
 } from './inventory.api';
+import { logAuditEvent } from './audit.api';
 
 /**
  * Subscribe to real-time Job Works collection with optional limit
@@ -254,6 +255,22 @@ export async function createJobWork(data) {
   };
 
   const docRef = await addDoc(collection(db, 'jobWorks'), jwDoc);
+
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'JOB_WORK',
+    action: 'JOB_WORK_ORDER_ISSUED',
+    summary: `Issued Job Work Challan ${chNo} to ${data.party || 'Vendor'} (${data.process || 'Process'} - ${sentKg} KG)`,
+    targetId: chNo,
+    details: {
+      jwId: docRef.id,
+      chNo,
+      party: data.party,
+      process: data.process,
+      sentKg,
+      rawMat: data.rawMat
+    }
+  });
 
   // If rawMaterialId is specified, update RM stock atomically
   if (data.rawMaterialId) {
@@ -496,6 +513,23 @@ export async function receiveJobWork({
     location: `Job Worker -> ${targetGodown}`,
     remarks: remarks || `Receipt Slip ${receiptSlip} of ${calculatedNetMaterialKg} KG (${recBoraCount} Bags) at ${targetGodown}`
   });
+
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'JOB_WORK',
+    action: 'JOB_WORK_RECEIPT_RECORDED',
+    summary: `Recorded Job Work Receipt ${receiptSlip} for Challan ${challanNo}: ${calculatedNetMaterialKg} KG inward (${recBoraCount || 0} Bags) by ${receivedBy || 'Supervisor'}`,
+    targetId: challanNo,
+    details: {
+      receiptSlip,
+      challanNo,
+      party,
+      netMaterialKg: calculatedNetMaterialKg,
+      scrapKg: effectiveScrapKg,
+      receivedBy,
+      targetGodown
+    }
+  });
 }
 
 /**
@@ -535,6 +569,15 @@ export async function addExtraCutting(data) {
     remarks: data.remarks || '',
     createdAt: serverTimestamp()
   });
+
+  logAuditEvent({
+    category: 'JOB_WORK',
+    action: 'EXTRA_CUTTING_DEDUCTION_ADDED',
+    summary: `Recorded Job Work deduction for ${data.partyName || 'Vendor'}: ${weightKg} KG @ ₹${rate}/KG (₹${totalAmount})`,
+    targetId: data.partyName || ref.id,
+    details: { ...data, weightKg, rate, totalAmount }
+  });
+
   return ref.id;
 }
 
@@ -544,4 +587,11 @@ export async function addExtraCutting(data) {
 export async function deleteExtraCutting(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'extraCuttings', id));
+
+  logAuditEvent({
+    category: 'JOB_WORK',
+    action: 'EXTRA_CUTTING_DEDUCTION_DELETED',
+    summary: `Deleted Job Work deduction entry ${id}`,
+    targetId: id
+  });
 }

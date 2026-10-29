@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { updateFgStock, logStockMovement, dispatchInventoryBags } from './inventory.api';
+import { logAuditEvent } from './audit.api';
 
 /**
  * Subscribe to real-time Sales Orders collection with optional limit
@@ -89,6 +90,21 @@ export async function createSalesOrder(data) {
 
   const docRef = await addDoc(collection(db, 'salesOrders'), soDoc);
 
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'SALES',
+    action: 'SALES_ORDER_CREATED',
+    summary: `Created Sales Order ${soNo} for ${data.customer || 'Customer'} (${orderedQtyCoils} Coils, Value: ₹${(orderedQtyCoils * orderRate).toLocaleString('en-IN')})`,
+    targetId: soNo,
+    details: {
+      soId: docRef.id,
+      soNo,
+      customer: data.customer,
+      orderedQtyCoils,
+      orderRate
+    }
+  });
+
   if (data.fgSkuId) {
     try {
       await updateFgStock(data.fgSkuId, 0, orderedQtyCoils);
@@ -133,6 +149,14 @@ export async function reserveSalesOrderStock(soId, fgSkuId, reserveCoils = 500) 
     outward: `-${reserveCoils} Coils (Reserved)`,
     location: 'Finished Goods Warehouse',
     remarks: `Stock reserved against Customer Order ${soId}`
+  });
+
+  logAuditEvent({
+    category: 'SALES',
+    action: 'STOCK_RESERVED_FOR_ORDER',
+    summary: `Reserved ${reserveCoils} coils of FG stock against Sales Order ${soId}`,
+    targetId: soId,
+    details: { soId, fgSkuId, reserveCoils }
   });
 }
 
@@ -290,6 +314,23 @@ export async function createDispatch(data) {
   } catch (bagErr) {
     console.warn('Could not update inventory bags status on dispatch:', bagErr);
   }
+
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'SALES',
+    action: 'DISPATCH_CHALLAN_CREATED',
+    summary: `Created Dispatch Challan ${chNo || dispatchNo} for ${data.customer || 'Customer'}: ${dispatchQtyCoils} Coils dispatched via ${data.vehicle || 'Truck'}`,
+    targetId: chNo || dispatchNo,
+    details: {
+      dispatchId: docRef.id,
+      dispatchNo,
+      challanNo: chNo,
+      customer: data.customer,
+      dispatchQtyCoils,
+      transporter: data.transporter,
+      vehicle: data.vehicle
+    }
+  });
 
   return docRef.id;
 }

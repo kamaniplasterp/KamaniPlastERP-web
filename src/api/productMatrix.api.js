@@ -9,6 +9,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { logAuditEvent } from './audit.api';
 
 export const DEFAULT_PRODUCT_ATTRIBUTES = {
   qualities: ['VIP', 'EVEREST', 'ANCHOR', 'DOUBLE', 'ORION', 'STAR', 'LOTUS', 'SUPER', 'GOLDY'],
@@ -61,6 +62,14 @@ export async function updateProductAttributes(attributes) {
     ...attributes,
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  await logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'PRODUCT_ATTRIBUTES_UPDATED',
+    summary: 'Updated Product Matrix Master Attributes (Qualities, Colors, Sizes, Forms)',
+    targetId: 'productAttributes',
+    details: { attributes }
+  });
 }
 
 /**
@@ -146,6 +155,14 @@ export async function syncMatrixToFinishedGoods(skuList, maxLimit = 1500) {
   const listToSync = skuList.slice(0, maxLimit);
   const CHUNK_SIZE = 400;
   let addedCount = 0;
+
+  await logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'PRODUCT_MATRIX_SYNCED',
+    summary: `Synced ${listToSync.length} generated matrix SKUs to Finished Goods Catalog`,
+    targetId: 'finishedGoods',
+    details: { count: listToSync.length }
+  });
 
   for (let i = 0; i < listToSync.length; i += CHUNK_SIZE) {
     const chunk = listToSync.slice(i, i + CHUNK_SIZE);

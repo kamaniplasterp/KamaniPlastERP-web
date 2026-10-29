@@ -16,6 +16,7 @@ import { exportToCsv } from '../utils/exportCsv';
 import { printJobWorkChallan, printInwardDeliverySlip } from '../utils/printDocument';
 import { subscribeJobWorks, receiveJobWork, createJobWork, subscribeExtraCuttings, deleteExtraCutting } from '../api/jobwork.api';
 import { subscribeVendors } from '../api/directory.api';
+import { showConfirm } from '../context/CustomAlertContext';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkHubView({ onOpenNewJobWork }) {
@@ -1761,7 +1762,12 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                       <td style={{ textAlign: 'center' }}>
                         <button
                           onClick={async () => {
-                            if (window.confirm(`Delete deduction record for ${ec.partyName}?`)) {
+                            const confirmed = await showConfirm(`Delete deduction record for ${ec.partyName}?`, {
+                              title: 'Confirm Deletion',
+                              confirmText: 'Delete Record',
+                              isDestructive: true
+                            });
+                            if (confirmed) {
                               await deleteExtraCutting(ec.id);
                             }
                           }}

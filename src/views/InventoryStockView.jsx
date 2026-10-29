@@ -14,6 +14,7 @@ import IssueToFactoryModal from '../modals/IssueToFactoryModal';
 import AddProductSkuModal from '../modals/AddProductSkuModal';
 import MaterialDetailDrawer from '../drawers/MaterialDetailDrawer';
 import BagDetailDrawer from '../drawers/BagDetailDrawer';
+import GrnDetailView from '../views/GrnDetailView';
 import AddFinishedGoodsStockModal from '../modals/AddFinishedGoodsStockModal';
 import AddBagBatchModal from '../modals/AddBagBatchModal';
 import QcCheckModal from '../modals/QcCheckModal';
@@ -40,6 +41,8 @@ import { printMultipleBagStickers, printSingleBagSticker } from '../utils/sticke
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { exportToCsv } from '../utils/exportCsv';
+import { showAlert } from '../context/CustomAlertContext';
+import { logAuditEvent } from '../api/audit.api';
 import '../styles/InventoryStock.css';
 
 
@@ -49,7 +52,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const navigate = useNavigate();
   const { rmStock, jobWorkStock, fgStock } = useWorkflow();
   const [activeTab, setActiveTab] = useState(location.state?.tab || 'rm');
-  const [rmSubView, setRmSubView] = useState('ledger'); // 'ledger' | 'inward' | 'issue'
+  const [rmSubView, setRmSubView] = useState(location.state?.subView || 'ledger'); // 'ledger' | 'inward' | 'issue'
 
   const [liveRmList, setLiveRmList] = useState([]);
   const [liveFgList, setLiveFgList] = useState([]);
@@ -66,6 +69,12 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   useEffect(() => {
     if (location.state?.tab) {
       setActiveTab(location.state.tab);
+    }
+    if (location.state?.subView) {
+      setRmSubView(location.state.subView);
+    }
+    if (location.state?.search) {
+      setRmSearch(location.state.search);
     }
   }, [location.state]);
 
@@ -110,7 +119,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [qcStatusFilter, setQcStatusFilter] = useState('All');
   const [showQcModal, setShowQcModal] = useState(false);
   const [selectedQcForModal, setSelectedQcForModal] = useState(null);
-  const [bagViewMode, setBagViewMode] = useState('diary'); // 'diary' | 'flat'
+  const [bagViewMode, setBagViewMode] = useState('flat'); // 'flat' | 'diary'
   const [showBagFilters, setShowBagFilters] = useState(false);
   const [showAddBagBatchModal, setShowAddBagBatchModal] = useState(false);
   const [showQuickLookupModal, setShowQuickLookupModal] = useState(false);
@@ -159,6 +168,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedBagForDrawer, setSelectedBagForDrawer] = useState(null);
   const [isBagDrawerOpen, setIsBagDrawerOpen] = useState(false);
+  const [selectedInward, setSelectedInward] = useState(null);
 
   const handleOpenBagDrawer = (bag) => {
     setSelectedBagForDrawer(bag);
@@ -243,7 +253,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const handleSaveFgStockModal = async (stockData) => {
     const qtyNum = Number(stockData.qty || 0);
     if (qtyNum <= 0) {
-      alert('Please enter a valid inward quantity greater than 0.');
+      await showAlert('Please enter a valid inward quantity greater than 0.', { type: 'warning', title: 'Invalid Quantity' });
       return;
     }
 
@@ -282,12 +292,68 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         remarks: stockData.notes || 'Inward stock from production'
       });
 
-      alert(`Successfully added ${qtyNum} Coils for ${targetName}!`);
+      await showAlert(`Successfully added ${qtyNum} Coils for ${targetName}!`, { type: 'success', title: 'Stock Added' });
       setShowAddFgStockModal(false);
       setIsDrawerOpen(false);
     } catch (err) {
       console.error('Error adding finished goods stock:', err);
-      alert('Failed to update finished goods stock. Please try again.');
+      await showAlert('Failed to update finished goods stock. Please try again.', { type: 'error' });
+    }
+  };
+
+  const handleUpdateQc = async (inw, newStatus) => {
+    const isAccepted = newStatus === 'ACCEPTED';
+    const nowIso = new Date().toISOString();
+
+    // 1. Optimistic local state update
+    setLiveRmInwards(prev => prev.map(item => {
+      if ((item.id && item.id === inw.id) || (item.grnNo && item.grnNo === inw.grnNo)) {
+        return { ...item, qcStatus: newStatus, qcEvaluatedAt: nowIso };
+      }
+      return item;
+    }));
+
+    if (selectedInward && ((selectedInward.id && selectedInward.id === inw.id) || (selectedInward.grnNo && selectedInward.grnNo === inw.grnNo))) {
+      setSelectedInward(prev => ({ ...prev, qcStatus: newStatus, qcEvaluatedAt: nowIso }));
+    }
+
+    try {
+      if (inw.id) {
+        await updateDoc(doc(db, 'rmInwards', inw.id), {
+          qcStatus: newStatus,
+          qcEvaluatedAt: nowIso
+        });
+      }
+
+      const matchQc = liveQcChecks.find(q => (q.grnId && q.grnId === inw.id) || (q.grnNo && q.grnNo === inw.grnNo));
+      if (matchQc && matchQc.id) {
+        await updateDoc(doc(db, 'qcChecks', matchQc.id), {
+          status: isAccepted ? 'APPROVED' : 'REJECTED',
+          result: isAccepted ? 'PASS' : 'FAIL',
+          approvedBy: 'Admin (KamaniPlastERP)',
+          approvedAt: serverTimestamp(),
+          checkedAt: serverTimestamp()
+        });
+      }
+
+      // Record in Real Firestore Audit Trail
+      await logAuditEvent({
+        category: 'QUALITY_CONTROL',
+        action: isAccepted ? 'QC_INSPECTION_ACCEPTED' : 'QC_INSPECTION_REJECTED',
+        summary: `Quality Inspection ${isAccepted ? 'ACCEPTED' : 'REJECTED'} for GRN ${inw.grnNo || inw.id} (${inw.itemName || 'Material'} - ${inw.netWeight || inw.grossWeight || 0} KG) by Admin`,
+        targetId: inw.grnNo || inw.id,
+        details: {
+          grnNo: inw.grnNo,
+          supplierName: inw.supplierName,
+          itemName: inw.itemName,
+          netWeight: inw.netWeight,
+          qcStatus: newStatus,
+          result: isAccepted ? 'PASS' : 'FAIL',
+          actionTakenBy: 'Admin'
+        }
+      });
+    } catch (err) {
+      console.warn('Error saving QC status or audit:', err.message);
     }
   };
 
@@ -704,6 +770,22 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     return matchesQuery && matchesStatus;
   });
 
+  if (selectedInward) {
+    const currentInw = liveRmInwards.find(i => (i.id && i.id === selectedInward.id) || (i.grnNo && i.grnNo === selectedInward.grnNo)) || selectedInward;
+    const matchQc = liveQcChecks.find(q => (q.grnId && q.grnId === currentInw.id) || (q.grnNo && q.grnNo === currentInw.grnNo));
+    const effectiveQcStatus = currentInw.qcStatus 
+      ? currentInw.qcStatus.toUpperCase() 
+      : (matchQc?.result === 'PASS' || matchQc?.status === 'APPROVED' ? 'ACCEPTED' : (matchQc?.result === 'FAIL' || matchQc?.status === 'REJECTED' ? 'REJECTED' : 'PENDING'));
+
+    return (
+      <GrnDetailView 
+        inward={{ ...currentInw, qcStatus: effectiveQcStatus, qcCheck: matchQc }} 
+        onBack={() => setSelectedInward(null)} 
+        onUpdateQc={handleUpdateQc} 
+      />
+    );
+  }
+
   return (
     <div className="inv-hub-container">
       {/* ── Page Header ── */}
@@ -1083,23 +1165,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           <GitBranch size={14} />
           <span>Batch Traceability</span>
         </button>
-
-        <button
-          className={`inv-tab-btn ${activeTab === 'qc' ? 'active' : ''}`}
-          onClick={() => setActiveTab('qc')}
-        >
-          <CheckCircle2 size={14} />
-          <span>Quality Control (QC)</span>
-          {overdueQcChecks.length > 0 ? (
-            <span style={{ background: '#fee2e2', color: '#dc2626', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', marginLeft: '6px' }}>
-              {overdueQcChecks.length} OVERDUE
-            </span>
-          ) : pendingQcChecks.length > 0 ? (
-            <span style={{ background: '#fef3c7', color: '#b45309', fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', marginLeft: '6px' }}>
-              {pendingQcChecks.length}
-            </span>
-          ) : null}
-        </button>
       </div>
 
       {/* ── TAB 1: Raw Materials (RM) ── */}
@@ -1355,80 +1420,250 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <table className="inv-table">
                 <thead>
                   <tr>
-                    <th>GRN NO.</th>
+                    <th>GRN & CHALLAN</th>
                     <th>BATCH NO.</th>
-                    <th>CHALLAN NO.</th>
                     <th>DATE</th>
                     <th>SUPPLIER NAME</th>
-                    <th>ITEM NAME</th>
-                    <th>ATTRIBUTES</th>
-                    <th style={{ textAlign: 'right' }}>GROSS WEIGHT</th>
-                    <th style={{ textAlign: 'right' }}>TARE DEDUCT</th>
-                    <th style={{ textAlign: 'right' }}>NET WEIGHT</th>
-                    <th style={{ textAlign: 'center' }}>DUAL STOCK (BAGS / LOOSE)</th>
-                    <th>RECEIVED BY</th>
-                    <th>REMARKS</th>
+                    <th>ITEM & ATTRIBUTES</th>
+                    <th style={{ textAlign: 'right' }}>GROSS WT</th>
+                    <th style={{ textAlign: 'right' }}>NET WT</th>
+                    <th style={{ textAlign: 'center' }}>DUAL STOCK</th>
+                    <th style={{ textAlign: 'center', minWidth: '140px' }}>QUALITY CHECK</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRmInwards.length === 0 ? (
                     <tr>
-                      <td colSpan="14" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                         No Raw Material Inward records found. Click <strong>+ Inward RM (GRN)</strong> to record your first polymer receipt.
                       </td>
                     </tr>
                   ) : (
-                    filteredRmInwards.map((inw, idx) => (
-                      <tr key={inw.id || idx}>
-                        <td className="td-code" style={{ fontWeight: '700', color: '#16a34a' }}>{inw.grnNo}</td>
-                        <td style={{ fontWeight: '700', color: '#2563eb', fontSize: '0.78rem' }}>{inw.batchNumber || '—'}</td>
-                        <td>{inw.challanNo || '-'}</td>
-                        <td>{inw.date}</td>
-                        <td style={{ fontWeight: '600' }}>{inw.supplierName}</td>
-                        <td>{inw.itemName}</td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                            <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '1px 5px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600' }}>
-                              {inw.materialForm || inw.grade || 'Granule'}
-                            </span>
-                            {inw.materialColor && (
-                              <span style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '1px 5px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600' }}>
-                                {inw.materialColor}
+                    filteredRmInwards.map((inw, idx) => {
+                      const billedWeight = Number(inw.challanWeight || 0);
+                      const grossWeight = Number(inw.grossWeight || 0);
+                      const isBilledExceedsGross = billedWeight > 0 && billedWeight > grossWeight;
+
+                      return (
+                        <tr 
+                          key={inw.id || idx}
+                          onClick={() => setSelectedInward(inw)}
+                          style={{ cursor: 'pointer' }}
+                          className="inv-row-clickable"
+                          title="Click to view full GRN inward details"
+                        >
+                          <td className="td-code">
+                            <div style={{ fontWeight: '700', color: '#16a34a' }}>{inw.grnNo}</div>
+                            {inw.challanNo && (
+                              <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '500' }}>
+                                CHL: {inw.challanNo}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ fontWeight: '700', fontSize: '0.78rem' }}>
+                            {isBilledExceedsGross ? (
+                              <span 
+                                style={{ 
+                                  color: '#dc2626', 
+                                  background: '#fef2f2', 
+                                  border: '1px solid #fecaca', 
+                                  padding: '2px 7px', 
+                                  borderRadius: '4px',
+                                  fontWeight: '800',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title={`Billed Weight (${billedWeight.toLocaleString()} KG) is more than Gross Weight (${grossWeight.toLocaleString()} KG)`}
+                              >
+                                ⚠️ {inw.batchNumber || '—'}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#2563eb' }}>
+                                {inw.batchNumber || '—'}
                               </span>
                             )}
-                            {inw.packaging && (
-                              <span style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '1px 5px', borderRadius: '4px', fontSize: '0.72rem' }}>
-                                {inw.packaging}
+                          </td>
+                          <td>{inw.date}</td>
+                          <td style={{ fontWeight: '600' }}>{inw.supplierName}</td>
+                          <td>
+                            <div style={{ fontWeight: '600', color: '#0f172a' }}>{inw.itemName}</div>
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '3px' }}>
+                              <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0px 4px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '600', color: '#334155' }}>
+                                {inw.materialForm || inw.grade || 'Granule'}
+                              </span>
+                              {inw.materialColor && (
+                                <span style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '0px 4px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '600' }}>
+                                  {inw.materialColor}
+                                </span>
+                              )}
+                              {inw.packaging && (
+                                <span style={{ background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', padding: '0px 4px', borderRadius: '3px', fontSize: '0.68rem' }}>
+                                  {inw.packaging}{inw.laminationType ? ` (${inw.laminationType})` : ''}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '500', color: '#475569' }}>
+                            {Number(inw.grossWeight || 0).toLocaleString()} KG
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>
+                            {Number(inw.netWeight || 0).toLocaleString()} KG
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{ background: 'rgba(22, 163, 74, 0.1)', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '700', marginRight: '4px', display: 'inline-block' }}>
+                              🎒 {inw.bagCount ?? inw.noOfArticles ?? 0} Bags ({Number(inw.bagStockKg ?? inw.netWeight ?? 0).toLocaleString()} kg)
+                            </span>
+                            {Number(inw.looseStockKg || 0) > 0 && (
+                              <span style={{ background: 'rgba(234, 88, 12, 0.1)', color: '#c2410c', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '700', display: 'inline-block', marginTop: '2px' }}>
+                                🌾 {Number(inw.looseStockKg).toLocaleString()} kg Loose
                               </span>
                             )}
-                          </div>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>{Number(inw.grossWeight || 0).toLocaleString()} KG</td>
-                        <td style={{ textAlign: 'right', color: '#dc2626' }}>
-                          -{inw.articleWeight || 0} KG
-                          <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>{inw.noOfArticles || 0} {inw.articleType || 'BORA'}</div>
-                        </td>
-                        <td style={{ textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>
-                          {Number(inw.netWeight || 0).toLocaleString()} KG
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span style={{ background: 'rgba(22, 163, 74, 0.1)', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '700', marginRight: '4px' }}>
-                            🎒 {inw.bagCount ?? inw.noOfArticles ?? 0} Bags ({Number(inw.bagStockKg ?? inw.netWeight ?? 0).toLocaleString()} kg)
-                          </span>
-                          {Number(inw.looseStockKg || 0) > 0 && (
-                            <span style={{ background: 'rgba(234, 88, 12, 0.1)', color: '#c2410c', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '700' }}>
-                              🌾 {Number(inw.looseStockKg).toLocaleString()} kg Loose
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          <span style={{ fontSize: '0.75rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: '600' }}>
-                            👤 {inw.receivedBy || 'SURESHBHAI'}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{inw.remarks || '—'}</td>
-                      </tr>
-                    ))
+                          </td>
+                          <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                            {(() => {
+                              const matchQc = liveQcChecks.find(q => (q.grnId && q.grnId === inw.id) || (q.grnNo && q.grnNo === inw.grnNo));
+                              const currentQcStatus = inw.qcStatus 
+                                ? inw.qcStatus.toUpperCase() 
+                                : (matchQc?.result === 'PASS' || matchQc?.status === 'APPROVED' ? 'ACCEPTED' : (matchQc?.result === 'FAIL' || matchQc?.status === 'REJECTED' ? 'REJECTED' : 'PENDING'));
+
+                              if (currentQcStatus === 'ACCEPTED') {
+                                return (
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    <span 
+                                      style={{ 
+                                        background: '#dcfce7', 
+                                        color: '#15803d', 
+                                        border: '1px solid #bbf7d0', 
+                                        padding: '2px 8px', 
+                                        borderRadius: '4px', 
+                                        fontSize: '0.72rem', 
+                                        fontWeight: 700,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px'
+                                      }}
+                                    >
+                                      <CheckCircle2 size={12} /> Accepted
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'REJECTED'); }}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#94a3b8',
+                                        cursor: 'pointer',
+                                        fontSize: '0.68rem',
+                                        padding: '1px 3px',
+                                        textDecoration: 'underline'
+                                      }}
+                                      title="Change QC to Rejected"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                );
+                              }
+
+                              if (currentQcStatus === 'REJECTED') {
+                                return (
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    <span 
+                                      style={{ 
+                                        background: '#fee2e2', 
+                                        color: '#dc2626', 
+                                        border: '1px solid #fecaca', 
+                                        padding: '2px 8px', 
+                                        borderRadius: '4px', 
+                                        fontSize: '0.72rem', 
+                                        fontWeight: 700,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px'
+                                      }}
+                                    >
+                                      <XCircle size={12} /> Rejected
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'ACCEPTED'); }}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#94a3b8',
+                                        cursor: 'pointer',
+                                        fontSize: '0.68rem',
+                                        padding: '1px 3px',
+                                        textDecoration: 'underline'
+                                      }}
+                                      title="Change QC to Accepted"
+                                    >
+                                      Accept
+                                    </button>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'ACCEPTED'); }}
+                                    style={{
+                                      background: '#16a34a',
+                                      color: '#ffffff',
+                                      border: 'none',
+                                      borderRadius: '5px',
+                                      padding: '4px 9px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#15803d'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#16a34a'}
+                                    title="Accept material QC"
+                                  >
+                                    <Check size={12} strokeWidth={2.5} />
+                                    <span>Accept</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'REJECTED'); }}
+                                    style={{
+                                      background: '#dc2626',
+                                      color: '#ffffff',
+                                      border: 'none',
+                                      borderRadius: '5px',
+                                      padding: '4px 9px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#b91c1c'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#dc2626'}
+                                    title="Reject material QC"
+                                  >
+                                    <X size={12} strokeWidth={2.5} />
+                                    <span>Reject</span>
+                                  </button>
+                                </div>
+                              );
+                            })()}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

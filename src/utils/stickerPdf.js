@@ -1,3 +1,5 @@
+import { showAlert } from '../context/CustomAlertContext';
+
 /**
  * Utility to generate and print professional industrial Bag Stickers / Labels (Change 7)
  * Layout: Serial No. | Weight (KG) | Item Name | Form | Color | Batch No. | Barcode representation
@@ -100,13 +102,13 @@ export function printSingleBagSticker(bag) {
  */
 export function printMultipleBagStickers(bagsArray) {
   if (!bagsArray || bagsArray.length === 0) {
-    alert('No bags selected for sticker printing.');
+    showAlert('No bags selected for sticker printing.', { type: 'warning', title: 'Selection Notice' });
     return;
   }
 
   const printWindow = window.open('', '_blank', 'width=800,height=900');
   if (!printWindow) {
-    alert('Pop-up blocked. Please allow pop-ups for KamaniPlast ERP to print stickers.');
+    showAlert('Pop-up blocked. Please allow pop-ups for KamaniPlast ERP to print stickers.', { type: 'warning', title: 'Pop-up Blocked' });
     return;
   }
 

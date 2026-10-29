@@ -18,6 +18,7 @@ import {
 import { exportToCsv } from '../utils/exportCsv';
 import ProcessMasterModal from '../modals/ProcessMasterModal';
 import LocationMasterModal from '../modals/LocationMasterModal';
+import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import '../styles/DirectorySettings.css';
 import '../styles/JobWorkHub.css';
 
@@ -104,21 +105,31 @@ export default function ProcessMastersView() {
   );
 
   const handleDeleteProcess = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete process "${name}"?`)) {
+    const confirmed = await showConfirm(`Are you sure you want to delete process "${name}"?`, {
+      title: 'Confirm Deletion',
+      confirmText: 'Delete Process',
+      isDestructive: true
+    });
+    if (confirmed) {
       try {
         await deleteProcess(id);
       } catch (e) {
-        alert('Error deleting process: ' + e.message);
+        await showAlert('Error deleting process: ' + e.message, { type: 'error' });
       }
     }
   };
 
   const handleDeleteLocation = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete location "${name}"?`)) {
+    const confirmed = await showConfirm(`Are you sure you want to delete location "${name}"?`, {
+      title: 'Confirm Deletion',
+      confirmText: 'Delete Location',
+      isDestructive: true
+    });
+    if (confirmed) {
       try {
         await deleteLocation(id);
       } catch (e) {
-        alert('Error deleting location: ' + e.message);
+        await showAlert('Error deleting location: ' + e.message, { type: 'error' });
       }
     }
   };
@@ -232,9 +243,14 @@ export default function ProcessMastersView() {
     });
   };
 
-  const handleClearMatrix = () => {
+  const handleClearMatrix = async () => {
     if (generatedMatrix.length === 0) return;
-    if (window.confirm('Are you sure you want to clear all combinations from this list?')) {
+    const confirmed = await showConfirm('Are you sure you want to clear all combinations from this list?', {
+      title: 'Clear Combinations',
+      confirmText: 'Clear All',
+      isDestructive: true
+    });
+    if (confirmed) {
       setGeneratedMatrix([]);
       setSelectedCombos(new Set());
       setSyncMatrixSuccess(null);
@@ -325,7 +341,7 @@ export default function ProcessMastersView() {
     setSyncMatrixSuccess(`Loaded ${mapped.length} catalog SKUs from database.`);
   };
 
-  const handleGenerateBatchMix = () => {
+  const handleGenerateBatchMix = async () => {
     const selQ = selectedAttrs.qualities?.length ? selectedAttrs.qualities : [productAttrs.qualities?.[0] || 'VIP'];
     const selF = selectedAttrs.forms?.length ? selectedAttrs.forms : [productAttrs.forms?.[0] || 'Hanks'];
     const selC = selectedAttrs.colors?.length ? selectedAttrs.colors : [productAttrs.colors?.[0] || 'Bright Yellow'];
@@ -336,7 +352,12 @@ export default function ProcessMastersView() {
 
     const totalCount = selQ.length * selF.length * selC.length * selS.length * selL.length * selT.length * selM.length;
     if (totalCount > 400) {
-      if (!window.confirm(`This will generate ${totalCount} custom combinations. Do you want to proceed?`)) {
+      const proceed = await showConfirm(`This will generate ${totalCount} custom combinations. Do you want to proceed?`, {
+        title: 'Large Combination Set',
+        confirmText: 'Generate Combinations',
+        type: 'warning'
+      });
+      if (!proceed) {
         return;
       }
     }
@@ -505,14 +526,8 @@ export default function ProcessMastersView() {
                   )}
                 </div>
 
-                <div className="ds-card-footer" style={{ marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                <div className="ds-card-footer" style={{ marginTop: '12px', borderTop: '1px solid #f1f5f9', paddingTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                   <div className="ds-stat-col">
-                    <span className="ds-stat-label">PROCESSING RATE</span>
-                    <span className="ds-stat-val" style={{ color: '#059669', fontWeight: 700 }}>
-                      ₹{Number(proc.defaultRatePerKg || 0).toFixed(2)} / KG
-                    </span>
-                  </div>
-                  <div className="ds-stat-col" style={{ textAlign: 'center' }}>
                     <span className="ds-stat-label">FIXED WEIGHT</span>
                     <span className="ds-stat-val" style={{ color: proc.isFixedWeight ? '#2563eb' : '#64748b', fontWeight: 700 }}>
                       {proc.isFixedWeight ? `${proc.standardBagWeightKg || 50} KG` : 'Loose / Var'}

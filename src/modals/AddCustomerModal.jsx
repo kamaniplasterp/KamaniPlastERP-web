@@ -17,6 +17,7 @@ import {
   isMockMode,
   isOtpBypassed
 } from '../api/msg91.api';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function AddCustomerModal({ onClose, onSave }) {
@@ -233,16 +234,16 @@ export default function AddCustomerModal({ onClose, onSave }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      alert('Please enter a valid customer name.');
+      await showAlert('Please enter a valid customer name.', { type: 'warning', title: 'Required Field' });
       return;
     }
 
     const cleanPhone = extract10DigitPhone(formData.phone);
     if (!cleanPhone) {
-      alert('Please enter a valid customer contact phone number.');
+      await showAlert('Please enter a valid customer contact phone number.', { type: 'warning', title: 'Invalid Phone Number' });
       return;
     }
 
@@ -253,11 +254,11 @@ export default function AddCustomerModal({ onClose, onSave }) {
     // In non-bypass mode, ensure numbers are verified
     if (!isBypassed) {
       if (!isPhoneVerified) {
-        alert('Please verify the primary contact phone number via SMS OTP before saving.');
+        await showAlert('Please verify the primary contact phone number via SMS OTP before saving.', { type: 'warning', title: 'Verification Required' });
         return;
       }
       if (!isSameAsPhone && !isWhatsappVerified) {
-        alert('Please verify the separate WhatsApp number via SMS OTP before saving.');
+        await showAlert('Please verify the separate WhatsApp number via SMS OTP before saving.', { type: 'warning', title: 'Verification Required' });
         return;
       }
     }
@@ -278,7 +279,7 @@ export default function AddCustomerModal({ onClose, onSave }) {
     };
 
     if (onSave) onSave(payload);
-    alert(`Customer / Buyer "${formData.name}" registered successfully!`);
+    await showAlert(`Customer / Buyer "${formData.name}" registered successfully!`, { type: 'success', title: 'Customer Registered' });
     onClose();
   };
 

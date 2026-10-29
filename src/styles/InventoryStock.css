@@ -460,6 +460,8 @@
   transition: background 0.12s ease;
 }
 .inv-table tbody tr:hover { background: #fafbfc; }
+.inv-table tbody tr.inv-row-clickable { cursor: pointer; }
+.inv-table tbody tr.inv-row-clickable:hover { background: #f8fafc; }
 .inv-table tbody td {
   padding: 15px 16px;
   color: #334155;

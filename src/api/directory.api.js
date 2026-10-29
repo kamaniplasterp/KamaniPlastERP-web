@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { addLocation } from './locations.api';
+import { logAuditEvent } from './audit.api';
 
 /**
  * Subscribe to real-time vendors collection with optional limit
@@ -81,6 +82,14 @@ export async function addVendor(vendorData) {
     console.warn('Auto-create godown for vendor notice:', locErr);
   }
 
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'VENDOR_CREATED',
+    summary: `Registered vendor "${vendorData.name}" (${vendorData.location || 'Rajkot'}) with rate ₹${vendorData.rate || 17.5}/KG`,
+    targetId: vendorData.name || ref.id,
+    details: vendorData
+  });
+
   return { id: ref.id, locationId: createdLocationId };
 }
 
@@ -94,6 +103,14 @@ export async function updateVendor(id, vendorData) {
     ...vendorData,
     updatedAt: serverTimestamp()
   });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'VENDOR_UPDATED',
+    summary: `Updated vendor "${vendorData.name || id}" details`,
+    targetId: vendorData.name || id,
+    details: vendorData
+  });
 }
 
 /**
@@ -105,6 +122,15 @@ export async function addBuyer(buyerData) {
     ...buyerData,
     createdAt: serverTimestamp()
   });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'CUSTOMER_CREATED',
+    summary: `Registered customer "${buyerData.name}" (${buyerData.category || 'Buyer'})`,
+    targetId: buyerData.name || ref.id,
+    details: buyerData
+  });
+
   return ref.id;
 }
 
@@ -117,6 +143,14 @@ export async function updateBuyer(id, buyerData) {
   await updateDoc(buyerRef, {
     ...buyerData,
     updatedAt: serverTimestamp()
+  });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'CUSTOMER_UPDATED',
+    summary: `Updated customer "${buyerData.name || id}" details`,
+    targetId: buyerData.name || id,
+    details: buyerData
   });
 }
 
@@ -150,6 +184,15 @@ export async function addJobWorkRate(rateData) {
     date: rateData.date || new Date().toISOString().split('T')[0],
     createdAt: serverTimestamp()
   });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'JW_RATE_CONTRACT_CREATED',
+    summary: `Configured Job Work Rate for ${rateData.party || 'Vendor'}: ₹${rateData.rate}/${rateData.uom || 'Kg'} (${rateData.process || 'Process'})`,
+    targetId: rateData.party || ref.id,
+    details: rateData
+  });
+
   return ref.id;
 }
 
@@ -163,6 +206,14 @@ export async function updateJobWorkRate(id, rateData) {
     ...rateData,
     rate: Number(rateData.rate || 0),
     updatedAt: serverTimestamp()
+  });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'JW_RATE_CONTRACT_UPDATED',
+    summary: `Updated Job Work Rate for ${rateData.party || id}: ₹${rateData.rate}/${rateData.uom || 'Kg'}`,
+    targetId: rateData.party || id,
+    details: rateData
   });
 }
 
@@ -195,6 +246,15 @@ export async function addJwValueMaster(valueData) {
     date: valueData.date || new Date().toISOString().split('T')[0],
     createdAt: serverTimestamp()
   });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'JW_VALUE_MASTER_CREATED',
+    summary: `Configured valuation standard for ${valueData.itemDescription || valueData.code}: ₹${valueData.value}/Kg`,
+    targetId: valueData.code || valueData.itemDescription || ref.id,
+    details: valueData
+  });
+
   return ref.id;
 }
 
@@ -204,6 +264,13 @@ export async function addJwValueMaster(valueData) {
 export async function deleteJwValueMaster(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'jwValueMasters', id));
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'JW_VALUE_MASTER_DELETED',
+    summary: `Deleted JW Value Master entry ${id}`,
+    targetId: id
+  });
 }
 
 /**
@@ -260,6 +327,14 @@ export async function updateTareStandards(tareData) {
     varianceAllowancePct: Number(tareData.varianceAllowancePct !== undefined ? tareData.varianceAllowancePct : 2.0),
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'TARE_STANDARDS_UPDATED',
+    summary: `Updated packaging tare standards across bag types`,
+    targetId: 'TARE_STANDARDS',
+    details: tareData
+  });
 }
 
 // ─── AUTHORIZED PERSONNEL & SUPERVISORS PERSISTENCE ───
@@ -303,6 +378,13 @@ export async function addPersonnel(name) {
   if (!currentList.includes(trimmed)) {
     const updated = [...currentList, trimmed];
     await setDoc(personnelDocRef, { list: updated, updatedAt: serverTimestamp() });
+
+    logAuditEvent({
+      category: 'MASTER_DATA',
+      action: 'SIGNATORY_PERSONNEL_ADDED',
+      summary: `Added authorized supervisor / signatory: ${trimmed}`,
+      targetId: trimmed
+    });
   }
 }
 
@@ -315,6 +397,13 @@ export async function deletePersonnel(name) {
     : [...DEFAULT_PERSONNEL];
   const updated = currentList.filter(p => p !== name);
   await setDoc(personnelDocRef, { list: updated, updatedAt: serverTimestamp() });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'SIGNATORY_PERSONNEL_REMOVED',
+    summary: `Removed authorized supervisor / signatory: ${name}`,
+    targetId: name
+  });
 }
 
 // ─── COMPANY & PLANT PROFILE / ERP SETTINGS PERSISTENCE ───
@@ -349,5 +438,13 @@ export async function updateCompanyProfile(profileData) {
     ...profileData,
     updatedAt: serverTimestamp()
   }, { merge: true });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'COMPANY_PROFILE_UPDATED',
+    summary: `Updated plant company profile: ${profileData.legalName || profileData.name || 'Company Profile'}`,
+    targetId: profileData.legalName || profileData.name || 'COMPANY_PROFILE',
+    details: profileData
+  });
 }
 

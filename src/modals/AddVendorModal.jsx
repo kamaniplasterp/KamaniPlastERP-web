@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Building } from 'lucide-react';
 import { subscribeProcesses } from '../api/process.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function AddVendorModal({ onClose, onSave }) {
@@ -29,14 +31,14 @@ export default function AddVendorModal({ onClose, onSave }) {
     setFormData(prev => ({ ...prev, [field]: val }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      alert('Please enter a valid vendor name.');
+      await showAlert('Please enter a valid vendor name.', { type: 'warning', title: 'Required Field' });
       return;
     }
     if (onSave) onSave(formData);
-    alert(`Vendor "${formData.name}" added successfully to Directory!`);
+    await showAlert(`Vendor "${formData.name}" added successfully to Directory!`, { type: 'success', title: 'Vendor Registered' });
     onClose();
   };
 
@@ -74,18 +76,15 @@ export default function AddVendorModal({ onClose, onSave }) {
               />
             </div>
             <div className="mform-field">
-              <label className="mform-label">Process Specialization (from Excel Sub Item) <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <label className="mform-label">Process Specialization (from Process Master) <span className="req">*</span></label>
+              <SearchableSelect
                 value={formData.processBadge}
-                onChange={e => handleChange('processBadge', e.target.value)}
+                onChange={val => handleChange('processBadge', val)}
+                options={liveProcesses.map(proc => proc.processName || proc.name || proc)}
+                placeholder="-- Select Process Specialization --"
+                searchPlaceholder="Search processes (e.g. Yarn, Twine, Extrusion)..."
                 required
-              >
-                {liveProcesses.map(proc => {
-                  const pName = proc.processName || proc.name || proc;
-                  return <option key={proc.id || pName} value={pName}>{pName}</option>;
-                })}
-              </select>
+              />
             </div>
           </div>
 

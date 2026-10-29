@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/AddFinishedGoodsStockModal.css';
 
 export default function AddFinishedGoodsStockModal({ material, onClose, onSuccess }) {
@@ -12,7 +13,7 @@ export default function AddFinishedGoodsStockModal({ material, onClose, onSucces
     e.preventDefault();
     const qtyNum = Number(qty);
     if (!qtyNum || qtyNum <= 0) {
-      alert('Please enter a valid inward quantity greater than 0.');
+      await showAlert('Please enter a valid inward quantity greater than 0.', { type: 'warning', title: 'Invalid Quantity' });
       return;
     }
 
@@ -21,12 +22,12 @@ export default function AddFinishedGoodsStockModal({ material, onClose, onSucces
       if (onSuccess) {
         await onSuccess({ qty: qtyNum, batchNo, notes });
       } else {
-        alert(`Successfully added ${qtyNum} Coils for ${material?.code || 'FG-PPD-06-YL'}!`);
+        await showAlert(`Successfully added ${qtyNum} Coils for ${material?.code || 'FG-PPD-06-YL'}!`, { type: 'success', title: 'Stock Updated' });
         onClose();
       }
     } catch (err) {
       console.error('Error submitting stock:', err);
-      alert('Failed to update stock. Please try again.');
+      await showAlert('Failed to update stock. Please try again.', { type: 'error' });
     } finally {
       setIsSubmitting(false);
     }

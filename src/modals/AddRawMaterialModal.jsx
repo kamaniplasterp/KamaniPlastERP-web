@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Layers } from 'lucide-react';
 import { RM_ITEM_NAMES, RM_GRADES, subscribeRawMaterials } from '../api/inventory.api';
+import SearchableSelect from '../components/SearchableSelect';
+import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
 export default function AddRawMaterialModal({ onClose, onSave }) {
@@ -26,18 +28,18 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
     setFormData(prev => ({ ...prev, [field]: val }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (Number(formData.openingStock || 0) < 0) {
-      alert('Opening stock quantity cannot be negative.');
+      await showAlert('Opening stock quantity cannot be negative.', { type: 'warning', title: 'Invalid Quantity' });
       return;
     }
     if (Number(formData.rate || 0) < 0) {
-      alert('Material rate cannot be negative.');
+      await showAlert('Material rate cannot be negative.', { type: 'warning', title: 'Invalid Rate' });
       return;
     }
     if (onSave) onSave(formData);
-    alert(`Polymer Raw Material "${formData.name} ^ ${formData.grade}" successfully added!`);
+    await showAlert(`Polymer Raw Material "${formData.name} ^ ${formData.grade}" successfully added!`, { type: 'success', title: 'Material Added' });
     onClose();
   };
 
@@ -76,19 +78,21 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
             </div>
             <div className="mform-field">
               <label className="mform-label">Category <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={formData.category}
-                onChange={e => handleChange('category', e.target.value)}
+                onChange={val => handleChange('category', val)}
+                options={[
+                  { value: 'Granules', label: 'Polymer Granules' },
+                  { value: 'Grinder', label: 'Grinder / Regrind' },
+                  { value: 'Yarn', label: 'Monofilament / Raffia Yarn' },
+                  { value: 'Twine', label: 'Twine & Hank' },
+                  { value: 'Masterbatch', label: 'Color Masterbatch' },
+                  { value: 'Packaging', label: 'Packaging Bora & Cones' }
+                ]}
+                placeholder="-- Select Category --"
+                searchPlaceholder="Search category..."
                 required
-              >
-                <option value="Granules">Polymer Granules</option>
-                <option value="Grinder">Grinder / Regrind</option>
-                <option value="Yarn">Monofilament / Raffia Yarn</option>
-                <option value="Twine">Twine &amp; Hank</option>
-                <option value="Masterbatch">Color Masterbatch</option>
-                <option value="Packaging">Packaging Bora &amp; Cones</option>
-              </select>
+              />
             </div>
           </div>
 
@@ -128,16 +132,14 @@ export default function AddRawMaterialModal({ onClose, onSave }) {
             </div>
             <div className="mform-field">
               <label className="mform-label">Grade <span className="req">*</span></label>
-              <select
-                className="mform-select"
+              <SearchableSelect
                 value={formData.grade}
-                onChange={e => handleChange('grade', e.target.value)}
+                onChange={val => handleChange('grade', val)}
+                options={RM_GRADES}
+                placeholder="-- Select Grade --"
+                searchPlaceholder="Search polymer grade..."
                 required
-              >
-                {RM_GRADES.map(g => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 

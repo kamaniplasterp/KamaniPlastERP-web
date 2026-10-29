@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { createQcCheck } from './qc.api';
+import { logAuditEvent } from './audit.api';
 
 /**
  * Subscribe to real-time Raw Materials collection with optional query limit
@@ -124,6 +125,14 @@ export async function addRawMaterial(data) {
     });
   }
 
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'RAW_MATERIAL_SKU_CREATED',
+    summary: `Created Raw Material SKU: ${data.name || 'RM'} (${data.code || docRef.id}) with opening stock ${availQty} KG`,
+    targetId: data.code || docRef.id,
+    details: data
+  });
+
   return docRef.id;
 }
 
@@ -167,6 +176,14 @@ export async function addFinishedGood(data) {
       remarks: data.remarks || 'Production / Opening stock inward'
     });
   }
+
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'FINISHED_GOODS_SKU_CREATED',
+    summary: `Created Finished Good SKU: ${data.name || 'FG'} (${data.code || docRef.id}) with initial stock ${stockQty} Coils`,
+    targetId: data.code || docRef.id,
+    details: data
+  });
 
   return docRef.id;
 }
@@ -493,6 +510,8 @@ export async function recordRmInward(data) {
     materialForm: data.materialForm || 'Granule',
     materialColor: data.materialColor || 'Natural',
     packaging: data.packaging || 'Woven Bag',
+    laminationType: data.laminationType || (data.isLaminated ? 'Laminated' : 'Non-Laminated'),
+    isLaminated: Boolean(data.isLaminated || data.laminationType === 'Laminated'),
     batchNumber: data.batchNumber || `BATCH-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
     grossWeight: grossWght,
     noOfArticles: boraCount,
@@ -514,6 +533,23 @@ export async function recordRmInward(data) {
   };
 
   const grnRef = await addDoc(collection(db, 'rmInwards'), grnDocData);
+
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'RAW_MATERIAL_INWARD_CREATED',
+    summary: `Inward GRN ${grnDocData.grnNo} recorded for ${grnDocData.supplierName} (${grnDocData.itemName} - ${grnDocData.netWeight} KG net)`,
+    targetId: grnDocData.grnNo,
+    details: {
+      grnId: grnRef.id,
+      grnNo: grnDocData.grnNo,
+      supplierName: grnDocData.supplierName,
+      challanNo: grnDocData.challanNo,
+      netWeight: grnDocData.netWeight,
+      grossWeight: grnDocData.grossWeight,
+      bagCount: grnDocData.bagCount
+    }
+  });
 
   // Auto-trigger Mandatory QC Workflow (Change 5)
   try {
@@ -614,6 +650,21 @@ export async function issueRmToFactory(data) {
     remarks: data.remarks || 'Internal plant issue'
   });
 
+  // Record Audit Trail
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'FACTORY_MATERIAL_ISSUE',
+    summary: `Factory Issue ${data.slipNo || 'SLIP'} recorded: ${netWght} KG of ${data.itemName || 'RM'} to plant extrusion by ${data.issuedBy || 'Supervisor'}`,
+    targetId: data.slipNo || 'FACTORY_ISSUE',
+    details: {
+      slipNo: data.slipNo,
+      itemName: data.itemName,
+      netWeight: netWght,
+      issuedBy: data.issuedBy,
+      remarks: data.remarks
+    }
+  });
+
   return issueRef.id;
 }
 
@@ -662,6 +713,15 @@ export async function addInventoryBagsBatch(bagsArray) {
     });
     addedIds.push(docRef.id);
   }
+
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'BAG_BATCH_PACKAGED',
+    summary: `Packaged and barcoded batch of ${addedIds.length} bags in inventory (${bagsArray[0]?.skuCode || 'SKU'})`,
+    targetId: `BATCH-${addedIds.length}-BAGS`,
+    details: { count: addedIds.length, sample: bagsArray[0] }
+  });
+
   return addedIds;
 }
 
@@ -675,6 +735,14 @@ export async function updateInventoryBag(id, updates) {
     ...updates,
     updatedAt: serverTimestamp()
   });
+
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'BAG_STATUS_UPDATED',
+    summary: `Updated inventory bag ${id}: status changed to ${updates.status || 'Updated'}`,
+    targetId: id,
+    details: updates
+  });
 }
 
 /**
@@ -683,6 +751,13 @@ export async function updateInventoryBag(id, updates) {
 export async function deleteInventoryBag(id) {
   if (!db) throw new Error('Firestore not initialized');
   await deleteDoc(doc(db, 'inventory_bags', id));
+
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'BAG_DELETED',
+    summary: `Deleted inventory bag record ${id}`,
+    targetId: id
+  });
 }
 
 /**
