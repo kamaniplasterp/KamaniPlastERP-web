@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, CheckCircle2, XCircle, AlertTriangle, Clock, ShieldCheck, UserCheck, FileText } from 'lucide-react';
-import { submitQcEvaluation, approveQcCheck } from '../api/qc.api';
+import { submitQcEvaluation, approveQcCheck, directEvaluateAndApproveQc } from '../api/qc.api';
 import { subscribePersonnel, DEFAULT_PERSONNEL } from '../api/directory.api';
 import '../styles/Modals.css';
 
@@ -38,10 +38,11 @@ export default function QcCheckModal({ qcCheck, onClose, onSuccess }) {
     setIsSubmitting(true);
     setErrorMsg('');
     try {
-      await submitQcEvaluation(qcCheck.id, {
+      await directEvaluateAndApproveQc(qcCheck.id, {
         result,
         notes,
         checkedBy,
+        approvedBy,
         mfiReading,
         uniformity,
         trialReport
@@ -49,7 +50,7 @@ export default function QcCheckModal({ qcCheck, onClose, onSuccess }) {
       if (onSuccess) onSuccess();
       onClose();
     } catch (err) {
-      console.error('Error submitting QC:', err);
+      console.error('Error submitting QC evaluation:', err);
       setErrorMsg(err.message || 'Failed to submit QC evaluation');
     } finally {
       setIsSubmitting(false);
@@ -229,7 +230,7 @@ export default function QcCheckModal({ qcCheck, onClose, onSuccess }) {
 
             <div className="mform-row mform-col-2">
               <div className="mform-field">
-                <label className="mform-label">Inspected By</label>
+                <label className="mform-label">Inspected By <span className="req">*</span></label>
                 <select
                   className="mform-select"
                   value={checkedBy}
@@ -241,20 +242,18 @@ export default function QcCheckModal({ qcCheck, onClose, onSuccess }) {
                 </select>
               </div>
 
-              {qcCheck.status === 'SENT_FOR_APPROVAL' && (
-                <div className="mform-field">
-                  <label className="mform-label">Approved By (Manager)</label>
-                  <select
-                    className="mform-select"
-                    value={approvedBy}
-                    onChange={e => setApprovedBy(e.target.value)}
-                  >
-                    {personnelList.map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="mform-field">
+                <label className="mform-label">Approved By (Plant Head / Manager) <span className="req">*</span></label>
+                <select
+                  className="mform-select"
+                  value={approvedBy}
+                  onChange={e => setApprovedBy(e.target.value)}
+                >
+                  {personnelList.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Items 9 & 10: MFI Reading & Uniformity */}
@@ -384,57 +383,36 @@ export default function QcCheckModal({ qcCheck, onClose, onSuccess }) {
         {/* Modal Footer */}
         <div className="modal-footer" style={{ padding: '12px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px', flexShrink: 0 }}>
           <button type="button" className="mfooter-btn cancel" onClick={onClose} disabled={isSubmitting}>
-            Close
+            Cancel
           </button>
 
-          {qcCheck.status === 'PENDING' && (
-            <button
-              type="submit"
-              form="qc-form"
-              className="mfooter-btn confirm"
-              disabled={isSubmitting}
-              style={{ background: '#2563eb', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <UserCheck size={16} />
-              {isSubmitting ? 'Submitting...' : 'Submit Evaluation (Send for Approval)'}
-            </button>
-          )}
-
-          {qcCheck.status === 'SENT_FOR_APPROVAL' && (
-            <>
-              <button
-                type="submit"
-                form="qc-form"
-                className="mfooter-btn cancel"
-                disabled={isSubmitting}
-                style={{ background: '#f1f5f9', color: '#475569' }}
-              >
-                Update Evaluation
-              </button>
-              <button
-                type="button"
-                onClick={handleApprove}
-                className="mfooter-btn confirm"
-                disabled={isSubmitting}
-                style={{ background: '#16a34a', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <ShieldCheck size={16} />
-                {isSubmitting ? 'Approving...' : 'Approve QC Check'}
-              </button>
-            </>
-          )}
-
-          {qcCheck.status === 'APPROVED' && (
-            <button
-              type="submit"
-              form="qc-form"
-              className="mfooter-btn confirm"
-              disabled={isSubmitting}
-              style={{ background: '#475569' }}
-            >
-              Update Notes
-            </button>
-          )}
+          <button
+            type="submit"
+            form="qc-form"
+            disabled={isSubmitting}
+            className="mfooter-btn confirm"
+            style={{
+              background: result === 'PASS' ? '#16a34a' : '#dc2626',
+              color: '#ffffff',
+              border: 'none',
+              padding: '8px 20px',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '0.825rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+            }}
+          >
+            {result === 'PASS' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+            {isSubmitting 
+              ? 'Saving Evaluation...' 
+              : result === 'PASS' 
+                ? 'Submit & Approve QC (PASS)' 
+                : 'Submit QC Evaluation (REJECT)'}
+          </button>
         </div>
 
       </div>

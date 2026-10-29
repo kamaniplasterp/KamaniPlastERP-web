@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
   Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck, MessageSquare,
@@ -16,6 +16,7 @@ import {
 import { 
   subscribeAuditLogs, 
   logAuditEvent, 
+  resolveAuditUser,
   AUDIT_CATEGORIES 
 } from '../api/audit.api';
 import { 
@@ -408,7 +409,14 @@ export default function DirectorySettingsView() {
     );
   });
 
-  const filteredAuditLogs = (liveAuditLogs || []).filter(log => {
+  const resolvedAuditLogs = useMemo(() => {
+    return (liveAuditLogs || []).map(log => ({
+      ...log,
+      user: resolveAuditUser(log.user, liveUsers)
+    }));
+  }, [liveAuditLogs, liveUsers]);
+
+  const filteredAuditLogs = resolvedAuditLogs.filter(log => {
     const q = (auditSearch || '').toLowerCase().trim();
     const matchesSearch = !q ||
       (log.summary || '').toLowerCase().includes(q) ||

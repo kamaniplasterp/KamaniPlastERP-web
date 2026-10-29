@@ -36,7 +36,7 @@ import {
 } from '../api/inventory.api';
 import { subscribeJobWorks } from '../api/jobwork.api';
 import { subscribeSalesOrders, subscribeDispatches } from '../api/sales.api';
-import { subscribeQcChecks } from '../api/qc.api';
+import { subscribeQcChecks, createQcCheck } from '../api/qc.api';
 import { printMultipleBagStickers, printSingleBagSticker } from '../utils/stickerPdf';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
@@ -359,6 +359,54 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     } catch (err) {
       console.warn('Error saving QC status or audit:', err.message);
     }
+  };
+
+  const handleOpenQcModal = async (inw, initialResult = 'PASS') => {
+    let matchQc = liveQcChecks.find(q => (q.grnId && q.grnId === inw.id) || (q.grnNo && q.grnNo === inw.grnNo));
+
+    if (!matchQc) {
+      try {
+        const newId = await createQcCheck(inw.id, inw);
+        matchQc = {
+          id: newId || inw.id,
+          grnId: inw.id,
+          grnNo: inw.grnNo || '',
+          challanNo: inw.challanNo || '',
+          supplierName: inw.supplierName || '',
+          itemName: inw.itemName || '',
+          grade: inw.grade || '',
+          materialForm: inw.materialForm || 'Granule',
+          materialColor: inw.materialColor || 'Natural',
+          packaging: inw.packaging || 'Woven Bag',
+          batchNumber: inw.batchNumber || '',
+          grossWeight: inw.grossWeight || 0,
+          netWeight: inw.netWeight || 0,
+          status: 'PENDING',
+          result: initialResult,
+          deadlineAt: inw.date
+        };
+      } catch (_) {
+        matchQc = {
+          id: inw.id,
+          grnId: inw.id,
+          grnNo: inw.grnNo || '',
+          challanNo: inw.challanNo || '',
+          supplierName: inw.supplierName || '',
+          itemName: inw.itemName || '',
+          grade: inw.grade || '',
+          batchNumber: inw.batchNumber || '',
+          grossWeight: inw.grossWeight || 0,
+          netWeight: inw.netWeight || 0,
+          status: 'PENDING',
+          result: initialResult
+        };
+      }
+    } else {
+      matchQc = { ...matchQc, result: initialResult };
+    }
+
+    setSelectedQcForModal(matchQc);
+    setShowQcModal(true);
   };
 
   const displayRmList = liveRmList.map(rm => {
@@ -786,6 +834,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         inward={{ ...currentInw, qcStatus: effectiveQcStatus, qcCheck: matchQc }} 
         onBack={() => setSelectedInward(null)} 
         onUpdateQc={handleUpdateQc} 
+        onOpenQcModal={handleOpenQcModal}
       />
     );
   }
@@ -1470,19 +1519,20 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'REJECTED'); }}
+                                      onClick={(e) => { e.stopPropagation(); handleOpenQcModal(inw); }}
                                       style={{
                                         background: 'transparent',
                                         border: 'none',
-                                        color: '#94a3b8',
+                                        color: '#2563eb',
                                         cursor: 'pointer',
                                         fontSize: '0.68rem',
                                         padding: '1px 3px',
-                                        textDecoration: 'underline'
+                                        textDecoration: 'underline',
+                                        fontWeight: 600
                                       }}
-                                      title="Change QC to Rejected"
+                                      title="Open QC modal to view or update evaluation"
                                     >
-                                      Reject
+                                      View QC
                                     </button>
                                   </div>
                                 );
@@ -1509,77 +1559,54 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'ACCEPTED'); }}
+                                      onClick={(e) => { e.stopPropagation(); handleOpenQcModal(inw); }}
                                       style={{
                                         background: 'transparent',
                                         border: 'none',
-                                        color: '#94a3b8',
+                                        color: '#2563eb',
                                         cursor: 'pointer',
                                         fontSize: '0.68rem',
                                         padding: '1px 3px',
-                                        textDecoration: 'underline'
+                                        textDecoration: 'underline',
+                                        fontWeight: 600
                                       }}
-                                      title="Change QC to Accepted"
+                                      title="Open QC modal to view or update evaluation"
                                     >
-                                      Accept
+                                      View QC
                                     </button>
                                   </div>
                                 );
                               }
 
+                              const inwDate = inw.date ? new Date(inw.date) : null;
+                              const isOverdue = inwDate && !isNaN(inwDate.getTime()) && (Date.now() - inwDate.getTime() > 24 * 60 * 60 * 1000);
+
                               return (
-                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'ACCEPTED'); }}
-                                    style={{
-                                      background: '#16a34a',
-                                      color: '#ffffff',
-                                      border: 'none',
-                                      borderRadius: '5px',
-                                      padding: '4px 9px',
-                                      fontSize: '0.72rem',
-                                      fontWeight: 700,
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-                                      transition: 'all 0.15s ease'
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.background = '#15803d'}
-                                    onMouseLeave={e => e.currentTarget.style.background = '#16a34a'}
-                                    title="Accept material QC"
-                                  >
-                                    <Check size={12} strokeWidth={2.5} />
-                                    <span>Accept</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); handleUpdateQc(inw, 'REJECTED'); }}
-                                    style={{
-                                      background: '#dc2626',
-                                      color: '#ffffff',
-                                      border: 'none',
-                                      borderRadius: '5px',
-                                      padding: '4px 9px',
-                                      fontSize: '0.72rem',
-                                      fontWeight: 700,
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-                                      transition: 'all 0.15s ease'
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.background = '#b91c1c'}
-                                    onMouseLeave={e => e.currentTarget.style.background = '#dc2626'}
-                                    title="Reject material QC"
-                                  >
-                                    <X size={12} strokeWidth={2.5} />
-                                    <span>Reject</span>
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleOpenQcModal(inw); }}
+                                  style={{
+                                    background: isOverdue ? '#fee2e2' : '#eff6ff',
+                                    color: isOverdue ? '#dc2626' : '#2563eb',
+                                    border: `1px solid ${isOverdue ? '#fca5a5' : '#bfdbfe'}`,
+                                    borderRadius: '5px',
+                                    padding: '4px 10px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                                  onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                                  title="Open QC inspection modal to evaluate parameters and submit sign-off"
+                                >
+                                  {isOverdue ? <AlertTriangle size={12} /> : <ClipboardCheck size={12} />}
+                                  <span>{isOverdue ? 'Evaluate QC (Overdue)' : 'Evaluate QC'}</span>
+                                </button>
                               );
                             })()}
                           </td>

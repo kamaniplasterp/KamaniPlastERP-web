@@ -5,6 +5,7 @@ import {
   updateDoc, 
   deleteDoc,
   doc, 
+  getDoc,
   serverTimestamp, 
   query, 
   orderBy, 
@@ -131,25 +132,109 @@ export async function submitQcEvaluation(id, { result, notes, checkedBy, mfiRead
 }
 
 /**
+ * Direct evaluation & final sign-off in a single action
+ */
+export async function directEvaluateAndApproveQc(id, {
+  result = 'PASS',
+  notes = '',
+  checkedBy = 'QC Inspector',
+  approvedBy = 'Manager / Plant Head',
+  mfiReading = null,
+  uniformity = 'Even (સરખો)',
+  trialReport = ''
+} = {}) {
+  if (!db) throw new Error('Firestore not initialized');
+  const qcRef = doc(db, 'qcChecks', id);
+  let qcData = {};
+  try {
+    const snap = await getDoc(qcRef);
+    if (snap.exists()) qcData = snap.data();
+  } catch (_) {}
+
+  const isAccepted = result === 'PASS';
+  const newQcStatus = isAccepted ? 'ACCEPTED' : 'REJECTED';
+
+  await updateDoc(qcRef, {
+    result,
+    notes: notes || '',
+    checkedBy: checkedBy || 'QC Inspector',
+    mfiReading: mfiReading !== undefined && mfiReading !== '' ? Number(mfiReading) : null,
+    uniformity: uniformity || 'Even (સરખો)',
+    trialReport: trialReport || '',
+    checkedAt: serverTimestamp(),
+    approvedBy: approvedBy || 'Manager / Plant Head',
+    approvedAt: serverTimestamp(),
+    status: isAccepted ? 'APPROVED' : 'REJECTED'
+  });
+
+  // Synchronize to rmInwards so inventory and watchdog reflect QC acceptance immediately
+  const grnId = qcData.grnId || id;
+  if (grnId) {
+    try {
+      await updateDoc(doc(db, 'rmInwards', grnId), {
+        qcStatus: newQcStatus,
+        qcEvaluatedAt: new Date().toISOString()
+      });
+    } catch (_) {}
+  }
+
+  logAuditEvent({
+    category: 'QUALITY_CONTROL',
+    action: isAccepted ? 'QC_INSPECTION_ACCEPTED' : 'QC_INSPECTION_REJECTED',
+    summary: `Quality Inspection ${isAccepted ? 'ACCEPTED' : 'REJECTED'} for GRN ${qcData.grnNo || id} by ${approvedBy}`,
+    targetId: qcData.grnNo || id,
+    details: {
+      qcId: id,
+      grnNo: qcData.grnNo,
+      result,
+      checkedBy,
+      approvedBy,
+      qcStatus: newQcStatus
+    }
+  });
+}
+
+/**
  * Manager approves QC evaluation -> moves to APPROVED
  */
 export async function approveQcCheck(id, { approvedBy } = {}) {
   if (!db) throw new Error('Firestore not initialized');
   const qcRef = doc(db, 'qcChecks', id);
+  let qcData = {};
+  try {
+    const snap = await getDoc(qcRef);
+    if (snap.exists()) qcData = snap.data();
+  } catch (_) {}
+
+  const isAccepted = qcData.result !== 'FAIL';
+  const newQcStatus = isAccepted ? 'ACCEPTED' : 'REJECTED';
+
   await updateDoc(qcRef, {
     approvedBy: approvedBy || 'Manager / Plant Head',
     approvedAt: serverTimestamp(),
     status: 'APPROVED'
   });
 
+  // Sync to rmInwards
+  const grnId = qcData.grnId || id;
+  if (grnId) {
+    try {
+      await updateDoc(doc(db, 'rmInwards', grnId), {
+        qcStatus: newQcStatus,
+        qcEvaluatedAt: new Date().toISOString()
+      });
+    } catch (_) {}
+  }
+
   // Record Audit Trail
   logAuditEvent({
     category: 'QUALITY_CONTROL',
     action: 'QC_INSPECTION_APPROVED',
-    summary: `Quality Inspection ${id} final sign-off APPROVED by ${approvedBy || 'Plant Head / Manager'}`,
-    targetId: id,
+    summary: `Quality Inspection ${qcData.grnNo || id} final sign-off APPROVED by ${approvedBy || 'Plant Head / Manager'}`,
+    targetId: qcData.grnNo || id,
     details: {
       qcId: id,
+      grnNo: qcData.grnNo,
       approvedBy
     }
   });

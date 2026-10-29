@@ -21,7 +21,7 @@ import {
 import { printGRN } from '../utils/printDocument';
 import '../styles/JobWorkHub.css';
 
-export default function GrnDetailView({ inward, onBack, onUpdateQc }) {
+export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModal }) {
   if (!inward) return null;
 
   const grossWeight = Number(inward.grossWeight || 0);
@@ -309,41 +309,23 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc }) {
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 type="button"
-                onClick={() => onUpdateQc && onUpdateQc(inward, 'ACCEPTED')}
-                style={{
-                  background: '#16a34a',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '5px 12px',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Check size={12} strokeWidth={2.5} /> Accept QC
-              </button>
-              <button
-                type="button"
-                onClick={() => onUpdateQc && onUpdateQc(inward, 'REJECTED')}
+                onClick={() => onOpenQcModal && onOpenQcModal(inward)}
                 style={{
                   background: '#dc2626',
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: '6px',
-                  padding: '5px 12px',
+                  padding: '6px 14px',
                   fontSize: '0.75rem',
                   fontWeight: 700,
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '5px',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.08)'
                 }}
               >
-                <X size={12} strokeWidth={2.5} /> Reject QC
+                <ClipboardCheck size={14} /> Open QC Evaluation Modal
               </button>
             </div>
           </div>
@@ -540,20 +522,21 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc }) {
                     >
                       <CheckCircle2 size={12} /> Accepted
                     </span>
-                    {onUpdateQc && (
+                    {onOpenQcModal && (
                       <button
                         type="button"
-                        onClick={() => onUpdateQc(inward, 'REJECTED')}
+                        onClick={() => onOpenQcModal(inward)}
                         style={{
                           background: 'transparent',
                           border: 'none',
-                          color: '#94a3b8',
+                          color: '#2563eb',
                           cursor: 'pointer',
-                          fontSize: '0.68rem',
-                          textDecoration: 'underline'
+                          fontSize: '0.7rem',
+                          textDecoration: 'underline',
+                          fontWeight: 600
                         }}
                       >
-                        Reject
+                        View / Re-evaluate QC
                       </button>
                     )}
                   </div>
@@ -575,20 +558,21 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc }) {
                     >
                       <XCircle size={12} /> Rejected
                     </span>
-                    {onUpdateQc && (
+                    {onOpenQcModal && (
                       <button
                         type="button"
-                        onClick={() => onUpdateQc(inward, 'ACCEPTED')}
+                        onClick={() => onOpenQcModal(inward)}
                         style={{
                           background: 'transparent',
                           border: 'none',
-                          color: '#94a3b8',
+                          color: '#2563eb',
                           cursor: 'pointer',
-                          fontSize: '0.68rem',
-                          textDecoration: 'underline'
+                          fontSize: '0.7rem',
+                          textDecoration: 'underline',
+                          fontWeight: 600
                         }}
                       >
-                        Accept
+                        View / Re-evaluate QC
                       </button>
                     )}
                   </div>
@@ -601,43 +585,24 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc }) {
                     )}
                     <button
                       type="button"
-                      onClick={() => onUpdateQc && onUpdateQc(inward, 'ACCEPTED')}
+                      onClick={() => onOpenQcModal && onOpenQcModal(inward)}
                       style={{
-                        background: '#16a34a',
-                        color: '#ffffff',
-                        border: 'none',
+                        background: isQcOverdue ? '#fee2e2' : '#2563eb',
+                        color: isQcOverdue ? '#dc2626' : '#ffffff',
+                        border: isQcOverdue ? '1px solid #fca5a5' : 'none',
                         borderRadius: '5px',
-                        padding: '3px 9px',
+                        padding: '4px 10px',
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '4px',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.06)'
                       }}
                     >
-                      <Check size={12} strokeWidth={2.5} />
-                      <span>Accept</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onUpdateQc && onUpdateQc(inward, 'REJECTED')}
-                      style={{
-                        background: '#dc2626',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '5px',
-                        padding: '3px 9px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <X size={12} strokeWidth={2.5} />
-                      <span>Reject</span>
+                      <ClipboardCheck size={12} />
+                      <span>{isQcOverdue ? 'Evaluate QC (Overdue)' : 'Evaluate QC'}</span>
                     </button>
                   </div>
                 )}

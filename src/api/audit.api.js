@@ -5,7 +5,9 @@ import {
   orderBy, 
   limit, 
   onSnapshot, 
-  serverTimestamp 
+  serverTimestamp,
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import { db, auth } from '../firebase/firebase';
 
@@ -17,6 +19,82 @@ export const AUDIT_CATEGORIES = {
   SALES: { id: 'SALES', label: 'Sales & Dispatch', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
   MASTER_DATA: { id: 'MASTER_DATA', label: 'Master Configurations', color: '#475569', bg: '#f8fafc', border: '#cbd5e1' }
 };
+
+// Global in-memory user registry cache for instant role resolution
+const cachedUsersMap = new Map();
+
+/**
+ * Resolves an audit event's user against the authoritative user directory.
+ * Matches by UID, email, or displayName to guarantee exact role consistency with RBAC.
+ */
+export function resolveAuditUser(rawUser, usersListOrMap = []) {
+  if (!rawUser) {
+    return { uid: 'system', name: 'System User', role: 'admin', email: 'system@kamaniplast.com' };
+  }
+
+  const emailLower = (rawUser.email || '').toLowerCase().trim();
+  const uid = rawUser.uid;
+  const nameLower = (rawUser.name || rawUser.displayName || '').toLowerCase().trim();
+
+  // 1. Search in provided users list or map
+  let matched = null;
+  if (Array.isArray(usersListOrMap) && usersListOrMap.length > 0) {
+    matched = usersListOrMap.find(u => {
+      if (uid && (u.uid === uid || u.id === uid)) return true;
+      if (emailLower && u.email && u.email.toLowerCase().trim() === emailLower) return true;
+      if (nameLower && (
+        (u.displayName && u.displayName.toLowerCase().trim() === nameLower) ||
+        (u.username && u.username.toLowerCase().trim() === nameLower)
+      )) return true;
+      return false;
+    });
+  } else if (usersListOrMap instanceof Map && usersListOrMap.size > 0) {
+    matched = (uid && usersListOrMap.get(uid)) ||
+              (emailLower && usersListOrMap.get(emailLower)) ||
+              (nameLower && usersListOrMap.get(nameLower));
+  }
+
+  // 2. Search in global cache if not found
+  if (!matched && cachedUsersMap.size > 0) {
+    matched = (uid && cachedUsersMap.get(uid)) ||
+              (emailLower && cachedUsersMap.get(emailLower)) ||
+              (nameLower && cachedUsersMap.get(nameLower));
+  }
+
+  if (matched) {
+    return {
+      uid: matched.uid || matched.id || uid || 'user',
+      name: matched.displayName || matched.name || rawUser.name || 'Staff User',
+      email: matched.email || rawUser.email || '',
+      role: matched.role || 'employee'
+    };
+  }
+
+  // 3. Clean database-aligned heuristic fallback
+  let role = rawUser.role;
+  if (!role || !['admin', 'accountant', 'employee'].includes(role) || role === 'employee') {
+    if (
+      emailLower === 'admin@kamaniplast.com' ||
+      emailLower === 'kamaniplasterp@kamaniplast.com' ||
+      emailLower.startsWith('admin@') ||
+      nameLower.includes('admin')
+    ) {
+      role = 'admin';
+    } else if (
+      emailLower.includes('accountant') ||
+      nameLower.includes('accountant')
+    ) {
+      role = 'accountant';
+    }
+  }
+
+  return {
+    uid: uid || 'user',
+    name: rawUser.name || rawUser.displayName || (emailLower ? emailLower.split('@')[0] : 'Staff User'),
+    email: rawUser.email || '',
+    role: role || 'employee'
+  };
+}
 
 /**
  * Record an audit log event into the Firestore database
@@ -36,9 +114,53 @@ export async function logAuditEvent({
 
   try {
     const currentUser = user || auth?.currentUser;
-    const userEmail = currentUser?.email || 'kamaniplasterp@kamaniplast.com';
-    const userName = currentUser?.displayName || currentUser?.username || (userEmail.split('@')[0]) || 'KamaniPlastERP';
+    const userEmail = (currentUser?.email || '').toLowerCase().trim();
     const userUid = currentUser?.uid || 'admin';
+    let userName = currentUser?.displayName || currentUser?.name || currentUser?.username || '';
+
+    // Determine authoritative role
+    let userRole = currentUser?.role;
+
+    if (!userRole || !['admin', 'accountant', 'employee'].includes(userRole)) {
+      // Check in-memory user cache
+      const cached = (userUid && cachedUsersMap.get(userUid)) || 
+                     (userEmail && cachedUsersMap.get(userEmail)) ||
+                     (userName && cachedUsersMap.get(userName.toLowerCase().trim()));
+      if (cached?.role) {
+        userRole = cached.role;
+        userName = userName || cached.displayName || cached.username;
+      } else if (userUid && userUid !== 'admin') {
+        // Query Firestore users collection
+        try {
+          const userDocSnap = await getDoc(doc(db, 'users', userUid));
+          if (userDocSnap.exists()) {
+            const data = userDocSnap.data();
+            userRole = data.role;
+            userName = userName || data.displayName || data.username;
+            cachedUsersMap.set(userUid, data);
+            if (data.email) cachedUsersMap.set(data.email.toLowerCase().trim(), data);
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!userRole || !['admin', 'accountant', 'employee'].includes(userRole)) {
+      // Heuristic fallback for the 3 official roles
+      if (
+        userEmail === 'admin@kamaniplast.com' ||
+        userEmail === 'kamaniplasterp@kamaniplast.com' ||
+        userEmail.startsWith('admin@') ||
+        userEmail.includes('admin')
+      ) {
+        userRole = 'admin';
+      } else if (userEmail.includes('accountant') || (userName && userName.toLowerCase().includes('accountant'))) {
+        userRole = 'accountant';
+      } else {
+        userRole = 'employee';
+      }
+    }
+
+    userName = userName || (userEmail ? userEmail.split('@')[0] : 'KamaniPlastERP');
 
     const logEntry = {
       timestamp: new Date().toISOString(),
@@ -50,8 +172,8 @@ export async function logAuditEvent({
       user: {
         uid: userUid,
         name: userName,
-        email: userEmail,
-        role: currentUser?.role || (userEmail.split('@')[0].toLowerCase().includes('admin') ? 'admin' : 'employee')
+        email: userEmail || 'kamaniplasterp@kamaniplast.com',
+        role: userRole
       },
       details: details ? sanitizeDetails(details) : {}
     };
@@ -107,6 +229,7 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
   }
 
   // Real data state buckets for each Firestore collection
+  let usersFromDb = [];
   let auditLogsFromDb = [];
   let rmInwardsFromDb = [];
   let rmFactoryIssuesFromDb = [];
@@ -124,7 +247,10 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
       const key = `${item.action}_${item.targetId}_${item.timestamp?.slice(0, 16)}`;
       if (!seenKeys.has(key)) {
         seenKeys.add(key);
-        combined.push(item);
+        combined.push({
+          ...item,
+          user: resolveAuditUser(item.user, usersFromDb)
+        });
       }
     });
 
@@ -141,11 +267,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
           action: 'RAW_MATERIAL_INWARD',
           targetId: item.grnNo || item.id,
           summary: `Raw Material Inward GRN ${item.grnNo || 'GRN'} received from ${item.supplierName || 'Supplier'} (${item.itemName || 'Material'}${item.grade ? ' - ' + item.grade : ''}: Net ${item.netWeight || item.grossWeight || 0} KG, ${item.bagCount || 0} Bags)`,
-          user: {
+          user: resolveAuditUser({
             name: item.receivedBy || 'SURESHBHAI',
             email: `${(item.receivedBy || 'sureshbhai').toLowerCase().replace(/\s+/g, '')}@kamaniplast.com`,
             role: 'employee'
-          },
+          }, usersFromDb),
           details: {
             grnNo: item.grnNo,
             supplierName: item.supplierName,
@@ -173,11 +299,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
             action: qcAction,
             targetId: item.grnNo || item.id,
             summary: `Quality Inspection ${item.qcStatus === 'ACCEPTED' ? 'ACCEPTED' : 'REJECTED'} for GRN ${item.grnNo || item.id} (${item.itemName || 'Material'}: Net ${item.netWeight || item.grossWeight || 0} KG) by Admin`,
-            user: {
+            user: resolveAuditUser({
               name: 'KamaniPlastERP',
               email: 'kamaniplasterp@kamaniplast.com',
               role: 'admin'
-            },
+            }, usersFromDb),
             details: {
               grnNo: item.grnNo,
               supplierName: item.supplierName,
@@ -209,11 +335,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
           summary: isApproved 
             ? `QC Inspection APPROVED for GRN ${item.grnNo || item.id} (${item.itemName || 'Material'}: Result ${item.result || 'PASS'}) signed off by ${inspector}`
             : `QC Inspection evaluated as ${item.result || 'PENDING'} for GRN ${item.grnNo || item.id} by inspector ${inspector}`,
-          user: {
+          user: resolveAuditUser({
             name: inspector,
             email: `${inspector.toLowerCase().replace(/\s+/g, '')}@kamaniplast.com`,
             role: 'employee'
-          },
+          }, usersFromDb),
           details: {
             grnNo: item.grnNo,
             supplierName: item.supplierName,
@@ -242,11 +368,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
           action: 'JOB_WORK_ORDER_ISSUED',
           targetId: chNo,
           summary: `Job Work Challan ${chNo} issued to ${item.party || 'Vendor'} (${item.process || 'Process'} - ${item.sentKg || item.sent || 0} KG of ${item.rawMat || 'Material'})`,
-          user: {
+          user: resolveAuditUser({
             name: item.issuedBy || 'RAMESHBHAI',
             email: `${(item.issuedBy || 'rameshbhai').toLowerCase().replace(/\s+/g, '')}@kamaniplast.com`,
             role: 'accountant'
-          },
+          }, usersFromDb),
           details: {
             chNo: chNo,
             party: item.party,
@@ -272,11 +398,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
               action: 'JOB_WORK_RECEIPT_RECORDED',
               targetId: chNo,
               summary: `Job Work Receipt ${rec.receiptSlip || 'SLIP'} recorded: ${rec.netQtyKg || 0} KG received, ${rec.scrapQtyKg || 0} KG scrap recovered from ${item.party || 'Vendor'}`,
-              user: {
+              user: resolveAuditUser({
                 name: rec.receivedBy || 'SURESHBHAI',
                 email: `${(rec.receivedBy || 'sureshbhai').toLowerCase().replace(/\s+/g, '')}@kamaniplast.com`,
                 role: 'employee'
-              },
+              }, usersFromDb),
               details: {
                 challanNo: chNo,
                 receiptSlip: rec.receiptSlip,
@@ -305,11 +431,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
           action: 'SALES_ORDER_CREATED',
           targetId: soNo,
           summary: `Sales Order ${soNo} booked for ${item.customer || 'Customer'} (${item.orderedQtyCoils || item.orderedQty || 0} Coils of ${item.itemSummary || 'Finished Rope'}, Value: ${item.value || '₹0'})`,
-          user: {
+          user: resolveAuditUser({
             name: 'KamaniPlastERP',
             email: 'kamaniplasterp@kamaniplast.com',
             role: 'admin'
-          },
+          }, usersFromDb),
           details: {
             soNo: soNo,
             customer: item.customer,
@@ -336,11 +462,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
           action: 'DISPATCH_CHALLAN_CREATED',
           targetId: dispNo,
           summary: `Dispatch Challan ${dispNo} dispatched to ${item.customer || 'Customer'}: ${item.dispatchQtyCoils || item.qty || 0} Coils via ${item.vehicle || item.vehicleNo || 'Vehicle'}`,
-          user: {
+          user: resolveAuditUser({
             name: 'KamaniPlastERP',
             email: 'kamaniplasterp@kamaniplast.com',
             role: 'admin'
-          },
+          }, usersFromDb),
           details: {
             challanNo: dispNo,
             customer: item.customer,
@@ -366,11 +492,11 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
           action: 'FACTORY_MATERIAL_ISSUE',
           targetId: slipNo,
           summary: `Factory Issue ${slipNo}: ${item.netWeight || item.grossWeight || 0} KG of ${item.itemName || 'Raw Material'} issued to Extrusion line by ${item.issuedBy || 'Supervisor'}`,
-          user: {
+          user: resolveAuditUser({
             name: item.issuedBy || 'SURESHBHAI',
             email: `${(item.issuedBy || 'sureshbhai').toLowerCase().replace(/\s+/g, '')}@kamaniplast.com`,
             role: 'employee'
-          },
+          }, usersFromDb),
           details: {
             slipNo: slipNo,
             itemName: item.itemName,
@@ -390,6 +516,22 @@ export function subscribeAuditLogs(callback, limitCount = 200) {
   };
 
   const unsubs = [];
+
+  // Listen to Firestore users for live RBAC role and name resolution
+  try {
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      usersFromDb = snap.docs.map(d => ({ id: d.id, uid: d.data().uid || d.id, ...d.data() }));
+      usersFromDb.forEach(u => {
+        if (u.uid) cachedUsersMap.set(u.uid, u);
+        if (u.id) cachedUsersMap.set(u.id, u);
+        if (u.email) cachedUsersMap.set(u.email.toLowerCase().trim(), u);
+        if (u.displayName) cachedUsersMap.set(u.displayName.toLowerCase().trim(), u);
+        if (u.username) cachedUsersMap.set(u.username.toLowerCase().trim(), u);
+      });
+      publishCombinedLogs();
+    }, (err) => console.warn('users sub failed in audit:', err));
+    unsubs.push(unsubUsers);
+  } catch (e) { console.warn('users sub failed in audit', e); }
 
   // Listen to Firestore audit_logs
   try {

@@ -200,25 +200,36 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
-      logAuditEvent({
-        category: 'SECURITY',
-        action: 'USER_LOGIN',
-        summary: `User "${usernameOrEmail}" signed into system`,
-        targetId: usernameOrEmail,
-        user: res.user
-      });
-
-      // Compute initial landing route based on assigned role/modules
+      // Compute authoritative user profile for landing route and security audit log
+      let userRoleForAudit = isMasterAdminEmail(targetEmail) ? 'admin' : (targetEmail.includes('accountant') ? 'accountant' : 'employee');
+      let userDisplayName = usernameOrEmail;
       let defaultRoute = '/dashboard';
+
       if (db && res.user?.uid) {
         try {
           const snap = await getDoc(doc(db, 'users', res.user.uid));
           if (snap.exists()) {
             const data = snap.data();
-            defaultRoute = getDefaultRouteForRole(data.role || 'employee', data.assignedModules || []);
+            const validRoles = ['admin', 'accountant', 'employee'];
+            userRoleForAudit = validRoles.includes(data.role) ? data.role : userRoleForAudit;
+            userDisplayName = data.displayName || data.username || userDisplayName;
+            defaultRoute = getDefaultRouteForRole(userRoleForAudit, data.assignedModules || []);
           }
         } catch (_) {}
       }
+
+      logAuditEvent({
+        category: 'SECURITY',
+        action: 'USER_LOGIN',
+        summary: `User "${userDisplayName}" signed into system`,
+        targetId: usernameOrEmail,
+        user: {
+          uid: res.user.uid,
+          name: userDisplayName,
+          email: res.user.email || targetEmail,
+          role: userRoleForAudit
+        }
+      });
 
       return { user: res.user, defaultRoute };
     } catch (err) {
@@ -287,11 +298,19 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     if (auth) {
       try {
+        const activeRole = userProfile?.role || (isMasterAdminEmail(user?.email) ? 'admin' : (user?.email?.includes('accountant') ? 'accountant' : 'employee'));
+        const activeName = userProfile?.displayName || user?.displayName || (user?.email ? user.email.split('@')[0] : 'User');
         logAuditEvent({
           category: 'SECURITY',
           action: 'USER_LOGOUT',
-          summary: `User "${userProfile?.displayName || user?.email || 'User'}" signed out of system`,
-          targetId: user?.email || 'System'
+          summary: `User "${activeName}" signed out of system`,
+          targetId: user?.email || 'System',
+          user: {
+            uid: user?.uid,
+            name: activeName,
+            email: user?.email || userProfile?.email || '',
+            role: activeRole
+          }
         });
         await firebaseSignOut(auth);
         setUser(null);
