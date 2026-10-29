@@ -6,7 +6,6 @@ import {
   signInWithPopup, 
   sendPasswordResetEmail as firebaseSendPasswordResetEmail,
   onAuthStateChanged,
-  signInAnonymously,
   updateProfile
 } from 'firebase/auth';
 import { 
@@ -17,10 +16,11 @@ import {
   query, 
   where, 
   getDocs,
-  onSnapshot
+  onSnapshot,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db, auth, googleProvider, isFirebaseConfigured } from '../firebase/firebase';
-import { ROLE_DEFAULT_MODULES, ERP_MODULES } from '../api/rbac.api';
+import { ROLE_DEFAULT_MODULES, ERP_MODULES, getDefaultRouteForRole } from '../api/rbac.api';
 import { logAuditEvent } from '../api/audit.api';
 
 const AuthContext = createContext();
@@ -39,6 +39,16 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Verifies if an email address belongs to the master system administrator
+  const isMasterAdminEmail = (emailStr = '') => {
+    const e = (emailStr || '').toLowerCase().trim();
+    return (
+      e === 'admin@kamaniplast.com' ||
+      e === 'kamaniplasterp@kamaniplast.com' ||
+      e.startsWith('admin@')
+    );
+  };
+
   useEffect(() => {
     if (!isFirebaseConfigured || !auth) {
       setLoading(false);
@@ -46,20 +56,6 @@ export const AuthProvider = ({ children }) => {
     }
 
     let unsubUserDoc = null;
-
-    const isMasterAdminAccount = (emailStr = '', usernameStr = '', nameStr = '') => {
-      const e = (emailStr || '').toLowerCase();
-      const u = (usernameStr || '').toLowerCase();
-      const n = (nameStr || '').toLowerCase();
-      return (
-        e.includes('admin') || 
-        u.includes('admin') || 
-        n.includes('admin') ||
-        e.includes('kamani') || 
-        u.includes('kamani') || 
-        n.includes('kamani')
-      );
-    };
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (unsubUserDoc) {
@@ -69,41 +65,59 @@ export const AuthProvider = ({ children }) => {
 
       if (currentUser && !currentUser.isAnonymous) {
         setUser(currentUser);
-        saveUserMapping(currentUser);
 
         // Real-time listener for user's assigned role and modules in Firestore
         if (db) {
           const userDocRef = doc(db, 'users', currentUser.uid);
           unsubUserDoc = onSnapshot(userDocRef, (snap) => {
             const data = snap.exists() ? snap.data() : {};
-            const isMaster = isMasterAdminAccount(
-              currentUser.email,
-              data.username || (currentUser.email ? currentUser.email.split('@')[0] : ''),
-              data.displayName || currentUser.displayName
-            );
+            const userEmail = (currentUser.email || '').toLowerCase().trim();
+            const isMaster = isMasterAdminEmail(userEmail);
 
-            const role = isMaster ? 'admin' : (data.role || 'employee');
+            // ── Clean Database-Driven RBAC Role Evaluation ──
+            const validRoles = ['admin', 'accountant', 'employee'];
+            const role = validRoles.includes(data.role) ? data.role : (isMaster ? 'admin' : 'employee');
+
             const assignedModules = role === 'admin'
               ? ERP_MODULES.map(m => m.id)
-              : (Array.isArray(data.assignedModules)
+              : (Array.isArray(data.assignedModules) && data.assignedModules.length > 0
                   ? data.assignedModules
                   : (ROLE_DEFAULT_MODULES[role] || ROLE_DEFAULT_MODULES.employee));
 
-            setUserProfile({
+            const profile = {
               uid: currentUser.uid,
-              email: currentUser.email || '',
-              displayName: data.displayName || currentUser.displayName || 'KamaniPlastERP',
-              role,
-              assignedModules,
+              email: data.email || currentUser.email || '',
+              username: data.username || (currentUser.email ? currentUser.email.split('@')[0] : ''),
+              displayName: data.displayName || currentUser.displayName || data.username || 'Staff User',
+              role: role,
+              assignedModules: assignedModules,
               status: data.status || 'ACTIVE'
-            });
+            };
 
-            // Auto-heal admin privileges in Firestore document
-            if (isMaster && data.role !== 'admin') {
+            // If account has been disabled by Admin, force sign-out
+            if (profile.status === 'DISABLED') {
+              firebaseSignOut(auth).then(() => {
+                setUser(null);
+                setUserProfile(null);
+                setError('Your account has been deactivated. Please contact your system administrator.');
+              });
+              return;
+            }
+
+            setUserProfile(profile);
+
+            // If first time sign-in and document did not exist in Firestore, initialize baseline record
+            if (!snap.exists()) {
               setDoc(userDocRef, {
-                role: 'admin',
-                assignedModules: ERP_MODULES.map(m => m.id),
-                status: 'ACTIVE'
+                uid: currentUser.uid,
+                email: userEmail,
+                username: profile.username.toLowerCase(),
+                displayName: profile.displayName,
+                role: profile.role,
+                assignedModules: profile.assignedModules,
+                status: 'ACTIVE',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
               }, { merge: true }).catch(console.warn);
             }
           }, (err) => {
@@ -127,94 +141,65 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  const saveUserMapping = async (userObj, rawUsername = '') => {
-    if (!db || !userObj || !userObj.uid) return;
-    try {
-      const email = userObj.email || '';
-      const defaultUsername = email ? email.split('@')[0] : '';
-      const username = (rawUsername || userObj.displayName || defaultUsername).trim();
-      const usernameLower = username.toLowerCase();
-
-      if (usernameLower) {
-        await setDoc(doc(db, 'usernames', usernameLower), {
-          email: email,
-          uid: userObj.uid,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      }
-
-      // Check if user doc already has a role
-      const userDocRef = doc(db, 'users', userObj.uid);
-      const existingSnap = await getDoc(userDocRef);
-      const isMaster = (email || '').toLowerCase().includes('admin') ||
-                       (email || '').toLowerCase().includes('kamani') ||
-                       (usernameLower || '').includes('kamani') ||
-                       (userObj.displayName || '').toLowerCase().includes('kamani');
-      const defaultRole = isMaster ? 'admin' : 'employee';
-
-      const initialData = {
-        uid: userObj.uid,
-        email: email,
-        username: usernameLower,
-        displayName: userObj.displayName || username,
-        updatedAt: new Date().toISOString()
-      };
-
-      if (isMaster) {
-        initialData.role = 'admin';
-        initialData.assignedModules = ERP_MODULES.map(m => m.id);
-        initialData.status = 'ACTIVE';
-      } else if (!existingSnap.exists() || !existingSnap.data()?.role) {
-        initialData.role = defaultRole;
-        initialData.assignedModules = ROLE_DEFAULT_MODULES[defaultRole] || [];
-        initialData.status = 'ACTIVE';
-      }
-
-      await setDoc(userDocRef, initialData, { merge: true });
-    } catch (err) {
-      console.warn('Error saving user mapping in Firestore:', err);
-    }
-  };
-
+  /**
+   * Resolves a login input (which could be either a username or an email address)
+   * into a valid registered email address.
+   */
   const resolveEmail = async (input) => {
-    const trimmed = input.trim();
+    const trimmed = (input || '').trim();
     if (!trimmed) return '';
-    if (trimmed.includes('@')) return trimmed;
+    if (trimmed.includes('@')) return trimmed.toLowerCase();
 
     const usernameLower = trimmed.toLowerCase();
     
-    // 1. Check Firestore `usernames/{username}` doc
+    // 1. Check Firestore `usernames/{usernameLower}` mapping collection
     if (db) {
       try {
         const uDocRef = doc(db, 'usernames', usernameLower);
         const uSnap = await getDoc(uDocRef);
         if (uSnap.exists() && uSnap.data()?.email) {
-          return uSnap.data().email;
+          return uSnap.data().email.toLowerCase().trim();
         }
 
-        // 2. Query Firestore `users` collection where `username` matches
+        // 2. Query Firestore `users` collection where `username == usernameLower`
         const q = query(collection(db, 'users'), where('username', '==', usernameLower));
         const qSnap = await getDocs(q);
         if (!qSnap.empty) {
           const userDoc = qSnap.docs[0].data();
-          if (userDoc?.email) return userDoc.email;
+          if (userDoc?.email) return userDoc.email.toLowerCase().trim();
         }
       } catch (e) {
         console.warn('Username lookup in Firestore failed, using domain fallback:', e);
       }
     }
 
-    // Default domain fallback
+    // 3. Fallback: Default to standard company domain
     return `${usernameLower}@kamaniplast.com`;
   };
 
+  /**
+   * Unified Login Handler - supports both username and email authentication
+   */
   const login = async (usernameOrEmail, password) => {
     setError(null);
     const targetEmail = await resolveEmail(usernameOrEmail);
+
     try {
       const res = await signInWithEmailAndPassword(auth, targetEmail, password);
-      await saveUserMapping(res.user, usernameOrEmail.includes('@') ? '' : usernameOrEmail);
-      
+
+      // Verify account status
+      if (db && res.user?.uid) {
+        try {
+          const snap = await getDoc(doc(db, 'users', res.user.uid));
+          if (snap.exists() && snap.data()?.status === 'DISABLED') {
+            await firebaseSignOut(auth);
+            throw new Error('This account has been deactivated. Please contact your system administrator.');
+          }
+        } catch (statusErr) {
+          if (statusErr.message.includes('deactivated')) throw statusErr;
+        }
+      }
+
       logAuditEvent({
         category: 'SECURITY',
         action: 'USER_LOGIN',
@@ -223,19 +208,32 @@ export const AuthProvider = ({ children }) => {
         user: res.user
       });
 
-      return res.user;
+      // Compute initial landing route based on assigned role/modules
+      let defaultRoute = '/dashboard';
+      if (db && res.user?.uid) {
+        try {
+          const snap = await getDoc(doc(db, 'users', res.user.uid));
+          if (snap.exists()) {
+            const data = snap.data();
+            defaultRoute = getDefaultRouteForRole(data.role || 'employee', data.assignedModules || []);
+          }
+        } catch (_) {}
+      }
+
+      return { user: res.user, defaultRoute };
     } catch (err) {
       setError(err.message);
       throw err;
     }
   };
 
-  const signup = async (usernameOrEmail, password, displayName = 'ERP User') => {
+  const signup = async (usernameOrEmail, password, displayName = 'Staff User') => {
     setError(null);
-    const targetEmail = usernameOrEmail.includes('@') 
-      ? usernameOrEmail.trim() 
-      : `${usernameOrEmail.trim().toLowerCase()}@kamaniplast.com`;
-    const rawUsername = usernameOrEmail.includes('@') ? usernameOrEmail.split('@')[0] : usernameOrEmail.trim();
+    const cleanInput = (usernameOrEmail || '').trim();
+    const targetEmail = cleanInput.includes('@') 
+      ? cleanInput.toLowerCase() 
+      : `${cleanInput.toLowerCase()}@kamaniplast.com`;
+    const rawUsername = cleanInput.includes('@') ? cleanInput.split('@')[0] : cleanInput;
     const resolvedName = displayName || rawUsername;
 
     try {
@@ -243,7 +241,30 @@ export const AuthProvider = ({ children }) => {
       if (res.user && resolvedName) {
         await updateProfile(res.user, { displayName: resolvedName });
       }
-      await saveUserMapping(res.user, rawUsername);
+
+      if (db && res.user?.uid) {
+        const usernameLower = rawUsername.toLowerCase();
+        // Save initial user doc
+        await setDoc(doc(db, 'users', res.user.uid), {
+          uid: res.user.uid,
+          email: targetEmail,
+          username: usernameLower,
+          displayName: resolvedName,
+          role: 'employee',
+          assignedModules: ROLE_DEFAULT_MODULES.employee,
+          status: 'ACTIVE',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // Save username mapping
+        await setDoc(doc(db, 'usernames', usernameLower), {
+          email: targetEmail,
+          uid: res.user.uid,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+
       return res.user;
     } catch (err) {
       setError(err.message);
@@ -255,14 +276,12 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     try {
       const res = await signInWithPopup(auth, googleProvider);
-      await saveUserMapping(res.user);
       return res.user;
     } catch (err) {
       setError(err.message);
       throw err;
     }
   };
-
 
   const logout = async () => {
     setError(null);
@@ -271,14 +290,14 @@ export const AuthProvider = ({ children }) => {
         logAuditEvent({
           category: 'SECURITY',
           action: 'USER_LOGOUT',
-          summary: `User "${user?.displayName || user?.email || 'User'}" signed out of system`,
+          summary: `User "${userProfile?.displayName || user?.email || 'User'}" signed out of system`,
           targetId: user?.email || 'System'
         });
         await firebaseSignOut(auth);
         setUser(null);
+        setUserProfile(null);
       } catch (err) {
         setError(err.message);
-        throw err;
       }
     }
   };
@@ -286,7 +305,7 @@ export const AuthProvider = ({ children }) => {
   const resetPassword = async (email) => {
     setError(null);
     try {
-      await firebaseSendPasswordResetEmail(auth, email);
+      await firebaseSendPasswordResetEmail(auth, email.trim().toLowerCase());
       return true;
     } catch (err) {
       setError(err.message);
@@ -294,18 +313,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const isMasterUser = (user?.email || '').toLowerCase().includes('admin') ||
-                       (user?.email || '').toLowerCase().includes('kamani') ||
-                       (user?.displayName || '').toLowerCase().includes('kamani') ||
-                       (userProfile?.displayName || '').toLowerCase().includes('kamani') ||
-                       (userProfile?.email || '').toLowerCase().includes('kamani');
-  const userRole = isMasterUser ? 'admin' : (userProfile?.role || 'employee');
+  // Authoritative RBAC Properties
+  const userRole = userProfile?.role || 'employee';
   const isAdmin = userRole === 'admin';
   const assignedModules = Array.isArray(userProfile?.assignedModules)
     ? userProfile.assignedModules
     : (ROLE_DEFAULT_MODULES[userRole] || ROLE_DEFAULT_MODULES.employee);
 
-  // Checks whether the current user is permitted to access a given module
+  // Checks whether current user is permitted to access a given module route
   const hasAccess = (moduleKey) => {
     if (!moduleKey) return true;
     if (isAdmin) return true;
@@ -316,6 +331,8 @@ export const AuthProvider = ({ children }) => {
     ? ERP_MODULES.map(m => m.id)
     : assignedModules;
 
+  const defaultRoute = getDefaultRouteForRole(userRole, assignedModules);
+
   const value = {
     user,
     userProfile,
@@ -323,6 +340,7 @@ export const AuthProvider = ({ children }) => {
     isAdmin,
     assignedModules,
     allowedModules,
+    defaultRoute,
     hasAccess,
     loading,
     error,

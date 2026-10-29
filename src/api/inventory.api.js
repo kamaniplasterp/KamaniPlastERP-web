@@ -19,6 +19,7 @@ import {
 import { db } from '../firebase/firebase';
 import { createQcCheck } from './qc.api';
 import { logAuditEvent } from './audit.api';
+import { createNotification } from './notifications.api';
 
 /**
  * Subscribe to real-time Raw Materials collection with optional query limit
@@ -518,6 +519,10 @@ export async function recordRmInward(data) {
     articleType,
     articleWeight: articleTareWeight,
     varianceKg: articleTareWeight, // Tare deduction / variance (Change 4)
+    tareDeduct: articleTareWeight,
+    isTareVarianceExceeded: Boolean(data.isTareVarianceExceeded !== undefined ? data.isTareVarianceExceeded : (articleTareWeight > Number(data.varianceThresholdKg || 50))),
+    tareVarianceKg: articleTareWeight,
+    varianceThresholdKg: Number(data.varianceThresholdKg || 50),
     netWeight: netInwardKg,
     challanWeight: Number(data.challanWeight || 0),
     shortfallKg: Number(data.shortfallKg || 0),
@@ -559,6 +564,39 @@ export async function recordRmInward(data) {
     });
   } catch (qcErr) {
     console.warn('Auto create QC check error:', qcErr);
+  }
+
+  // Trigger Tare Variance or Weight Discrepancy Notification
+  if (grnDocData.isTareVarianceExceeded || (grnDocData.tareDeduct > Number(grnDocData.varianceThresholdKg || 50))) {
+    const diff = (grnDocData.tareDeduct - Number(grnDocData.varianceThresholdKg || 50)).toFixed(1);
+    createNotification({
+      sourceKey: `TARE_EXCEEDED_${grnDocData.grnNo}`,
+      title: `Tare Variance Exceeded: ${grnDocData.grnNo}`,
+      message: `Tare deduction of ${grnDocData.tareDeduct} KG exceeds threshold (${grnDocData.varianceThresholdKg || 50} KG) by ${diff} KG. Bag count: ${grnDocData.bagCount}.`,
+      category: 'WEIGHT',
+      severity: 'high',
+      targetRoles: ['admin'],
+      actionPath: '/inventory',
+      actionState: { tab: 'rm', subView: 'inward', search: grnDocData.batchNumber || grnDocData.grnNo },
+      meta: `${grnDocData.supplierName} • ${grnDocData.itemName} • Inward: ${grnDocData.date}`,
+      timeTag: 'Tare Exceeded'
+    }).catch(console.warn);
+  }
+
+  if (Number(grnDocData.challanWeight) > 0 && Number(grnDocData.challanWeight) > Number(grnDocData.grossWeight)) {
+    const diff = (Number(grnDocData.challanWeight) - Number(grnDocData.grossWeight)).toFixed(1);
+    createNotification({
+      sourceKey: `WEIGHT_DISCREPANCY_${grnDocData.grnNo}`,
+      title: `Weight Discrepancy: ${grnDocData.grnNo}`,
+      message: `Billed weight (${Number(grnDocData.challanWeight).toLocaleString()} KG) exceeds Gross (${Number(grnDocData.grossWeight).toLocaleString()} KG) by ${diff} KG. Batch: ${grnDocData.batchNumber || '—'}.`,
+      category: 'WEIGHT',
+      severity: 'high',
+      targetRoles: ['admin', 'accountant'],
+      actionPath: '/inventory',
+      actionState: { tab: 'rm', subView: 'inward', search: grnDocData.batchNumber || grnDocData.grnNo },
+      meta: `${grnDocData.supplierName} • Challan #${grnDocData.challanNo || '—'}`,
+      timeTag: grnDocData.date || 'Recent'
+    }).catch(console.warn);
   }
 
   // Find or update matching rawMaterial SKU in Firestore

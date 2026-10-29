@@ -4,7 +4,15 @@ import { useAuth } from '../context/AuthContext';
 import { useWorkflow } from '../context/WorkflowContext';
 import { subscribeRmInwards } from '../api/inventory.api';
 import { subscribeQcChecks } from '../api/qc.api';
+import { subscribeTareStandards, DEFAULT_TARE_STANDARDS } from '../api/directory.api';
 import { ROLE_LABELS, ROLE_COLORS } from '../api/rbac.api';
+import {
+  subscribeUserNotifications,
+  markNotificationAsRead,
+  dismissNotification,
+  dismissAllNotifications,
+  syncSystemWatchdogAlerts
+} from '../api/notifications.api';
 import {
   Search,
   RotateCcw,
@@ -23,7 +31,7 @@ import {
 } from 'lucide-react';
 
 export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) {
-  const { user, logout, userRole, hasAccess } = useAuth();
+  const { user, logout, userRole, isAdmin, hasAccess, defaultRoute } = useAuth();
   const { 
     globalSearch, 
     setGlobalSearch, 
@@ -38,21 +46,42 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
   const username = user?.displayName || user?.email?.split('@')[0] || 'Administrator';
   const initials = username.slice(0, 2).toUpperCase();
 
-  // Real-time inward and QC check data for notifications
+  // Real-time inward, QC check and tare data for watchdog synchronization
   const [rmInwards, setRmInwards] = useState([]);
   const [qcChecks, setQcChecks] = useState([]);
+  const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
+  const [persistentNotifications, setPersistentNotifications] = useState([]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [notifFilter, setNotifFilter] = useState('ALL');
-  const [dismissedIds, setDismissedIds] = useState([]);
 
   useEffect(() => {
     const unsubInw = subscribeRmInwards(setRmInwards);
     const unsubQc = subscribeQcChecks(setQcChecks);
+    const unsubTare = subscribeTareStandards(setTareStandards);
+    const unsubNotifs = subscribeUserNotifications({ ...user, role: userRole }, (list) => {
+      setPersistentNotifications(list);
+    });
+
     return () => {
       unsubInw();
       unsubQc();
+      unsubTare();
+      unsubNotifs();
     };
-  }, []);
+  }, [user, userRole]);
+
+  // Synchronize watchdog alerts into persistent Firestore collection
+  useEffect(() => {
+    if (rmInwards.length > 0 || qcChecks.length > 0 || (rmList && rmList.length > 0)) {
+      syncSystemWatchdogAlerts({
+        rmInwards,
+        qcChecks,
+        tareStandards,
+        rawMaterials: rmList || [],
+        finishedGoods: fgList || []
+      }).catch(console.warn);
+    }
+  }, [rmInwards, qcChecks, tareStandards, rmList, fgList]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -100,145 +129,56 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
     }
   };
 
-  // 1. Weight Discrepancy Warnings (Billed Weight > Gross Weight)
-  const weightDiscrepancies = rmInwards
-    .filter(inw => {
-      const billed = Number(inw.challanWeight || 0);
-      const gross = Number(inw.grossWeight || 0);
-      return billed > 0 && billed > gross;
-    })
-    .map(inw => {
-      const billed = Number(inw.challanWeight || 0);
-      const gross = Number(inw.grossWeight || 0);
-      const diff = (billed - gross).toFixed(1);
-      return {
-        id: `weight-${inw.id || inw.grnNo}`,
-        type: 'WEIGHT_DISCREPANCY',
-        category: 'WEIGHT',
-        title: `Weight Discrepancy: ${inw.grnNo}`,
-        message: `Billed weight (${billed.toLocaleString()} KG) exceeds Gross (${gross.toLocaleString()} KG) by ${diff} KG. Batch: ${inw.batchNumber || '—'}.`,
-        meta: `${inw.supplierName || 'Supplier'} • Challan #${inw.challanNo || '—'}`,
-        timeTag: inw.date || 'Recent',
-        severity: 'high',
-        path: '/inventory',
-        state: { tab: 'rm', subView: 'inward', search: inw.batchNumber || inw.grnNo }
-      };
-    });
+  const isUserAdmin = Boolean(isAdmin || userRole === 'admin' || user?.role === 'admin');
 
-  // 2. QC SLA Overdue Warnings (24-hr deadline exceeded without approval)
-  const qcAlerts = rmInwards
-    .filter(inw => {
-      const matchQc = qcChecks.find(q => (q.grnId && q.grnId === inw.id) || (q.grnNo && q.grnNo === inw.grnNo));
-      const isAccepted = inw.qcStatus === 'ACCEPTED' || matchQc?.result === 'PASS' || matchQc?.status === 'APPROVED';
-      if (isAccepted) return false;
+  // QC Overdue alerts are strictly restricted to Admin users only
+  const isQcNotification = (n) => (
+    n?.category === 'QC' ||
+    String(n?.category || '').toUpperCase() === 'QC' ||
+    n?.type === 'QC_OVERDUE' ||
+    (n?.sourceKey && String(n.sourceKey).startsWith('QC_')) ||
+    (n?.title && /quality check|qc overdue/i.test(n.title))
+  );
 
-      const deadline = matchQc?.deadlineDate || (matchQc?.deadlineAt?.toDate ? matchQc.deadlineAt.toDate() : null);
-      let isOverdue = Boolean(matchQc?.isOverdue);
-      if (!isOverdue) {
-        if (deadline && deadline.getTime() < Date.now()) {
-          isOverdue = true;
-        } else if (inw.date) {
-          const inwDate = new Date(inw.date);
-          if (!isNaN(inwDate.getTime()) && (Date.now() - inwDate.getTime() > 24 * 60 * 60 * 1000)) {
-            isOverdue = true;
-          }
-        }
-      }
-      return isOverdue;
-    })
-    .map(inw => ({
-      id: `qc-${inw.id || inw.grnNo}`,
-      type: 'QC_OVERDUE',
-      category: 'QC',
-      title: `Quality Check Overdue: ${inw.grnNo}`,
-      message: `24-hour inspection SLA exceeded for ${inw.itemName} (${inw.batchNumber || 'No Batch'}). Physical inspection required.`,
-      meta: `${inw.supplierName || 'Supplier'} • Inward: ${inw.date || '—'}`,
-      timeTag: 'SLA Overdue',
-      severity: 'high',
-      path: '/inventory',
-      state: { tab: 'rm', subView: 'inward', search: inw.batchNumber || inw.grnNo }
-    }));
-
-  // 3. Low Stock Warnings (Below reorder level)
-  const lowStockAlerts = [];
-  (rmList || []).forEach(rm => {
-    const total = (Number(rm.availFactory) || 0) + (Number(rm.atJobWork) || 0);
-    const reorder = Number(rm.reorderLevel) || 1000;
-    if (total < reorder) {
-      lowStockAlerts.push({
-        id: `low-rm-${rm.id || rm.code}`,
-        type: 'LOW_STOCK',
-        category: 'STOCK',
-        title: `Low Stock: ${rm.name || rm.code}`,
-        message: `Current stock (${total.toLocaleString()} KG) is below reorder level (${reorder.toLocaleString()} KG).`,
-        meta: `Factory: ${Number(rm.availFactory || 0).toLocaleString()} KG • Grade: ${rm.grade || '—'}`,
-        timeTag: 'Low RM',
-        severity: 'medium',
-        path: '/inventory',
-        state: { tab: 'rm', subView: 'ledger', search: rm.name || rm.code }
-      });
+  const activeNotifications = persistentNotifications.filter(n => {
+    if (isQcNotification(n) && !isUserAdmin) {
+      return false;
     }
+    return true;
   });
 
-  (fgList || []).forEach(fg => {
-    const total = Number(fg.stockQty || 0);
-    const reorder = Number(fg.reorderLevel) || 50;
-    if (total < reorder) {
-      lowStockAlerts.push({
-        id: `low-fg-${fg.id || fg.code}`,
-        type: 'LOW_STOCK',
-        category: 'STOCK',
-        title: `Low FG Stock: ${fg.name || fg.code}`,
-        message: `Finished stock (${total.toLocaleString()} Coils) is below minimum reserve (${reorder.toLocaleString()}).`,
-        meta: `${fg.category || 'Finished Goods'}`,
-        timeTag: 'Low FG',
-        severity: 'medium',
-        path: '/inventory',
-        state: { tab: 'fg', search: fg.name || fg.code }
-      });
-    }
-  });
+  const hasHighSeverity = activeNotifications.some(n => n.severity === 'high' || n.severity === 'critical');
 
-  // 4. Job Work Pending Balance Alerts
-  const jobWorkAlerts = (jobWorkList || [])
-    .filter(jw => {
-      const isCompleted = jw.status === 'COMPLETED' || jw.status === 'FULLY RECEIVED';
-      if (isCompleted) return false;
-      const bal = Number(jw.balQtyKg !== undefined ? jw.balQtyKg : (Number(jw.sentQtyKg || 0) - Number(jw.recQtyKg || 0)));
-      return bal > 0;
-    })
-    .slice(0, 5)
-    .map(jw => {
-      const bal = Number(jw.balQtyKg !== undefined ? jw.balQtyKg : (Number(jw.sentQtyKg || 0) - Number(jw.recQtyKg || 0)));
-      return {
-        id: `jw-${jw.id || jw.jwNo}`,
-        type: 'JOB_WORK',
-        category: 'JW',
-        title: `Outside Processing: ${jw.jwNo}`,
-        message: `${bal.toLocaleString()} KG material awaiting processing return from ${jw.vendor || 'Job Worker'}.`,
-        meta: `Challan #${jw.chNo || '—'} • Issued ${jw.date || '—'}`,
-        timeTag: 'Pending',
-        severity: 'low',
-        path: '/job-work',
-        state: {}
-      };
-    });
-
-  // Combined notifications list
-  const allNotifications = [
-    ...weightDiscrepancies,
-    ...qcAlerts,
-    ...lowStockAlerts,
-    ...jobWorkAlerts
-  ];
-
-  const activeNotifications = allNotifications.filter(n => !dismissedIds.includes(n.id));
-  const hasHighSeverity = activeNotifications.some(n => n.severity === 'high');
+  const allWeightAlerts = activeNotifications.filter(n => n.category === 'WEIGHT');
+  const qcAlerts = activeNotifications.filter(n => isQcNotification(n));
+  const lowStockAlerts = activeNotifications.filter(n => n.category === 'STOCK');
+  const jobWorkAlerts = activeNotifications.filter(n => n.category === 'JOB_WORK');
 
   const filteredList = activeNotifications.filter(n => {
     if (notifFilter === 'ALL') return true;
     return n.category === notifFilter;
   });
+
+  const handleDismissAll = async () => {
+    if (!user?.uid || activeNotifications.length === 0) return;
+    await dismissAllNotifications(activeNotifications.map(n => n.id), user.uid);
+  };
+
+  const handleDismissSingle = async (e, id) => {
+    e.stopPropagation();
+    if (!user?.uid || !id) return;
+    await dismissNotification(id, user.uid);
+  };
+
+  const handleItemClick = (item) => {
+    setShowNotifDropdown(false);
+    if (user?.uid) {
+      markNotificationAsRead(item.id, user.uid);
+    }
+    const path = item.actionPath || item.path || defaultRoute || (hasAccess('dashboard') ? '/dashboard' : '/job-work');
+    const state = item.actionState || item.state;
+    navigate(path, { state });
+  };
 
   return (
     <header className="erp-topnav">
@@ -369,7 +309,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                   {activeNotifications.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => setDismissedIds(allNotifications.map(n => n.id))}
+                      onClick={handleDismissAll}
                       style={{
                         background: 'transparent',
                         border: 'none',
@@ -379,6 +319,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                         cursor: 'pointer',
                         textDecoration: 'underline'
                       }}
+                      title="Permanently dismiss all active notifications for your account"
                     >
                       Dismiss All
                     </button>
@@ -413,12 +354,12 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                 }}
               >
                 {[
-                  { key: 'ALL', label: `All (${activeNotifications.length})` },
-                  { key: 'WEIGHT', label: `⚠️ Weight (${weightDiscrepancies.length})` },
-                  { key: 'QC', label: `⏱️ QC Overdue (${qcAlerts.length})` },
-                  { key: 'STOCK', label: `📦 Stock (${lowStockAlerts.length})` },
-                  { key: 'JW', label: `💼 Job Work (${jobWorkAlerts.length})` }
-                ].map(tab => (
+                  { key: 'ALL', label: `All (${activeNotifications.length})`, show: true },
+                  { key: 'WEIGHT', label: `⚠️ Weight (${allWeightAlerts.length})`, show: true },
+                  { key: 'QC', label: `⏱️ QC Overdue (${qcAlerts.length})`, show: isUserAdmin },
+                  { key: 'STOCK', label: `📦 Stock (${lowStockAlerts.length})`, show: true },
+                  { key: 'JOB_WORK', label: `💼 Job Work (${jobWorkAlerts.length})`, show: true }
+                ].filter(tab => tab.show).map(tab => (
                   <button
                     key={tab.key}
                     type="button"
@@ -455,10 +396,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                   filteredList.map(item => (
                     <div
                       key={item.id}
-                      onClick={() => {
-                        setShowNotifDropdown(false);
-                        navigate(item.path, { state: item.state });
-                      }}
+                      onClick={() => handleItemClick(item)}
                       style={{
                         padding: '12px 16px',
                         borderBottom: '1px solid #f1f5f9',
@@ -466,19 +404,37 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                         display: 'flex',
                         gap: '12px',
                         alignItems: 'flex-start',
-                        transition: 'background 0.15s ease'
+                        transition: 'background 0.15s ease',
+                        position: 'relative',
+                        background: !item.isRead ? '#f8fafc' : '#ffffff'
                       }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                      onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                      onMouseLeave={e => e.currentTarget.style.background = !item.isRead ? '#f8fafc' : '#ffffff'}
                     >
+                      {/* Unread Indicator Dot */}
+                      {!item.isRead && (
+                        <span 
+                          style={{
+                            position: 'absolute',
+                            left: '6px',
+                            top: '16px',
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: '#2563eb'
+                          }} 
+                          title="Unread alert"
+                        />
+                      )}
+
                       {/* Icon */}
                       <div 
                         style={{
                           width: '32px',
                           height: '32px',
                           borderRadius: '8px',
-                          background: item.type === 'WEIGHT_DISCREPANCY' ? '#fee2e2' : item.type === 'QC_OVERDUE' ? '#fff1f2' : item.type === 'LOW_STOCK' ? '#fef3c7' : '#e0f2fe',
-                          color: item.type === 'WEIGHT_DISCREPANCY' ? '#dc2626' : item.type === 'QC_OVERDUE' ? '#e11d48' : item.type === 'LOW_STOCK' ? '#b45309' : '#0369a1',
+                          background: item.category === 'WEIGHT' ? '#fee2e2' : item.category === 'QC' ? '#fff1f2' : item.category === 'STOCK' ? '#fef3c7' : '#e0f2fe',
+                          color: item.category === 'WEIGHT' ? '#dc2626' : item.category === 'QC' ? '#e11d48' : item.category === 'STOCK' ? '#b45309' : '#0369a1',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -486,21 +442,40 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                           marginTop: '2px'
                         }}
                       >
-                        {item.type === 'WEIGHT_DISCREPANCY' ? <AlertTriangle size={16} /> :
-                         item.type === 'QC_OVERDUE' ? <Clock size={16} /> :
-                         item.type === 'LOW_STOCK' ? <Package size={16} /> :
+                        {item.category === 'WEIGHT' ? <AlertTriangle size={16} /> :
+                         item.category === 'QC' ? <Clock size={16} /> :
+                         item.category === 'STOCK' ? <Package size={16} /> :
                          <Briefcase size={16} />}
                       </div>
 
                       {/* Content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: !item.isRead ? 800 : 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {item.title}
                           </span>
-                          <span style={{ fontSize: '0.65rem', color: item.severity === 'high' ? '#dc2626' : '#94a3b8', fontWeight: item.severity === 'high' ? 700 : 500, whiteSpace: 'nowrap' }}>
-                            {item.timeTag}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.65rem', color: (item.severity === 'high' || item.severity === 'critical') ? '#dc2626' : '#94a3b8', fontWeight: (item.severity === 'high' || item.severity === 'critical') ? 700 : 500, whiteSpace: 'nowrap' }}>
+                              {item.timeTag || 'Alert'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDismissSingle(e, item.id)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#94a3b8',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                borderRadius: '4px'
+                              }}
+                              title="Dismiss this alert"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
                         </div>
                         <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '3px', lineHeight: 1.35 }}>
                           {item.message}

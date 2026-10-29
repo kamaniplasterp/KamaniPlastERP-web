@@ -76,6 +76,7 @@ export default function DirectorySettingsView() {
   const [liveAuditLogs, setLiveAuditLogs] = useState([]);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditCategoryFilter, setAuditCategoryFilter] = useState('ALL');
+  const [showAuditFilterPanel, setShowAuditFilterPanel] = useState(false);
   const [selectedAuditDetail, setSelectedAuditDetail] = useState(null);
   const [copiedAuditJson, setCopiedAuditJson] = useState(false);
 
@@ -161,7 +162,7 @@ export default function DirectorySettingsView() {
     if (!selectedUserForRbac) return;
     setIsSavingRbac(true);
     try {
-      await updateUserAccess(selectedUserForRbac.uid || selectedUserForRbac.id, {
+      await updateUserAccess(selectedUserForRbac, {
         role: editRole,
         assignedModules: editRole === 'admin' ? ERP_MODULES.map(m => m.id) : editAssignedModules,
         status: selectedUserForRbac.status || 'ACTIVE'
@@ -1404,31 +1405,16 @@ export default function DirectorySettingsView() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', color: '#475569', fontWeight: 600 }}>
-                <Filter size={14} /> Filter:
-              </div>
-              <select
-                className="ds-filter-select"
-                value={auditCategoryFilter}
-                onChange={e => setAuditCategoryFilter(e.target.value)}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  background: '#ffffff',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  color: '#1e293b'
-                }}
+              <button
+                type="button"
+                className={`ds-filter-toggle-btn ${showAuditFilterPanel || auditCategoryFilter !== 'ALL' ? 'active' : ''}`}
+                onClick={() => setShowAuditFilterPanel(!showAuditFilterPanel)}
+                title="Toggle Category Filters"
               >
-                <option value="ALL">All Categories ({liveAuditLogs.length})</option>
-                <option value="SECURITY">Security &amp; RBAC</option>
-                <option value="QUALITY_CONTROL">Quality Control (QC)</option>
-                <option value="INVENTORY">Inventory &amp; Inward</option>
-                <option value="JOB_WORK">Job Work Operations</option>
-                <option value="SALES">Sales &amp; Dispatch</option>
-                <option value="MASTER_DATA">Master Configurations</option>
-              </select>
+                <Filter size={14} />
+                <span>Filters</span>
+                {auditCategoryFilter !== 'ALL' && <span className="ds-filter-count-badge">1</span>}
+              </button>
 
               <button
                 type="button"
@@ -1466,8 +1452,25 @@ export default function DirectorySettingsView() {
             </div>
           </div>
 
-          {/* Category Pill Summary Bar */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingBottom: '4px' }}>
+          {/* Category Filter Panel - Only visible when Filter button is clicked */}
+          {showAuditFilterPanel && (
+            <div className="ds-expanded-filters-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Filter by Audit Category
+                </span>
+                {auditCategoryFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    className="ds-btn-reset-filters"
+                    onClick={() => setAuditCategoryFilter('ALL')}
+                    style={{ height: '28px', padding: '2px 8px', fontSize: '0.72rem' }}
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingBottom: '4px' }}>
             {['ALL', 'SECURITY', 'QUALITY_CONTROL', 'INVENTORY', 'JOB_WORK', 'SALES', 'MASTER_DATA'].map(cat => {
               const count = cat === 'ALL' 
                 ? liveAuditLogs.length 
@@ -1509,7 +1512,9 @@ export default function DirectorySettingsView() {
                 </button>
               );
             })}
-          </div>
+              </div>
+            </div>
+          )}
 
           <div className="ds-table-card">
             <div className="ds-table-wrap">

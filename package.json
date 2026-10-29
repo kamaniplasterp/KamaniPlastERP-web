@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "seed": "node scripts/seedDatabase.js"
+    "preview": "vite preview"
   },
   "dependencies": {
     "firebase": "^12.18.0",

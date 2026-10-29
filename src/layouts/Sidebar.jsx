@@ -58,7 +58,7 @@ const navItems = [
 ];
 
 export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
-  const { user, logout, hasAccess, userRole } = useAuth();
+  const { user, logout, hasAccess, userRole, defaultRoute } = useAuth();
   const { activeJobWorksCount, openOrdersCount, lowStockCount, mobileMenuOpen, setMobileMenuOpen } = useWorkflow();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -119,11 +119,13 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
           onClick={() => {
             if (setMobileMenuOpen) setMobileMenuOpen(false);
             if (collapsed) setCollapsed(false);
-            if (setActiveNav) setActiveNav('dashboard');
-            navigate('/dashboard');
+            const target = defaultRoute || (hasAccess('dashboard') ? '/dashboard' : '/job-work');
+            const targetNav = hasAccess('dashboard') ? 'dashboard' : 'jobwork';
+            if (setActiveNav) setActiveNav(targetNav);
+            navigate(target);
           }}
           style={{ cursor: 'pointer' }}
-          title="Go to Operations Dashboard"
+          title="Go to Home Module"
         >
           <div className="sidebar-logo-mark">
             <span>K</span>

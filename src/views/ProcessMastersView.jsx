@@ -1267,9 +1267,7 @@ export default function ProcessMastersView() {
                               <th>FORM</th>
                               <th>COLOR</th>
                               <th>SIZE</th>
-                              <th>LENGTH</th>
-                              <th>TRACER LINE</th>
-                              <th>METER MARKING</th>
+                              <th>ATTRIBUTES</th>
                               <th style={{ textAlign: 'right' }}>STD BAG WT</th>
                               <th style={{ textAlign: 'right' }}>RATE (₹/KG)</th>
                               <th style={{ textAlign: 'center' }}>STATUS</th>
@@ -1317,29 +1315,21 @@ export default function ProcessMastersView() {
                                   <strong style={{ color: '#0f172a', fontSize: '0.82rem' }}>{row.size}</strong>
                                 </td>
                                 <td>
-                                  <span style={{ background: '#ecfeff', color: '#0e7490', border: '1px solid #cffafe', padding: '2px 8px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-block' }}>
-                                    {row.length || 'Standard'}
-                                  </span>
-                                </td>
-                                <td>
-                                  <span style={{ background: '#fdf2f8', color: '#be185d', border: '1px solid #fce7f3', padding: '2px 8px', borderRadius: '9999px', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap', display: 'inline-block' }}>
-                                    {row.tracerLine || 'None'}
-                                  </span>
-                                </td>
-                                <td>
-                                  <span style={{
-                                    background: row.meterMarking === 'Meter Marking' ? '#ecfdf5' : '#f8fafc',
-                                    color: row.meterMarking === 'Meter Marking' ? '#059669' : '#64748b',
-                                    border: row.meterMarking === 'Meter Marking' ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
-                                    padding: '2px 8px',
-                                    borderRadius: '9999px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 600,
-                                    whiteSpace: 'nowrap',
-                                    display: 'inline-block'
-                                  }}>
-                                    {row.meterMarking || 'Non-Meter Marking'}
-                                  </span>
+                                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <span style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600 }}>
+                                      {row.length || 'Std'}
+                                    </span>
+                                    {row.tracerLine && row.tracerLine !== 'No Tracer Line' && row.tracerLine !== 'None' && (
+                                      <span style={{ background: '#fdf2f8', color: '#be185d', border: '1px solid #fce7f3', padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600 }}>
+                                        {row.tracerLine}
+                                      </span>
+                                    )}
+                                    {row.meterMarking === 'Meter Marking' && (
+                                      <span style={{ background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600 }} title="Meter Marking">
+                                        MM
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
                                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '5px', padding: '2px 6px' }}>

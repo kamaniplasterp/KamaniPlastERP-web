@@ -93,7 +93,7 @@
 /* Top 4 KPI Cards Grid */
 .jw-top-kpis {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px;
 }
 .jw-kpi-card {

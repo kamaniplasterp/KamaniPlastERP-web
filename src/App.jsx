@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { CustomAlertProvider } from './context/CustomAlertContext';
 import ProtectedRoute from './layouts/ProtectedRoute';
@@ -11,6 +11,21 @@ import SalesDispatch from './pages/SalesDispatch';
 import DirectorySettings from './pages/DirectorySettings';
 import ProcessMasters from './pages/ProcessMasters';
 
+function DefaultRouteRedirect() {
+  const { user, loading, defaultRoute } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex-center min-vh-100 bg-slate-900 text-white">
+        <div className="spinner-loader"></div>
+      </div>
+    );
+  }
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Navigate to={defaultRoute || '/job-work'} replace />;
+}
+
 function App() {
   return (
     <CustomAlertProvider>
@@ -18,6 +33,7 @@ function App() {
         <WorkflowProvider>
           <BrowserRouter>
             <Routes>
+              <Route path="/" element={<DefaultRouteRedirect />} />
               <Route path="/login" element={<Login />} />
               <Route 
                 path="/dashboard" 
@@ -67,8 +83,8 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
-              {/* Default redirect to /dashboard */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              {/* Dynamic RBAC fallback route */}
+              <Route path="*" element={<DefaultRouteRedirect />} />
             </Routes>
           </BrowserRouter>
         </WorkflowProvider>

@@ -30,7 +30,9 @@ export const ProtectedRoute = ({ children, module }) => {
   // Enforce module-level permission
   if (module && !hasAccess(module)) {
     const firstAllowedKey = (allowedModules && allowedModules.length > 0) ? allowedModules[0] : null;
-    const fallbackRoute = firstAllowedKey && MODULE_ROUTES[firstAllowedKey] ? MODULE_ROUTES[firstAllowedKey] : '/dashboard';
+    const fallbackRoute = firstAllowedKey && MODULE_ROUTES[firstAllowedKey] 
+      ? MODULE_ROUTES[firstAllowedKey] 
+      : (hasAccess('dashboard') ? '/dashboard' : '/job-work');
 
     return (
       <div style={{

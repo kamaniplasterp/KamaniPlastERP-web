@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   ShoppingCart, Truck, Download, Search, Plus, ArrowUpRight,
-  FileText, ChevronRight, CheckCircle2, AlertTriangle, ArrowUpDown
+  FileText, ChevronRight, CheckCircle2, AlertTriangle, ArrowUpDown, Filter
 } from 'lucide-react';
 import SalesOrderModal from '../modals/SalesOrderModal';
 import DispatchChallanModal from '../modals/DispatchChallanModal';
@@ -69,6 +69,8 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
 
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('All');
+  const [showOrderFilterPanel, setShowOrderFilterPanel] = useState(false);
+  const [showDispatchFilterPanel, setShowDispatchFilterPanel] = useState(false);
   const [orderCustomerFilter, setOrderCustomerFilter] = useState('All');
   const [dispatchSearch, setDispatchSearch] = useState('');
   const [dispatchStatusFilter, setDispatchStatusFilter] = useState('All');
@@ -373,28 +375,15 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
             </div>
 
             <div className="sd-kpi-card">
-              <span className="sd-kpi-title">Dispatched Value</span>
+              <span className="sd-kpi-title">Total Invoiced Value</span>
               <div className="sd-kpi-val-row">
                 <span className="sd-kpi-num">₹{totalDispatchedValLakhs}L</span>
-              </div>
-            </div>
-
-            <div className="sd-kpi-card">
-              <span className="sd-kpi-title">Total Invoiced Revenue</span>
-              <div className="sd-kpi-val-row">
-                <span className="sd-kpi-num" style={{ fontSize: '1.25rem' }}>₹{totalDispatchedValInr.toLocaleString('en-IN')}</span>
+                <span className="sd-kpi-sublabel" style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '500' }}>₹{totalDispatchedValInr.toLocaleString('en-IN')}</span>
               </div>
             </div>
           </>
         ) : (
           <>
-            <div className="sd-kpi-card">
-              <span className="sd-kpi-title">Booked Revenue</span>
-              <div className="sd-kpi-val-row">
-                <span className="sd-kpi-num">₹{totalBookedRevenueLakhs}L</span>
-              </div>
-            </div>
-
             <div className="sd-kpi-card">
               <span className="sd-kpi-title">Open Orders</span>
               <div className="sd-kpi-val-row">
@@ -412,9 +401,10 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
             </div>
 
             <div className="sd-kpi-card">
-              <span className="sd-kpi-title">Total Order Pipeline</span>
+              <span className="sd-kpi-title">Booked Pipeline Value</span>
               <div className="sd-kpi-val-row">
-                <span className="sd-kpi-num" style={{ fontSize: '1.25rem' }}>₹{totalBookedRevenueInr.toLocaleString('en-IN')}</span>
+                <span className="sd-kpi-num">₹{totalBookedRevenueLakhs}L</span>
+                <span className="sd-kpi-sublabel" style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '500' }}>₹{totalBookedRevenueInr.toLocaleString('en-IN')}</span>
               </div>
             </div>
           </>
@@ -459,33 +449,72 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
               />
             </div>
 
-            <select
-              className="sd-filter-select"
-              value={orderStatusFilter}
-              onChange={e => setOrderStatusFilter(e.target.value)}
-            >
-              <option value="All">All Order Statuses</option>
-              <option value="Confirmed">Confirmed / Reserved</option>
-              <option value="Ready">Ready for Dispatch</option>
-              <option value="Partially">Partially Dispatched</option>
-              <option value="Completed">Completed / Dispatched</option>
-            </select>
-
-            <select
-              className="sd-filter-select"
-              value={orderCustomerFilter}
-              onChange={e => setOrderCustomerFilter(e.target.value)}
-            >
-              <option value="All">All Customers</option>
-              {uniqueCustomers.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            {(() => {
+              const activeCount = (orderStatusFilter !== 'All' ? 1 : 0) + (orderCustomerFilter !== 'All' ? 1 : 0);
+              return (
+                <button
+                  type="button"
+                  className={`sd-filter-toggle-btn ${showOrderFilterPanel || activeCount > 0 ? 'active' : ''}`}
+                  onClick={() => setShowOrderFilterPanel(!showOrderFilterPanel)}
+                  title="Toggle Order Filters"
+                >
+                  <Filter size={14} />
+                  <span>Filters</span>
+                  {activeCount > 0 && <span className="sd-filter-count-badge">{activeCount}</span>}
+                </button>
+              );
+            })()}
 
             <button className="sd-btn-ghost" onClick={() => exportToCsv('Sales_Orders_Ledger.csv', filteredOrders)} style={{ cursor: 'pointer', marginLeft: 'auto' }}>
               <Download size={14} /> Export CSV
             </button>
           </div>
+
+          {showOrderFilterPanel && (
+            <div className="sd-expanded-filters-panel">
+              <div className="sd-filter-field">
+                <label>Order Status</label>
+                <select
+                  className="sd-filter-select"
+                  value={orderStatusFilter}
+                  onChange={e => setOrderStatusFilter(e.target.value)}
+                >
+                  <option value="All">All Order Statuses</option>
+                  <option value="Confirmed">Confirmed / Reserved</option>
+                  <option value="Ready">Ready for Dispatch</option>
+                  <option value="Partially">Partially Dispatched</option>
+                  <option value="Completed">Completed / Dispatched</option>
+                </select>
+              </div>
+
+              <div className="sd-filter-field">
+                <label>Customer</label>
+                <select
+                  className="sd-filter-select"
+                  value={orderCustomerFilter}
+                  onChange={e => setOrderCustomerFilter(e.target.value)}
+                >
+                  <option value="All">All Customers</option>
+                  {uniqueCustomers.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              {(orderStatusFilter !== 'All' || orderCustomerFilter !== 'All') && (
+                <button
+                  type="button"
+                  className="sd-btn-reset-filters"
+                  onClick={() => {
+                    setOrderStatusFilter('All');
+                    setOrderCustomerFilter('All');
+                  }}
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Dark Header Table */}
           <div className="sd-table-container">
@@ -574,21 +603,49 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
               />
             </div>
 
-            <select
-              className="sd-filter-select"
-              value={dispatchStatusFilter}
-              onChange={e => setDispatchStatusFilter(e.target.value)}
+            <button
+              type="button"
+              className={`sd-filter-toggle-btn ${showDispatchFilterPanel || dispatchStatusFilter !== 'All' ? 'active' : ''}`}
+              onClick={() => setShowDispatchFilterPanel(!showDispatchFilterPanel)}
+              title="Toggle Dispatch Filters"
             >
-              <option value="All">All Dispatch Statuses</option>
-              <option value="Dispatched">Dispatched</option>
-              <option value="In Transit">In Transit</option>
-              <option value="Delivered">Delivered</option>
-            </select>
+              <Filter size={14} />
+              <span>Filters</span>
+              {dispatchStatusFilter !== 'All' && <span className="sd-filter-count-badge">1</span>}
+            </button>
 
             <button className="sd-btn-ghost" onClick={() => exportToCsv('Delivery_Dispatches_Ledger.csv', filteredDispatches)} style={{ cursor: 'pointer', marginLeft: 'auto' }}>
               <Download size={14} /> Export CSV
             </button>
           </div>
+
+          {showDispatchFilterPanel && (
+            <div className="sd-expanded-filters-panel">
+              <div className="sd-filter-field">
+                <label>Dispatch Status</label>
+                <select
+                  className="sd-filter-select"
+                  value={dispatchStatusFilter}
+                  onChange={e => setDispatchStatusFilter(e.target.value)}
+                >
+                  <option value="All">All Dispatch Statuses</option>
+                  <option value="Dispatched">Dispatched</option>
+                  <option value="In Transit">In Transit</option>
+                  <option value="Delivered">Delivered</option>
+                </select>
+              </div>
+
+              {dispatchStatusFilter !== 'All' && (
+                <button
+                  type="button"
+                  className="sd-btn-reset-filters"
+                  onClick={() => setDispatchStatusFilter('All')}
+                >
+                  Reset Filter
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Minimalist Light Table */}
           <div className="sd-table-container">
@@ -597,14 +654,11 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                 <tr>
                   <th>DISPATCH NO</th>
                   <th>DATE</th>
-                  <th>CUSTOMER &amp; ORDER REF</th>
-                  <th>DELIVERY CHALLAN</th>
-                  <th>TAX INVOICE</th>
-                  <th style={{ textAlign: 'right' }}>DISPATCHED QTY</th>
-                  <th style={{ textAlign: 'right' }}>VALUE (₹)</th>
-                  <th>TRANSPORTER &amp; VEHICLE</th>
-                  <th>STATUS</th>
-                  <th>PRINT DOCUMENTS</th>
+                  <th>CUSTOMER &amp; LOGISTICS</th>
+                  <th>CHALLAN &amp; INVOICE</th>
+                  <th style={{ textAlign: 'right' }}>DISPATCH QTY &amp; VALUE</th>
+                  <th style={{ textAlign: 'center' }}>STATUS</th>
+                  <th style={{ textAlign: 'center' }}>PRINT DOCUMENTS</th>
                 </tr>
               </thead>
               <tbody>
@@ -614,26 +668,23 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
                     <td className="td-date">{row.date}</td>
                     <td>
                       <div className="td-cust-name">{row.customer}</div>
-                      <div className="sd-po-sub">{row.orderRef}</div>
-                    </td>
-                    <td className="td-code">{row.challanNo}</td>
-                    <td>
-                      <div className="inv-item-name">{row.invoiceNo || row.taxInvoice || 'INV-2026-549'}</div>
-                      <div className="sd-po-sub">{row.ewayBill}</div>
-                    </td>
-                    <td className="td-qty-green" style={{ textAlign: 'right' }}>{row.dispatchedQty}</td>
-                    <td className="td-order-val" style={{ textAlign: 'right' }}>{row.totalValue || row.value}</td>
-                    <td>
-                      <div className="sd-item-main">{row.vehicleNo || row.vehicle}</div>
-                      <div className="sd-po-sub">{row.transporter}</div>
+                      <div className="sd-po-sub">{row.orderRef} • {row.vehicleNo || row.vehicle || 'Direct Delivery'}</div>
                     </td>
                     <td>
+                      <div className="td-code" style={{ fontWeight: '700' }}>{row.challanNo}</div>
+                      <div className="sd-po-sub">{row.invoiceNo || row.taxInvoice || 'INV-2026-549'}</div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="td-qty-green" style={{ fontWeight: '700' }}>{row.dispatchedQty}</div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '500' }}>{row.totalValue || row.value}</div>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
                       <span className="sd-status-pill pill-dispatched">
                         • {row.status}
                       </span>
                     </td>
-                    <td>
-                      <div className="sd-action-group">
+                    <td style={{ textAlign: 'center' }}>
+                      <div className="sd-action-group" style={{ justifyContent: 'center' }}>
                         <button className="sd-btn-doc-dark" title="Print Delivery Challan" onClick={() => printDeliveryChallan({ ...row, ...(row.raw || {}) })}>
                           Challan
                         </button>

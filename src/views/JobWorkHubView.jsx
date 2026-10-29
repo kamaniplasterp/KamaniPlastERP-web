@@ -57,6 +57,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   // Statement tab specific filters (dynamic FY range covering historical + current 2026 operations)
   const currentYear = new Date().getFullYear();
   const [statementParty, setStatementParty] = useState('');
+  const [showStatementFilterPanel, setShowStatementFilterPanel] = useState(false);
+  const [showSettlementFilterPanel, setShowSettlementFilterPanel] = useState(false);
   const [statementStartDate, setStatementStartDate] = useState(`${currentYear - 1}-04-01`);
   const [statementEndDate, setStatementEndDate] = useState(`${currentYear + 1}-03-31`);
 
@@ -645,13 +647,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                 <span className="jw-kpi-sublabel">KG</span>
               </div>
             </div>
-            <div className="jw-kpi-card">
-              <div className="jw-kpi-title">Total Burning Loss</div>
-              <div className="jw-kpi-val-row">
-                <span className="jw-kpi-num">{allJobWorkData.reduce((s, c) => s + (Number(c.bLossKg) || 0), 0).toFixed(1)}</span>
-                <span className="jw-kpi-sublabel">KG</span>
-              </div>
-            </div>
+
           </>
         ) : activeTab === 'statement' ? (
           <>
@@ -718,13 +714,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         ) : activeTab === 'extraCutting' ? (
           <>
             <div className="jw-kpi-card">
-              <div className="jw-kpi-title">Total Records</div>
-              <div className="jw-kpi-val-row">
-                <span className="jw-kpi-num">{filteredExtraCuttings.length}</span>
-                <span className="jw-kpi-sublabel">entries</span>
-              </div>
-            </div>
-            <div className="jw-kpi-card">
               <div className="jw-kpi-title">Total Deduction Weight</div>
               <div className="jw-kpi-val-row">
                 <span className="jw-kpi-num">{totalExtraCuttingKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
@@ -735,13 +724,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               <div className="jw-kpi-title jw-title-orange">Total Deductions Value</div>
               <div className="jw-kpi-val-row">
                 <span className="jw-kpi-num jw-text-orange">₹{totalExtraCuttingVal.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-            <div className="jw-kpi-card">
-              <div className="jw-kpi-title">Active Parties</div>
-              <div className="jw-kpi-val-row">
-                <span className="jw-kpi-num">{new Set(partyExtraCuttings.map(e => e.partyName)).size}</span>
-                <span className="jw-kpi-sublabel">parties</span>
+                <span className="jw-kpi-sublabel" style={{ fontSize: '0.78rem', color: '#64748b' }}>{new Set(partyExtraCuttings.map(e => e.partyName)).size} Active Parties</span>
               </div>
             </div>
           </>
@@ -1012,14 +995,12 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                   <th>DATE</th>
                   <th>PARTY</th>
                   <th>ITEM / PROCESS</th>
-                  {showAuditColumns && <th>GROSS (KG)</th>}
-                  {showAuditColumns && <th>BORA</th>}
+                  {showAuditColumns && <th>GROSS &amp; BORA</th>}
                   {showAuditColumns && <th>B.LOSS</th>}
                   <th className="th-right">NET OUTWARD (KG)</th>
                   <th className="th-right">BALANCE (KG)</th>
                   <th>STATUS</th>
-                  {showAuditColumns && <th>ISSUED BY</th>}
-                  <th>ACTION</th>
+                  <th style={{ textAlign: 'center' }}>ACTION</th>
                 </tr>
               </thead>
               <tbody>
@@ -1219,14 +1200,11 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                   <th>DATE</th>
                   <th>CHALLAN NO.</th>
                   <th>PARTY NAME</th>
-                  <th>B. LOSS %</th>
-                  <th>SUM NET WEIGHT</th>
-                  <th>SUM B. LOSS</th>
-                  <th>NET WEIGHT</th>
-                  <th>INWARD WEIGHT</th>
-                  <th>BALANCE WEIGHT</th>
-                  <th>STATUS</th>
-                  <th style={{ textAlign: 'center' }}>ACTIONS</th>
+                  <th style={{ textAlign: 'right' }}>OUTWARD (GROSS / LOSS)</th>
+                  <th style={{ textAlign: 'right' }}>NET DISPATCHED</th>
+                  <th style={{ textAlign: 'right' }}>INWARD RECEIVED</th>
+                  <th style={{ textAlign: 'right' }}>BALANCE PENDING</th>
+                  <th style={{ textAlign: 'center' }}>STATUS &amp; ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -1235,19 +1213,20 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                     <td className="td-date">{row.date}</td>
                     <td className="td-jw-num" style={{ fontWeight: 'bold' }}>{row.challan}</td>
                     <td className="td-party">{row.party}</td>
-                    <td className="td-qty">{row.bLossPct}%</td>
-                    <td className="td-qty">{row.inputQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
-                    <td className="td-qty">{row.bLossKg.toFixed(1)}</td>
-                    <td className="td-qty" style={{ fontWeight: 'bold' }}>{row.netOutwardKg.toFixed(1)}</td>
-                    <td className="td-qty" style={{ color: '#16a34a', fontWeight: 'bold' }}>{row.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
-                    <td className="td-qty">
+                    <td className="td-qty" style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: '600' }}>{row.inputQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</div>
+                      <div style={{ fontSize: '0.7rem', color: '#ea580c' }}>-{row.bLossKg.toFixed(1)} KG ({row.bLossPct}% loss)</div>
+                    </td>
+                    <td className="td-qty" style={{ textAlign: 'right', fontWeight: 'bold' }}>{row.netOutwardKg.toFixed(1)} KG</td>
+                    <td className="td-qty" style={{ textAlign: 'right', color: '#16a34a', fontWeight: 'bold' }}>{row.receivedQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG</td>
+                    <td className="td-qty" style={{ textAlign: 'right' }}>
                       <span className={row.pendingQty > 0 ? 'pending-orange-bold' : 'badge-green-sm'}>
                         {row.pendingQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })} KG
                       </span>
                     </td>
-                    <td className="td-status">{getStatusBadge(row.status)}</td>
                     <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                        {getStatusBadge(row.status)}
                         <button
                           className="jw-icon-action"
                           title="Print Rule 55 Delivery Challan (Outward)"
@@ -1304,6 +1283,16 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             </div>
 
             <div className="jw-ledger-actions">
+              <button
+                type="button"
+                className={`jw-btn-ghost ${showStatementFilterPanel ? 'active' : ''}`}
+                onClick={() => setShowStatementFilterPanel(!showStatementFilterPanel)}
+                style={{ cursor: 'pointer' }}
+                title="Toggle Job Worker & Date Filters"
+              >
+                <Filter size={14} />
+                <span>Filters</span>
+              </button>
               <button className="jw-btn-ghost" onClick={() => exportToCsv(`Statement_${currentStatementParty}.csv`, statementOrders)} style={{ cursor: 'pointer' }}>
                 <Download size={14} />
                 Export Statement CSV
@@ -1311,8 +1300,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             </div>
           </div>
 
-          {/* Party & Date Range Selector */}
-          <div className="jw-filter-bar" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          {/* Party & Date Range Selector - Only visible when Filters is clicked */}
+          {showStatementFilterPanel && (
+          <div className="jw-filter-bar" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '10px', marginBottom: '14px', animation: 'fadeIn 0.15s ease-out' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={15} style={{ color: '#2563eb' }} />
               <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#1e293b' }}>Select Job Worker:</label>
@@ -1334,6 +1324,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               <input type="date" className="jw-filter-select" value={statementEndDate} onChange={e => setStatementEndDate(e.target.value)} />
             </div>
           </div>
+          )}
 
           {/* Statement 3-Category Summary Block (Calm Enterprise Design) */}
           <div className="jw-stmt-summary-grid">
@@ -1810,6 +1801,16 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
+                  type="button"
+                  className={`jw-btn-ghost ${showSettlementFilterPanel ? 'active' : ''}`}
+                  onClick={() => setShowSettlementFilterPanel(!showSettlementFilterPanel)}
+                  style={{ cursor: 'pointer' }}
+                  title="Toggle Settlement Month & Rate Controls"
+                >
+                  <Filter size={14} />
+                  <span>Filters</span>
+                </button>
+                <button
                   className="jw-btn-ghost"
                   onClick={() => exportToCsv(`MonthEnd_Scrap_Settlement_${settlementMonth}_${settlementVendor}.csv`, monthSettlementOrders)}
                 >
@@ -1824,7 +1825,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </div>
             </div>
 
-            <div className="jw-settlement-grid">
+            {showSettlementFilterPanel && (
+            <div className="jw-settlement-grid" style={{ animation: 'fadeIn 0.15s ease-out' }}>
               <div className="jw-field-group">
                 <label className="jw-field-label">Select Job Worker</label>
                 <select
@@ -1871,6 +1873,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                 />
               </div>
             </div>
+            )}
           </div>
 
           {/* Consolidated Financial & Material Balance Summary Banner */}

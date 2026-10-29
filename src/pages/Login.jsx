@@ -107,8 +107,9 @@ export default function Login() {
         await resetPassword(email.trim());
         setMessage('Password reset email sent! Check your inbox.');
       } else {
-        await login(email.trim(), password);
-        navigate('/dashboard');
+        const loginRes = await login(email.trim(), password);
+        const destination = loginRes?.defaultRoute || '/dashboard';
+        navigate(destination, { replace: true });
       }
     } catch (err) {
       const friendlyMsg = err.code ? getFriendlyErrorMessage(err.code) : null;

@@ -107,6 +107,10 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
   const [rmSearch, setRmSearch] = useState('');
   const [rmCategoryFilter, setRmCategoryFilter] = useState('All');
+  const [showRmFilterPanel, setShowRmFilterPanel] = useState(false);
+  const [showFgFilterPanel, setShowFgFilterPanel] = useState(false);
+  const [showQcFilterPanel, setShowQcFilterPanel] = useState(false);
+  const [showMovFilterPanel, setShowMovFilterPanel] = useState(false);
   const [fgSearch, setFgSearch] = useState('');
   const [fgCategoryFilter, setFgCategoryFilter] = useState('All');
   const [movementSearch, setMovementSearch] = useState('');
@@ -793,7 +797,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         <div className="inv-header-left">
           <div className="inv-title-row">
             <h1 className="inv-page-title">Inventory &amp; Stock Hub</h1>
-            <span className="inv-badge-blue">₹{overallValuationLakhs}L Total Valuation</span>
           </div>
           <p className="inv-page-subtitle">
             Unified management of raw materials (granules/yarn), finished rope stock, warehouse movements, and batch traceability.
@@ -816,17 +819,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       <div className="inv-top-kpis">
         {activeTab === 'qc' ? (
           <>
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Total Inward Inspections</span>
-                <div className="inv-kpi-icon inv-icon-blue"><CheckCircle2 size={16} /></div>
-              </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num">{liveQcChecks.length}</span>
-                <span className="inv-kpi-sublabel">GRN Checks</span>
-              </div>
-              <div className="inv-kpi-sub">Auto-created per GRN inward</div>
-            </div>
 
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -866,17 +858,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           </>
         ) : activeTab === 'bags' ? (
           <>
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Total Inward Bags</span>
-                <div className="inv-kpi-icon inv-icon-blue"><Package size={16} /></div>
-              </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num">{liveBags.length}</span>
-                <span className="inv-kpi-sublabel">Bags Tracked</span>
-              </div>
-              <div className="inv-kpi-sub">Sequential Integer Serials (1, 2, 3...)</div>
-            </div>
 
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -916,17 +897,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           </>
         ) : activeTab === 'fg' ? (
           <>
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Total Physical Stock</span>
-                <div className="inv-kpi-icon inv-icon-green"><Package size={16} /></div>
-              </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num">{fgStock.toLocaleString()}</span>
-                <span className="inv-kpi-sublabel">Units</span>
-              </div>
-              <div className="inv-kpi-sub">Stored in warehouse</div>
-            </div>
 
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -958,11 +928,12 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Inventory Valuation</span>
+                <span className="inv-kpi-title">Finished Goods Valuation</span>
                 <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
               </div>
               <div className="inv-kpi-val-row">
                 <span className="inv-kpi-num">₹{totalFgValuationLakhs}L</span>
+                <span className="inv-kpi-sublabel" style={{ fontSize: '0.78rem', color: '#64748b' }}>{fgStock.toLocaleString()} Units</span>
               </div>
               <div className="inv-kpi-sub">₹{totalFgValuationInr.toLocaleString()}</div>
             </div>
@@ -1009,31 +980,11 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <div className="inv-kpi-sub">Customer deliveries</div>
             </div>
 
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Audit Status</span>
-                <div className="inv-kpi-icon inv-icon-blue"><CheckCircle2 size={16} /></div>
-              </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num">100%</span>
-                <span className="inv-kpi-sublabel">logged</span>
-              </div>
-              <div className="inv-kpi-sub inv-text-green">Real-time ledger synced</div>
-            </div>
+
           </>
         ) : activeTab === 'traceability' ? (
           <>
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Batch Genealogy</span>
-                <div className="inv-kpi-icon inv-icon-indigo"><GitBranch size={16} /></div>
-              </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num">100%</span>
-                <span className="inv-kpi-sublabel">traceable</span>
-              </div>
-              <div className="inv-kpi-sub inv-text-blue">End-to-End Genealogy</div>
-            </div>
+
 
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -1047,16 +998,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <div className="inv-kpi-sub">RM + Finished Goods</div>
             </div>
 
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Statutory Compliance</span>
-                <div className="inv-kpi-icon inv-icon-green"><CheckCircle2 size={16} /></div>
-              </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num" style={{ fontSize: '1.25rem' }}>Rule 55</span>
-              </div>
-              <div className="inv-kpi-sub">CGST Job Work Verified</div>
-            </div>
+
 
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -1097,25 +1039,14 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Total Material Balance</span>
-                <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
-              </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num">{(rmStock + jobWorkStock).toLocaleString()}</span>
-                <span className="inv-kpi-sublabel">KG</span>
-              </div>
-              <div className="inv-kpi-sub">Physical + Outside</div>
-            </div>
-
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
                 <span className="inv-kpi-title">Total Valuation</span>
                 <div className="inv-kpi-icon inv-icon-blue"><Layers size={16} /></div>
               </div>
               <div className="inv-kpi-val-row">
                 <span className="inv-kpi-num">₹{totalRmValuationLakhs}L</span>
+                <span className="inv-kpi-sublabel" style={{ fontSize: '0.78rem', color: '#64748b' }}>{(rmStock + jobWorkStock).toLocaleString()} KG</span>
               </div>
-              <div className="inv-kpi-sub">₹{totalRmValuationInr.toLocaleString()}</div>
+              <div className="inv-kpi-sub">₹{totalRmValuationInr.toLocaleString()} (Total Stock)</div>
             </div>
           </>
         )}
@@ -1352,16 +1283,14 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <table className="inv-table">
                 <thead>
                   <tr>
-                    <th>ITEM NAME</th>
-                    <th>GRADE</th>
+                    <th>ITEM NAME &amp; GRADE</th>
                     <th style={{ textAlign: 'right' }}>INWARD</th>
                     <th style={{ textAlign: 'right' }}>OUTWARD</th>
                     <th style={{ textAlign: 'right' }}>ISSUE</th>
-                    <th style={{ textAlign: 'right' }}>BALANCE</th>
-                    <th style={{ textAlign: 'right' }}>RATE</th>
+                    <th style={{ textAlign: 'right' }}>AVAILABLE BALANCE</th>
+                    <th style={{ textAlign: 'right' }}>RATE / KG</th>
                     <th style={{ textAlign: 'right' }}>VALUATION</th>
-                    <th>STATUS</th>
-                    <th>ACTIONS</th>
+                    <th style={{ textAlign: 'center' }}>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1373,27 +1302,29 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                       title={`Click to open material side drawer for ${row.name} ^ ${row.grade}`}
                     >
                       <td>
-                        <div className="inv-item-name" style={{ fontWeight: '700' }}>{row.name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span className="inv-item-name" style={{ fontWeight: '700' }}>{row.name}</span>
+                          {row.grade && (
+                            <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '1px 6px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '700', color: '#334155' }}>
+                              {row.grade}
+                            </span>
+                          )}
+                        </div>
                         <div className="inv-item-sub">{row.code} • {row.brand}</div>
-                      </td>
-                      <td>
-                        <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '2px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: '700', color: '#1e293b' }}>
-                          {row.grade}
-                        </span>
                       </td>
                       <td className="td-qty" style={{ textAlign: 'right', fontWeight: '600' }}>{row.inwardKg}</td>
                       <td className="td-qty-orange" style={{ textAlign: 'right', fontWeight: '600' }}>{row.outwardAtJw}</td>
                       <td className="td-qty" style={{ textAlign: 'right', color: '#7c3aed', fontWeight: '600' }}>{row.factoryIssueKg}</td>
-                      <td className="td-qty-green" style={{ textAlign: 'right', fontWeight: '700', fontSize: '0.92rem' }}>{row.availFactory}</td>
+                      <td className="td-qty-green" style={{ textAlign: 'right', fontWeight: '700', fontSize: '0.92rem' }}>
+                        {row.availFactory}
+                        {row.status === 'LOW STOCK' && (
+                          <span style={{ display: 'block', fontSize: '0.68rem', color: '#dc2626', fontWeight: '600' }}>Low Stock</span>
+                        )}
+                      </td>
                       <td className="td-rate" style={{ textAlign: 'right' }}>{row.rate}</td>
                       <td className="td-valuation" style={{ textAlign: 'right', fontWeight: '700' }}>{row.valuation}</td>
-                      <td>
-                        <span className={`inv-status-badge ${row.status === 'LOW STOCK' ? 'inv-badge-lowstock' : (row.status === 'OUT OF STOCK' ? 'inv-badge-out' : 'inv-badge-instock')}`}>
-                          • {row.status}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="inv-action-group" onClick={e => e.stopPropagation()}>
+                      <td style={{ textAlign: 'center' }}>
+                        <div className="inv-action-group" style={{ justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
                           <button className="inv-btn-issue" onClick={triggerJWModal} title="Issue to Job Worker">
                             Issue JW
                           </button>
@@ -1420,21 +1351,19 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <table className="inv-table">
                 <thead>
                   <tr>
-                    <th>GRN & CHALLAN</th>
-                    <th>BATCH NO.</th>
+                    <th>GRN &amp; CHALLAN</th>
                     <th>DATE</th>
                     <th>SUPPLIER NAME</th>
-                    <th>ITEM & ATTRIBUTES</th>
-                    <th style={{ textAlign: 'right' }}>GROSS WT</th>
-                    <th style={{ textAlign: 'right' }}>NET WT</th>
-                    <th style={{ textAlign: 'center' }}>DUAL STOCK</th>
-                    <th style={{ textAlign: 'center', minWidth: '140px' }}>QUALITY CHECK</th>
+                    <th>ITEM &amp; BATCH DETAILS</th>
+                    <th style={{ textAlign: 'right' }}>WEIGHT (NET / GROSS)</th>
+                    <th style={{ textAlign: 'center' }}>BAG STOCK</th>
+                    <th style={{ textAlign: 'center', minWidth: '160px' }}>QUALITY INSPECTION</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRmInwards.length === 0 ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
                         No Raw Material Inward records found. Click <strong>+ Inward RM (GRN)</strong> to record your first polymer receipt.
                       </td>
                     </tr>
@@ -1460,34 +1389,25 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                               </div>
                             )}
                           </td>
-                          <td style={{ fontWeight: '700', fontSize: '0.78rem' }}>
-                            {isBilledExceedsGross ? (
-                              <span 
-                                style={{ 
-                                  color: '#dc2626', 
-                                  background: '#fef2f2', 
-                                  border: '1px solid #fecaca', 
-                                  padding: '2px 7px', 
-                                  borderRadius: '4px',
-                                  fontWeight: '800',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                title={`Billed Weight (${billedWeight.toLocaleString()} KG) is more than Gross Weight (${grossWeight.toLocaleString()} KG)`}
-                              >
-                                ⚠️ {inw.batchNumber || '—'}
-                              </span>
-                            ) : (
-                              <span style={{ color: '#2563eb' }}>
-                                {inw.batchNumber || '—'}
-                              </span>
-                            )}
-                          </td>
                           <td>{inw.date}</td>
                           <td style={{ fontWeight: '600' }}>{inw.supplierName}</td>
                           <td>
-                            <div style={{ fontWeight: '600', color: '#0f172a' }}>{inw.itemName}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontWeight: '600', color: '#0f172a' }}>{inw.itemName}</span>
+                              {inw.batchNumber && (
+                                <span style={{ 
+                                  fontSize: '0.7rem', 
+                                  fontWeight: '700', 
+                                  color: isBilledExceedsGross ? '#dc2626' : '#2563eb',
+                                  background: isBilledExceedsGross ? '#fef2f2' : '#eff6ff',
+                                  border: `1px solid ${isBilledExceedsGross ? '#fecaca' : '#bfdbfe'}`,
+                                  padding: '1px 5px',
+                                  borderRadius: '3px'
+                                }}>
+                                  {isBilledExceedsGross ? '⚠️ ' : ''}Batch: {inw.batchNumber}
+                                </span>
+                              )}
+                            </div>
                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '3px' }}>
                               <span style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '0px 4px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: '600', color: '#334155' }}>
                                 {inw.materialForm || inw.grade || 'Granule'}
@@ -1504,11 +1424,13 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                               )}
                             </div>
                           </td>
-                          <td style={{ textAlign: 'right', fontWeight: '500', color: '#475569' }}>
-                            {Number(inw.grossWeight || 0).toLocaleString()} KG
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: '800', color: '#16a34a' }}>
-                            {Number(inw.netWeight || 0).toLocaleString()} KG
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: '800', color: '#16a34a', fontSize: '0.88rem' }}>
+                              {Number(inw.netWeight || 0).toLocaleString()} KG
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '500' }}>
+                              Gross: {Number(inw.grossWeight || 0).toLocaleString()} KG
+                            </div>
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <span style={{ background: 'rgba(22, 163, 74, 0.1)', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontSize: '0.74rem', fontWeight: '700', marginRight: '4px', display: 'inline-block' }}>
@@ -1827,17 +1749,44 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               />
             </div>
 
-            <select
-              className="inv-filter-select"
-              value={fgCategoryFilter}
-              onChange={e => setFgCategoryFilter(e.target.value)}
+            <button
+              type="button"
+              className={`inv-filter-toggle-btn ${showFgFilterPanel || fgCategoryFilter !== 'All' ? 'active' : ''}`}
+              onClick={() => setShowFgFilterPanel(!showFgFilterPanel)}
+              title="Toggle Product Filters"
             >
-              <option value="All">All Product Categories</option>
-              {uniqueFgCategories.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+              <Filter size={14} />
+              <span>Filters</span>
+              {fgCategoryFilter !== 'All' && <span className="inv-filter-count-badge">1</span>}
+            </button>
           </div>
+
+          {showFgFilterPanel && (
+            <div className="inv-expanded-filters-panel">
+              <div className="inv-filter-field">
+                <label>Product Category</label>
+                <select
+                  className="inv-filter-select"
+                  value={fgCategoryFilter}
+                  onChange={e => setFgCategoryFilter(e.target.value)}
+                >
+                  <option value="All">All Product Categories ({uniqueFgCategories.length})</option>
+                  {uniqueFgCategories.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              {fgCategoryFilter !== 'All' && (
+                <button
+                  type="button"
+                  className="inv-btn-reset-filters"
+                  onClick={() => setFgCategoryFilter('All')}
+                >
+                  Reset Filter
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Change 9: Active Filters Bar */}
           {(fgSearch || fgCategoryFilter !== 'All') && (
@@ -1878,15 +1827,13 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <thead>
                 <tr>
                   <th>PRODUCT CODE</th>
-                  <th>PRODUCT SPECIFICATION</th>
-                  <th>DIA &amp; COLOR</th>
-                  <th>PHYSICAL STOCK</th>
-                  <th>RESERVED</th>
-                  <th>FREE STOCK</th>
-                  <th>RATE / UNIT (₹)</th>
-                  <th>STOCK VALUATION</th>
-                  <th>STATUS</th>
-                  <th>ACTIONS</th>
+                  <th>PRODUCT SPECIFICATION &amp; DIA</th>
+                  <th style={{ textAlign: 'right' }}>PHYSICAL STOCK</th>
+                  <th style={{ textAlign: 'right' }}>RESERVED</th>
+                  <th style={{ textAlign: 'right' }}>AVAILABLE FREE STOCK</th>
+                  <th style={{ textAlign: 'right' }}>RATE / UNIT (₹)</th>
+                  <th style={{ textAlign: 'right' }}>STOCK VALUATION</th>
+                  <th style={{ textAlign: 'center' }}>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -1910,20 +1857,19 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     <td className="td-code">{row.code}</td>
                     <td>
                       <div className="inv-item-name">{row.name}</div>
-                      <div className="inv-item-sub">{row.sub}</div>
+                      <div className="inv-item-sub">{row.diaColor} • {row.sub}</div>
                     </td>
-                    <td>{row.diaColor}</td>
-                    <td className="td-qty-blue">{row.physicalStock}</td>
-                    <td className="td-qty-blue">{row.reserved}</td>
-                    <td className="td-qty-green">{row.freeStock}</td>
-                    <td className="td-rate">{row.rate}</td>
-                    <td className="td-valuation">{row.valuation}</td>
-                    <td>
-                      <span className={`inv-status-badge ${row.status === 'LOW STOCK' ? 'inv-badge-lowstock' : 'inv-badge-instock'}`}>
-                        • {row.status}
-                      </span>
+                    <td className="td-qty-blue" style={{ textAlign: 'right' }}>{row.physicalStock}</td>
+                    <td className="td-qty-blue" style={{ textAlign: 'right' }}>{row.reserved}</td>
+                    <td className="td-qty-green" style={{ textAlign: 'right', fontWeight: '800' }}>
+                      {row.freeStock}
+                      {row.status === 'LOW STOCK' && (
+                        <span style={{ display: 'block', fontSize: '0.68rem', color: '#dc2626', fontWeight: '600' }}>Low Reserve</span>
+                      )}
                     </td>
-                    <td>
+                    <td className="td-rate" style={{ textAlign: 'right' }}>{row.rate}</td>
+                    <td className="td-valuation" style={{ textAlign: 'right', fontWeight: '700' }}>{row.valuation}</td>
+                    <td style={{ textAlign: 'center' }}>
                       <div className="inv-action-group" onClick={e => e.stopPropagation()}>
                         <button
                           className="inv-btn-ghost-sm"
@@ -1979,19 +1925,46 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               />
             </div>
 
-            <select
-              className="inv-filter-select"
-              value={movementTypeFilter}
-              onChange={e => setMovementTypeFilter(e.target.value)}
+            <button
+              type="button"
+              className={`inv-filter-toggle-btn ${showMovFilterPanel || movementTypeFilter !== 'All' ? 'active' : ''}`}
+              onClick={() => setShowMovFilterPanel(!showMovFilterPanel)}
+              title="Toggle Transaction Type Filters"
             >
-              <option value="All">All Transaction Types</option>
-              <option value="Receipt">Purchase Receipts</option>
-              <option value="JWIssue">Job Work Issues</option>
-              <option value="JWReturn">Job Work Returns</option>
-              <option value="Production">FG Production</option>
-              <option value="Dispatch">Customer Dispatches</option>
-            </select>
+              <Filter size={14} />
+              <span>Filters</span>
+              {movementTypeFilter !== 'All' && <span className="inv-filter-count-badge">1</span>}
+            </button>
           </div>
+
+          {showMovFilterPanel && (
+            <div className="inv-expanded-filters-panel">
+              <div className="inv-filter-field">
+                <label>Transaction Type</label>
+                <select
+                  className="inv-filter-select"
+                  value={movementTypeFilter}
+                  onChange={e => setMovementTypeFilter(e.target.value)}
+                >
+                  <option value="All">All Transaction Types</option>
+                  <option value="Receipt">Purchase Receipts</option>
+                  <option value="JWIssue">Job Work Issues</option>
+                  <option value="JWReturn">Job Work Returns</option>
+                  <option value="Production">FG Production</option>
+                  <option value="Dispatch">Customer Dispatches</option>
+                </select>
+              </div>
+              {movementTypeFilter !== 'All' && (
+                <button
+                  type="button"
+                  className="inv-btn-reset-filters"
+                  onClick={() => setMovementTypeFilter('All')}
+                >
+                  Reset Filter
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Table */}
           <div className="inv-table-container">
@@ -2257,20 +2230,47 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               />
             </div>
 
-            <select
-              className="inv-filter-select"
-              value={qcStatusFilter}
-              onChange={e => setQcStatusFilter(e.target.value)}
+            <button
+              type="button"
+              className={`inv-filter-toggle-btn ${showQcFilterPanel || qcStatusFilter !== 'All' ? 'active' : ''}`}
+              onClick={() => setShowQcFilterPanel(!showQcFilterPanel)}
+              title="Toggle QC Status Filters"
             >
-              <option value="All">All QC Statuses ({liveQcChecks.length})</option>
-              <option value="PENDING">Pending Evaluation ({pendingQcChecks.length})</option>
-              <option value="SENT_FOR_APPROVAL">Sent for Approval ({sentForApprovalQc.length})</option>
-              <option value="APPROVED">Approved ({approvedQcChecks.length})</option>
-              <option value="OVERDUE">⚠️ SLA Overdue ({overdueQcChecks.length})</option>
-              <option value="PASS">Result: PASS ({passedQcChecks.length})</option>
-              <option value="FAIL">Result: FAIL ({failedQcChecks.length})</option>
-            </select>
+              <Filter size={14} />
+              <span>Filters</span>
+              {qcStatusFilter !== 'All' && <span className="inv-filter-count-badge">1</span>}
+            </button>
           </div>
+
+          {showQcFilterPanel && (
+            <div className="inv-expanded-filters-panel">
+              <div className="inv-filter-field">
+                <label>QC Status</label>
+                <select
+                  className="inv-filter-select"
+                  value={qcStatusFilter}
+                  onChange={e => setQcStatusFilter(e.target.value)}
+                >
+                  <option value="All">All QC Statuses ({liveQcChecks.length})</option>
+                  <option value="PENDING">Pending Evaluation ({pendingQcChecks.length})</option>
+                  <option value="SENT_FOR_APPROVAL">Sent for Approval ({sentForApprovalQc.length})</option>
+                  <option value="APPROVED">Approved ({approvedQcChecks.length})</option>
+                  <option value="OVERDUE">⚠️ SLA Overdue ({overdueQcChecks.length})</option>
+                  <option value="PASS">Result: PASS ({passedQcChecks.length})</option>
+                  <option value="FAIL">Result: FAIL ({failedQcChecks.length})</option>
+                </select>
+              </div>
+              {qcStatusFilter !== 'All' && (
+                <button
+                  type="button"
+                  className="inv-btn-reset-filters"
+                  onClick={() => setQcStatusFilter('All')}
+                >
+                  Reset Filter
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Change 9: Active Filter Chips */}
           {(qcSearch || qcStatusFilter !== 'All') && (

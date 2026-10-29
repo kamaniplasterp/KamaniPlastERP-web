@@ -609,3 +609,93 @@
   .sd-top-kpis { grid-template-columns: 1fr; }
   .sd-summary-kpi-grid { grid-template-columns: 1fr; }
 }
+
+
+/* Reusable Filter Toggle Button & Expanded Panel */
+.inv-filter-toggle-btn, .sd-filter-toggle-btn, .ds-filter-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.inv-filter-toggle-btn:hover, .sd-filter-toggle-btn:hover, .ds-filter-toggle-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.inv-filter-toggle-btn.active, .sd-filter-toggle-btn.active, .ds-filter-toggle-btn.active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+}
+
+.inv-filter-count-badge, .sd-filter-count-badge, .ds-filter-count-badge {
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.inv-expanded-filters-panel, .sd-expanded-filters-panel, .ds-expanded-filters-panel {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-top: 10px;
+  margin-bottom: 12px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.inv-filter-field, .sd-filter-field, .ds-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inv-filter-field label, .sd-filter-field label, .ds-filter-field label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inv-btn-reset-filters, .sd-btn-reset-filters, .ds-btn-reset-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  height: 36px;
+}
+
+.inv-btn-reset-filters:hover, .sd-btn-reset-filters:hover, .ds-btn-reset-filters:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}

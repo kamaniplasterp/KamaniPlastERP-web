@@ -51,7 +51,7 @@ export async function logAuditEvent({
         uid: userUid,
         name: userName,
         email: userEmail,
-        role: currentUser?.role || (userEmail.toLowerCase().includes('admin') || userEmail.toLowerCase().includes('kamani') ? 'admin' : 'employee')
+        role: currentUser?.role || (userEmail.split('@')[0].toLowerCase().includes('admin') ? 'admin' : 'employee')
       },
       details: details ? sanitizeDetails(details) : {}
     };
