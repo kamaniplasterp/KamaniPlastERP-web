@@ -582,6 +582,36 @@ export async function addExtraCutting(data) {
 }
 
 /**
+ * Update an Extra Cutting entry
+ */
+export async function updateExtraCutting(id, data) {
+  if (!db) throw new Error('Firestore not initialized');
+  const weightKg = Number(data.weightKg || data.weight || 0);
+  const rate = Number(data.rate || 0);
+  const totalAmount = Number((weightKg * rate).toFixed(2));
+
+  const ref = doc(db, 'extraCuttings', id);
+  await updateDoc(ref, {
+    date: data.date || new Date().toISOString().split('T')[0],
+    partyName: data.partyName || '',
+    deductionDetails: data.deductionDetails || '',
+    weightKg: weightKg,
+    rate: rate,
+    totalAmount: totalAmount,
+    remarks: data.remarks || '',
+    updatedAt: serverTimestamp()
+  });
+
+  logAuditEvent({
+    category: 'JOB_WORK',
+    action: 'EXTRA_CUTTING_DEDUCTION_UPDATED',
+    summary: `Updated Job Work deduction for ${data.partyName || id}: ${weightKg} KG @ ₹${rate}/KG (₹${totalAmount})`,
+    targetId: data.partyName || id,
+    details: { ...data, weightKg, rate, totalAmount }
+  });
+}
+
+/**
  * Delete an Extra Cutting entry
  */
 export async function deleteExtraCutting(id) {

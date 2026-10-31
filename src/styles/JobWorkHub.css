@@ -90,6 +90,33 @@
   box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
 }
 
+.jw-btn-toggle-stats {
+  background: #ffffff;
+  color: #475569;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  border: 1px solid #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: var(--font, 'Inter', sans-serif);
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+.jw-btn-toggle-stats:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+.jw-btn-toggle-stats.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
 /* Top 4 KPI Cards Grid */
 .jw-top-kpis {
   display: grid;
@@ -548,20 +575,37 @@
 }
 
 /* Action Buttons */
-.jw-action-group { display: flex; align-items: center; gap: 6px; }
+.td-actions {
+  text-align: center;
+}
+.jw-action-group { 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  gap: 6px; 
+  margin: 0 auto;
+}
 .jw-receive-btn {
   background: #f97316;
   color: #ffffff;
-  border: none;
-  padding: 4px 10px;
+  border: 1px solid transparent;
+  padding: 4px 0;
+  width: 72px;
+  min-width: 72px;
+  max-width: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   border-radius: 12px;
   font-size: 0.68rem;
   font-weight: 700;
   cursor: pointer;
   font-family: var(--font, 'Inter', sans-serif);
-  transition: background 0.15s;
+  transition: all 0.15s ease;
+  line-height: 1.2;
 }
-.jw-receive-btn:hover { background: #ea580c; }
+.jw-receive-btn:hover:not(:disabled) { background: #ea580c; }
 .jw-icon-action {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -574,8 +618,46 @@
   color: #64748b;
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 .jw-icon-action:hover { background: #f1f5f9; color: #0f172a; }
+
+/* Status & Actions Combined Cell Alignment (Fixes staggered/jagged icons & pills) */
+.jw-status-actions-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 215px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.jw-status-badge-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 1;
+  min-width: 135px;
+}
+
+.jw-actions-icons-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  width: 58px;
+}
+
+.jw-icon-placeholder {
+  width: 26px;
+  height: 26px;
+  display: inline-block;
+  visibility: hidden;
+  flex-shrink: 0;
+}
 
 .jw-slip-print-btn {
   background: #f0f9ff;

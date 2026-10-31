@@ -13,6 +13,7 @@ import {
   ArrowUpRight, AlertTriangle,
   Zap, Circle
 } from 'lucide-react';
+import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
 import '../styles/Dashboard.css';
 
 /* ─── Baseline KPI Templates ─── */
@@ -562,8 +563,8 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
         <div className="page-header-left">
           <div className="page-title-row">
             <h1 className="page-title">Operations Dashboard</h1>
+            <HeaderInfoTooltip text="Real-time material flow, job worker balances, production stock, and sales dispatches." />
           </div>
-          <p className="page-subtitle">Real-time material flow, job worker balances, production stock, and sales dispatches.</p>
         </div>
         <div className="page-header-right">
           <button className="page-btn blue-sm" onClick={openJobWork}>

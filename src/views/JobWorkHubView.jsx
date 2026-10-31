@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   Plus, Search, Download, ArrowUpDown, Printer, ChevronRight,
   Package, Users, Briefcase, DollarSign, Percent, Filter, X,
   Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell,
   FileSpreadsheet, Receipt, Layers, Calendar, Scissors,
-  SlidersHorizontal, MoreVertical, Eye, RotateCcw, Columns, Scale
+  SlidersHorizontal, MoreVertical, Eye, RotateCcw, Columns, Scale,
+  ChevronDown, ChevronUp, Edit2, Trash2
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
@@ -17,11 +18,36 @@ import { printJobWorkChallan, printInwardDeliverySlip } from '../utils/printDocu
 import { subscribeJobWorks, receiveJobWork, createJobWork, subscribeExtraCuttings, deleteExtraCutting } from '../api/jobwork.api';
 import { subscribeVendors } from '../api/directory.api';
 import { showConfirm } from '../context/CustomAlertContext';
+import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkHubView({ onOpenNewJobWork }) {
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState(location.state?.tab || 'orders');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [processorSubView, setProcessorSubView] = useState('statement');
+  const [settlementSubView, setSettlementSubView] = useState('monthlySettlement');
+
+  const resolveTabState = (tabParam) => {
+    if (!tabParam) return 'orders';
+    if (tabParam === 'orders') return 'orders';
+    if (tabParam === 'challanReport') return 'challanReport';
+    if (['statement', 'material', 'wastage', 'processorLedger'].includes(tabParam)) {
+      if (['statement', 'material', 'wastage'].includes(tabParam)) {
+        setProcessorSubView(tabParam);
+      }
+      return 'processorLedger';
+    }
+    if (['monthlySettlement', 'extraCutting', 'scrapSettlement'].includes(tabParam)) {
+      if (['monthlySettlement', 'extraCutting'].includes(tabParam)) {
+        setSettlementSubView(tabParam);
+      }
+      return 'scrapSettlement';
+    }
+    return 'orders';
+  };
+
+  const [activeTab, setActiveTab] = useState(() => resolveTabState(searchParams.get('tab') || location.state?.tab));
   const [selectedJwId, setSelectedJwId] = useState(location.state?.selectedJwId || null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -33,7 +59,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [receivingRow, setReceivingRow] = useState(null);
   const [showExtraCuttingModal, setShowExtraCuttingModal] = useState(false);
+  const [selectedExtraCuttingToEdit, setSelectedExtraCuttingToEdit] = useState(null);
   const [extraCuttingSearch, setExtraCuttingSearch] = useState('');
+  const [showMetrics, setShowMetrics] = useState(false);
 
   // Month-End Scrap Settlement state
   const todayMonth = new Date().toISOString().slice(0, 7);
@@ -67,13 +95,14 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
   const [liveExtraCuttings, setLiveExtraCuttings] = useState([]);
 
   useEffect(() => {
-    if (location.state?.tab) {
-      setActiveTab(location.state.tab);
+    const tabFromUrl = searchParams.get('tab') || location.state?.tab;
+    if (tabFromUrl) {
+      setActiveTab(resolveTabState(tabFromUrl));
     }
     if (location.state?.selectedJwId) {
       setSelectedJwId(location.state.selectedJwId);
     }
-  }, [location.state]);
+  }, [searchParams, location.state]);
 
   useEffect(() => {
     const unsubJw = subscribeJobWorks(setLiveJobWorks);
@@ -577,13 +606,21 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         <div className="jw-header-left">
           <div className="jw-title-row">
             <h1 className="jw-page-title">Job Work Operations</h1>
+            <HeaderInfoTooltip text="Rule 55 CGST Outward Challans, Inward Delivery Slips, Tare & B.Loss tracking, and Worker Ledger." />
             <span className="jw-badge-orange">{activeJobWorksCount} Active Consignments</span>
           </div>
-          <p className="jw-page-subtitle">
-            Rule 55 CGST Outward Challans, Inward Delivery Slips, Tare &amp; B.Loss tracking, and Worker Ledger.
-          </p>
         </div>
         <div className="jw-header-right">
+          <button
+            type="button"
+            className={`jw-btn-toggle-stats ${showMetrics ? 'active' : ''}`}
+            onClick={() => setShowMetrics(prev => !prev)}
+            title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
+          >
+            <BarChart3 size={15} />
+            <span>{showMetrics ? 'Hide Stats' : 'Show Stats'}</span>
+            {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
           <button className="jw-btn-primary-blue" onClick={handleOpenModal}>
             <Plus size={15} />
             New Outward Challan
@@ -591,9 +628,10 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       </div>
 
-      {/* ── Contextual Metric Area (No Stacked Duplicates across Tabs) ── */}
-      <div className="jw-top-kpis">
-        {activeTab === 'monthlySettlement' ? (
+      {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
+      {showMetrics && (
+        <div className="jw-top-kpis">
+        {(activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) ? (
           <>
             <div className="jw-kpi-card">
               <div className="jw-kpi-title">Monthly Outward Sent</div>
@@ -649,7 +687,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             </div>
 
           </>
-        ) : activeTab === 'statement' ? (
+        ) : (activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) ? (
           <>
             <div className="jw-kpi-card">
               <div className="jw-kpi-title">Opening Balance</div>
@@ -680,7 +718,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </div>
             </div>
           </>
-        ) : activeTab === 'wastage' ? (
+        ) : (activeTab === 'wastage' || (activeTab === 'processorLedger' && processorSubView === 'wastage')) ? (
           <>
             <div className="jw-kpi-card">
               <div className="jw-kpi-title">Active Processors</div>
@@ -711,7 +749,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </div>
             </div>
           </>
-        ) : activeTab === 'extraCutting' ? (
+        ) : (activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) ? (
           <>
             <div className="jw-kpi-card">
               <div className="jw-kpi-title">Total Deduction Weight</div>
@@ -760,12 +798,13 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           </>
         )}
       </div>
+      )}
 
-      {/* ── Minimalist Underline Tab Bar ── */}
+      {/* ── Streamlined Underline Tab Bar (4 Merged Modules, No Overflow) ── */}
       <div className="jw-tab-bar">
         <button
           className={`jw-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
-          onClick={() => setActiveTab('orders')}
+          onClick={() => { setActiveTab('orders'); setSearchParams({ tab: 'orders' }); }}
         >
           <Briefcase size={14} />
           <span>Orders &amp; Challans</span>
@@ -774,53 +813,29 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
         <button
           className={`jw-tab-btn ${activeTab === 'challanReport' ? 'active' : ''}`}
-          onClick={() => setActiveTab('challanReport')}
+          onClick={() => { setActiveTab('challanReport'); setSearchParams({ tab: 'challanReport' }); }}
         >
           <FileSpreadsheet size={14} />
-          <span>Challan Balance Report</span>
+          <span>Challan Register &amp; Trace</span>
           <span className="jw-tab-badge-orange">{allJobWorkData.filter(j => j.status !== 'FULLY RECEIVED').length} Open</span>
         </button>
 
         <button
-          className={`jw-tab-btn ${activeTab === 'statement' ? 'active' : ''}`}
-          onClick={() => setActiveTab('statement')}
-        >
-          <Receipt size={14} />
-          <span>Job Worker Statement &amp; Ledger</span>
-        </button>
-
-        <button
-          className={`jw-tab-btn ${activeTab === 'material' ? 'active' : ''}`}
-          onClick={() => setActiveTab('material')}
+          className={`jw-tab-btn ${activeTab === 'processorLedger' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('processorLedger'); setSearchParams({ tab: 'processorLedger' }); }}
         >
           <Package size={14} />
-          <span>Material at Outside Processors</span>
+          <span>Processor Stock &amp; Wastage</span>
           <span className="jw-tab-badge-orange">{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} KG</span>
         </button>
 
         <button
-          className={`jw-tab-btn ${activeTab === 'wastage' ? 'active' : ''}`}
-          onClick={() => setActiveTab('wastage')}
-        >
-          <Percent size={14} />
-          <span>Vendor Wastage &amp; Yield</span>
-        </button>
-
-        <button
-          className={`jw-tab-btn ${activeTab === 'extraCutting' ? 'active' : ''}`}
-          onClick={() => setActiveTab('extraCutting')}
-        >
-          <Scissors size={14} />
-          <span>Extra Cutting / Deductions</span>
-          <span className="jw-tab-badge">{liveExtraCuttings.length}</span>
-        </button>
-
-        <button
-          className={`jw-tab-btn ${activeTab === 'monthlySettlement' ? 'active' : ''}`}
-          onClick={() => setActiveTab('monthlySettlement')}
+          className={`jw-tab-btn ${activeTab === 'scrapSettlement' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('scrapSettlement'); setSearchParams({ tab: 'scrapSettlement' }); }}
         >
           <Scale size={14} />
-          <span>Month-End Scrap Settlement</span>
+          <span>Scrap Settlement &amp; Deductions</span>
+          <span className="jw-tab-badge">{liveExtraCuttings.length}</span>
         </button>
       </div>
 
@@ -1000,7 +1015,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                   <th className="th-right">NET OUTWARD (KG)</th>
                   <th className="th-right">BALANCE (KG)</th>
                   <th>STATUS</th>
-                  <th style={{ textAlign: 'center' }}>ACTION</th>
+                  <th style={{ textAlign: 'center', width: '130px' }}>ACTION</th>
                 </tr>
               </thead>
               <tbody>
@@ -1204,7 +1219,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                   <th style={{ textAlign: 'right' }}>NET DISPATCHED</th>
                   <th style={{ textAlign: 'right' }}>INWARD RECEIVED</th>
                   <th style={{ textAlign: 'right' }}>BALANCE PENDING</th>
-                  <th style={{ textAlign: 'center' }}>STATUS &amp; ACTIONS</th>
+                  <th style={{ textAlign: 'center', width: '230px' }}>STATUS &amp; ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -1225,39 +1240,45 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                        {getStatusBadge(row.status)}
-                        <button
-                          className="jw-icon-action"
-                          title="Print Rule 55 Delivery Challan (Outward)"
-                          onClick={() => printJobWorkChallan(row)}
-                        >
-                          <Printer size={13} />
-                        </button>
-                        {row.receivedQty > 0 && (
+                      <div className="jw-status-actions-cell">
+                        <div className="jw-status-badge-wrap">
+                          {getStatusBadge(row.status)}
+                        </div>
+                        <div className="jw-actions-icons-wrap">
                           <button
                             className="jw-icon-action"
-                            style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}
-                            title="Print Job Work Inward Delivery Slip"
-                            onClick={() => {
-                              const slip = (Array.isArray(row.inwardReceipts) && row.inwardReceipts.length > 0)
-                                ? row.inwardReceipts[0]
-                                : {
-                                    slipNo: `SLIP-${row.challan || row.id}`,
-                                    grossWeight: row.receivedQty + ((Number(row.boraCount) || 10) * 0.2),
-                                    boraCount: Number(row.boraCount) || 10,
-                                    articleWeight: (Number(row.boraCount) || 10) * 0.2,
-                                    netQtyKg: row.receivedQty,
-                                    receivedBy: 'RAMILBHAI',
-                                    ratePerKg: row.ratePerKg || row.charges || 16,
-                                    value: row.receivedQty * Number(row.ratePerKg || row.charges || 16)
-                                  };
-                              printInwardDeliverySlip(slip, row);
-                            }}
+                            title="Print Rule 55 Delivery Challan (Outward)"
+                            onClick={() => printJobWorkChallan(row)}
                           >
-                            <Receipt size={13} />
+                            <Printer size={13} />
                           </button>
-                        )}
+                          {row.receivedQty > 0 ? (
+                            <button
+                              className="jw-icon-action"
+                              style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                              title="Print Job Work Inward Delivery Slip"
+                              onClick={() => {
+                                const slip = (Array.isArray(row.inwardReceipts) && row.inwardReceipts.length > 0)
+                                  ? row.inwardReceipts[0]
+                                  : {
+                                      slipNo: `SLIP-${row.challan || row.id}`,
+                                      grossWeight: row.receivedQty + ((Number(row.boraCount) || 10) * 0.2),
+                                      boraCount: Number(row.boraCount) || 10,
+                                      articleWeight: (Number(row.boraCount) || 10) * 0.2,
+                                      netQtyKg: row.receivedQty,
+                                      receivedBy: 'RAMILBHAI',
+                                      ratePerKg: row.ratePerKg || row.charges || 16,
+                                      value: row.receivedQty * Number(row.ratePerKg || row.charges || 16)
+                                    };
+                                printInwardDeliverySlip(slip, row);
+                              }}
+                            >
+                              <Receipt size={13} />
+                            </button>
+                          ) : (
+                            <span className="jw-icon-placeholder" />
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1269,7 +1290,34 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       )}
 
       {/* ── TAB 3: Job Worker Statement & Reconciliation (Matching Excel 'Statement' sheet) ── */}
-      {activeTab === 'statement' && (
+      {activeTab === 'processorLedger' && (
+        <div className="erp-subnav-pills">
+          <button
+            className={`erp-subnav-pill ${processorSubView === 'statement' ? 'active' : ''}`}
+            onClick={() => setProcessorSubView('statement')}
+          >
+            <Receipt size={13} />
+            <span>Job Worker Statement &amp; Ledger</span>
+          </button>
+          <button
+            className={`erp-subnav-pill ${processorSubView === 'material' ? 'active' : ''}`}
+            onClick={() => setProcessorSubView('material')}
+          >
+            <Package size={13} />
+            <span>Material at Outside Processors</span>
+            <span className="jw-tab-badge-orange" style={{ marginLeft: 6 }}>{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} KG</span>
+          </button>
+          <button
+            className={`erp-subnav-pill ${processorSubView === 'wastage' ? 'active' : ''}`}
+            onClick={() => setProcessorSubView('wastage')}
+          >
+            <Percent size={13} />
+            <span>Vendor Wastage &amp; Yield</span>
+          </button>
+        </div>
+      )}
+
+      {(activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) && (
         <div className="jw-ledger-section">
           <div className="jw-ledger-header">
             <div className="jw-ledger-title-group">
@@ -1475,8 +1523,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {/* ── TAB 4: Material at Outside Processors ── */}
-      {activeTab === 'material' && (
+      {/* ── Material at Outside Processors ── */}
+      {(activeTab === 'material' || (activeTab === 'processorLedger' && processorSubView === 'material')) && (
         <div className="jw-material-tab-container">
           <div className="jw-ledger-section">
             <div className="jw-ledger-header">
@@ -1531,7 +1579,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                           <th className="th-right">Pending Qty</th>
                           <th>Expected Return</th>
                           <th>Status</th>
-                          <th>Action</th>
+                          <th style={{ textAlign: 'center', width: '130px' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1585,8 +1633,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {/* ── TAB 5: Vendor Wastage & Yield Analysis ── */}
-      {activeTab === 'wastage' && (
+      {/* ── Vendor Wastage & Yield Analysis ── */}
+      {(activeTab === 'wastage' || (activeTab === 'processorLedger' && processorSubView === 'wastage')) && (
         <div className="jw-wastage-tab-container">
           <div className="jw-ledger-section">
             <div className="jw-ledger-header">
@@ -1662,8 +1710,28 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {/* ── TAB 6: Extra Cutting / Deductions Register (Module 11) ── */}
-      {activeTab === 'extraCutting' && (
+      {/* ── TAB 4: Scrap Settlement & Deductions (Merged) ── */}
+      {activeTab === 'scrapSettlement' && (
+        <div className="erp-subnav-pills">
+          <button
+            className={`erp-subnav-pill ${settlementSubView === 'monthlySettlement' ? 'active' : ''}`}
+            onClick={() => setSettlementSubView('monthlySettlement')}
+          >
+            <Scale size={13} />
+            <span>Month-End Scrap Settlement</span>
+          </button>
+          <button
+            className={`erp-subnav-pill ${settlementSubView === 'extraCutting' ? 'active' : ''}`}
+            onClick={() => setSettlementSubView('extraCutting')}
+          >
+            <Scissors size={13} />
+            <span>Extra Cutting / Deductions</span>
+            <span className="jw-tab-badge" style={{ marginLeft: 6 }}>{liveExtraCuttings.length}</span>
+          </button>
+        </div>
+      )}
+
+      {(activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) && (
         <div className="jw-ledger-section">
           <div className="jw-ledger-header">
             <div className="jw-ledger-title-group">
@@ -1681,7 +1749,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                 <Download size={14} /> Export CSV
               </button>
 
-              <button className="jw-btn-dark-pill" onClick={() => setShowExtraCuttingModal(true)}>
+              <button className="jw-btn-dark-pill" onClick={() => { setSelectedExtraCuttingToEdit(null); setShowExtraCuttingModal(true); }}>
                 <Plus size={14} /> Record Extra Cutting
               </button>
             </div>
@@ -1751,29 +1819,56 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                       </td>
                       <td className="td-material-col" style={{ fontSize: '0.75rem', color: '#64748b' }}>{ec.remarks || '—'}</td>
                       <td style={{ textAlign: 'center' }}>
-                        <button
-                          onClick={async () => {
-                            const confirmed = await showConfirm(`Delete deduction record for ${ec.partyName}?`, {
-                              title: 'Confirm Deletion',
-                              confirmText: 'Delete Record',
-                              isDestructive: true
-                            });
-                            if (confirmed) {
-                              await deleteExtraCutting(ec.id);
-                            }
-                          }}
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid #fecaca',
-                            color: '#dc2626',
-                            borderRadius: '4px',
-                            padding: '3px 8px',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Delete
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                          <button
+                            title="Edit Deduction"
+                            onClick={() => {
+                              setSelectedExtraCuttingToEdit(ec);
+                              setShowExtraCuttingModal(true);
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid #cbd5e1',
+                              color: '#475569',
+                              borderRadius: '4px',
+                              padding: '3px 8px',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                          >
+                            <Edit2 size={12} /> Edit
+                          </button>
+                          <button
+                            title="Delete Deduction"
+                            onClick={async () => {
+                              const confirmed = await showConfirm(`Delete deduction record for ${ec.partyName}?`, {
+                                title: 'Confirm Deletion',
+                                confirmText: 'Delete Record',
+                                isDestructive: true
+                              });
+                              if (confirmed) {
+                                await deleteExtraCutting(ec.id);
+                              }
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid #fecaca',
+                              color: '#dc2626',
+                              borderRadius: '4px',
+                              padding: '3px 8px',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     );
@@ -1785,8 +1880,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {/* ── TAB: Month-End Consolidated Scrap Settlement Hub ── */}
-      {activeTab === 'monthlySettlement' && (
+      {/* ── Month-End Consolidated Scrap Settlement Hub ── */}
+      {(activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) && (
         <div className="jw-settlement-panel">
           {/* Controls Card */}
           <div className="jw-settlement-card">
@@ -2014,8 +2109,12 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       {/* ── Extra Cutting Modal ── */}
       {showExtraCuttingModal && (
         <ExtraCuttingModal
-          prefillVendor={currentStatementParty !== 'All Parties' ? currentStatementParty : ''}
-          onClose={() => setShowExtraCuttingModal(false)}
+          initialData={selectedExtraCuttingToEdit}
+          prefillVendor={selectedExtraCuttingToEdit?.partyName || (currentStatementParty !== 'All Parties' ? currentStatementParty : '')}
+          onClose={() => {
+            setShowExtraCuttingModal(false);
+            setSelectedExtraCuttingToEdit(null);
+          }}
         />
       )}
     </div>

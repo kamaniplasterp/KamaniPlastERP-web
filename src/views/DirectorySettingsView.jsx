@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
   Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck, MessageSquare,
-  Shield, Check, X, Lock, Unlock, UserCheck, ShieldAlert, Activity, Eye, Copy, Filter, Clock
+  Shield, Check, X, Lock, Unlock, UserCheck, ShieldAlert, Activity, Eye, Copy, Filter, Clock,
+  Edit2, Trash2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -23,10 +25,18 @@ import {
   subscribeVendors, 
   subscribeBuyers, 
   addVendor, 
+  updateVendor,
+  deleteVendor,
   addBuyer, 
+  updateBuyer,
+  deleteBuyer,
   subscribeJobWorkRates, 
   addJobWorkRate,
+  updateJobWorkRate,
+  deleteJobWorkRate,
   subscribeJwValueMasters,
+  addJwValueMaster,
+  updateJwValueMaster,
   deleteJwValueMaster,
   subscribeTareStandards,
   updateTareStandards,
@@ -47,15 +57,48 @@ import { exportToCsv } from '../utils/exportCsv';
 import AddVendorModal from '../modals/AddVendorModal';
 import AddCustomerModal from '../modals/AddCustomerModal';
 import JwValueMasterModal from '../modals/JwValueMasterModal';
+import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
+import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import '../styles/DirectorySettings.css';
 
 export default function DirectorySettingsView() {
-  const [activeTab, setActiveTab] = useState('vendors');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [directorySubView, setDirectorySubView] = useState('vendors'); // 'vendors' | 'customers'
+  const [pricingSubView, setPricingSubView] = useState('rates'); // 'rates' | 'value'
+  const [settingsSubView, setSettingsSubView] = useState('tare'); // 'tare' | 'erp'
+
+  const resolveDirTab = (tabParam) => {
+    if (!tabParam) return 'directory';
+    if (tabParam === 'vendors') { setDirectorySubView('vendors'); return 'directory'; }
+    if (tabParam === 'customers') { setDirectorySubView('customers'); return 'directory'; }
+    if (tabParam === 'directory') return 'directory';
+
+    if (tabParam === 'rateMaster') { setPricingSubView('rates'); return 'ratesValuation'; }
+    if (tabParam === 'valueMaster') { setPricingSubView('value'); return 'ratesValuation'; }
+    if (tabParam === 'ratesValuation') return 'ratesValuation';
+
+    if (tabParam === 'miscMaster') { setSettingsSubView('tare'); return 'settings'; }
+    if (tabParam === 'settings') { setSettingsSubView('erp'); return 'settings'; }
+
+    if (tabParam === 'rbac') return 'rbac';
+    if (tabParam === 'audit') return 'audit';
+
+    return 'directory';
+  };
+
+  const [activeTab, setActiveTab] = useState(() => resolveDirTab(searchParams.get('tab')));
   const [vendorSearch, setVendorSearch] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [rateSearch, setRateSearch] = useState('');
   const [ratePartyFilter, setRatePartyFilter] = useState('ALL');
   const [valueSearch, setValueSearch] = useState('');
+
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl) {
+      setActiveTab(resolveDirTab(tabFromUrl));
+    }
+  }, [searchParams]);
 
   const [liveVendors, setLiveVendors] = useState([]);
   const [liveBuyers, setLiveBuyers] = useState([]);
@@ -82,9 +125,13 @@ export default function DirectorySettingsView() {
   const [copiedAuditJson, setCopiedAuditJson] = useState(false);
 
   const [showAddVendorModal, setShowAddVendorModal] = useState(false);
+  const [selectedVendorToEdit, setSelectedVendorToEdit] = useState(null);
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [selectedCustomerToEdit, setSelectedCustomerToEdit] = useState(null);
   const [showAddRateModal, setShowAddRateModal] = useState(false);
+  const [selectedRateToEdit, setSelectedRateToEdit] = useState(null);
   const [showAddValueModal, setShowAddValueModal] = useState(false);
+  const [selectedValueToEdit, setSelectedValueToEdit] = useState(null);
 
   const [newRateForm, setNewRateForm] = useState({
     party: 'GALAXY.ENTERPRISE',
@@ -191,36 +238,75 @@ export default function DirectorySettingsView() {
     }
   };
 
-  const handleSaveVendor = async (data) => {
+  const handleSaveVendor = async (data, existingId) => {
+    const targetId = existingId || selectedVendorToEdit?.id;
     try {
-      await addVendor({
-        name: data.name,
-        processBadge: data.processBadge,
-        phone: data.phone,
-        location: data.location,
-        gst: data.gst,
-        rate: Number(data.rate || 17.5),
-        pendingKg: 0
-      });
-
-      logAuditEvent({
-        category: 'MASTER_DATA',
-        action: 'VENDOR_CREATED',
-        summary: `Added vendor "${data.name}" (${data.location || 'Rajkot'}) - Processing Rate: ₹${data.rate || 17.5}/KG`,
-        targetId: data.name,
-        details: data
-      });
-
-      alert(`Vendor "${data.name}" added successfully!\n✓ Godown location auto-created for "${data.name}" for instant inventory tracking.`);
+      if (targetId) {
+        await updateVendor(targetId, {
+          name: data.name,
+          processBadge: data.processBadge,
+          phone: data.phone,
+          location: data.location,
+          gst: data.gst,
+          rate: Number(data.rate || 17.5)
+        });
+        await showAlert(`Vendor "${data.name}" updated successfully!`, { type: 'success', title: 'Vendor Updated' });
+      } else {
+        await addVendor({
+          name: data.name,
+          processBadge: data.processBadge,
+          phone: data.phone,
+          location: data.location,
+          gst: data.gst,
+          rate: Number(data.rate || 17.5),
+          pendingKg: 0
+        });
+        await showAlert(`Vendor "${data.name}" added successfully!\n✓ Godown location auto-created for "${data.name}" for instant inventory tracking.`, { type: 'success', title: 'Vendor Registered' });
+      }
+      setSelectedVendorToEdit(null);
     } catch (err) {
-      console.error('Error adding vendor:', err);
-      alert('Error adding vendor. Check console for details.');
+      console.error('Error saving vendor:', err);
+      await showAlert('Error saving vendor: ' + err.message, { type: 'error' });
     }
   };
 
-  const handleSaveCustomer = async (data) => {
+  const handleDeleteVendor = async (v) => {
+    if (!v.id) {
+      await showAlert('Cannot delete vendor without document ID.', { type: 'error' });
+      return;
+    }
+    if (v.pendingTotal > 0) {
+      const confirmForce = await showConfirm(
+        `Vendor "${v.name}" has ${v.pending} pending material outside at job work. Are you sure you want to delete this vendor record?`,
+        {
+          title: 'Warning: Active Outside Inventory',
+          confirmText: 'Delete Vendor',
+          isDestructive: true
+        }
+      );
+      if (!confirmForce) return;
+    } else {
+      const confirmed = await showConfirm(`Are you sure you want to delete vendor "${v.name}" from ERP Directory?`, {
+        title: 'Confirm Vendor Deletion',
+        confirmText: 'Delete Vendor',
+        isDestructive: true
+      });
+      if (!confirmed) return;
+    }
+
     try {
-      await addBuyer({
+      await deleteVendor(v.id, v.name);
+      await showAlert(`Vendor "${v.name}" deleted successfully.`, { type: 'success', title: 'Vendor Deleted' });
+    } catch (err) {
+      console.error('Error deleting vendor:', err);
+      await showAlert('Failed to delete vendor: ' + err.message, { type: 'error' });
+    }
+  };
+
+  const handleSaveCustomer = async (data, existingId) => {
+    const targetId = existingId || selectedCustomerToEdit?.id;
+    try {
+      const payload = {
         name: data.name,
         category: data.category,
         phone: data.phone,
@@ -233,40 +319,111 @@ export default function DirectorySettingsView() {
         contactPerson: data.contactPerson || '',
         location: data.location,
         gst: data.gst,
-        paymentTerms: data.paymentTerms,
-        totalOrders: 0,
-        outstandingAmount: '₹0.00L'
-      });
+        paymentTerms: data.paymentTerms
+      };
 
-      logAuditEvent({
-        category: 'MASTER_DATA',
-        action: 'CUSTOMER_CREATED',
-        summary: `Added buyer "${data.name}" (${data.category || 'Wholesale'}) - Terms: ${data.paymentTerms || 'Standard'}`,
-        targetId: data.name,
-        details: data
-      });
+      if (targetId) {
+        await updateBuyer(targetId, payload);
+        await showAlert(`Customer "${data.name}" updated successfully!`, { type: 'success', title: 'Customer Updated' });
+      } else {
+        await addBuyer({
+          ...payload,
+          totalOrders: 0,
+          outstandingAmount: '₹0.00L'
+        });
+        await showAlert(`Customer "${data.name}" registered successfully!`, { type: 'success', title: 'Customer Registered' });
+      }
+      setSelectedCustomerToEdit(null);
     } catch (err) {
-      console.error('Error adding customer:', err);
+      console.error('Error saving customer:', err);
+      await showAlert('Error saving customer: ' + err.message, { type: 'error' });
+    }
+  };
+
+  const handleDeleteCustomer = async (c) => {
+    if (!c.id) {
+      await showAlert('Cannot delete customer without document ID.', { type: 'error' });
+      return;
+    }
+    if (c.totalOrdersCount > 0) {
+      const confirmForce = await showConfirm(
+        `Customer "${c.name}" has ${c.orders} (${c.booked}) recorded in Sales Orders. Are you sure you want to delete this customer?`,
+        {
+          title: 'Warning: Existing Sales Orders',
+          confirmText: 'Delete Customer',
+          isDestructive: true
+        }
+      );
+      if (!confirmForce) return;
+    } else {
+      const confirmed = await showConfirm(`Are you sure you want to delete customer "${c.name}" from ERP Directory?`, {
+        title: 'Confirm Customer Deletion',
+        confirmText: 'Delete Customer',
+        isDestructive: true
+      });
+      if (!confirmed) return;
+    }
+
+    try {
+      await deleteBuyer(c.id, c.name);
+      await showAlert(`Customer "${c.name}" deleted successfully.`, { type: 'success', title: 'Customer Deleted' });
+    } catch (err) {
+      console.error('Error deleting customer:', err);
+      await showAlert('Failed to delete customer: ' + err.message, { type: 'error' });
     }
   };
 
   const handleSaveNewRate = async (e) => {
     e.preventDefault();
     try {
-      await addJobWorkRate(newRateForm);
-
-      logAuditEvent({
-        category: 'MASTER_DATA',
-        action: 'JW_RATE_CONTRACT_CREATED',
-        summary: `Configured Job Work Rate for ${newRateForm.party}: ₹${newRateForm.rate}/${newRateForm.uom} for process ${newRateForm.process}`,
-        targetId: newRateForm.party,
-        details: newRateForm
-      });
-
+      if (selectedRateToEdit?.id) {
+        await updateJobWorkRate(selectedRateToEdit.id, newRateForm);
+        await showAlert(`Updated rate contract for ${newRateForm.party} (${newRateForm.process})!`, { type: 'success', title: 'Rate Contract Updated' });
+      } else {
+        await addJobWorkRate(newRateForm);
+        await showAlert(`Configured Job Work Rate for ${newRateForm.party}!`, { type: 'success', title: 'Rate Contract Created' });
+      }
       setShowAddRateModal(false);
-      alert('Job Work Rate Master entry created successfully!');
+      setSelectedRateToEdit(null);
     } catch (err) {
-      console.error('Error adding rate:', err);
+      console.error('Error saving rate:', err);
+      await showAlert('Failed to save rate contract: ' + err.message, { type: 'error' });
+    }
+  };
+
+  const handleDeleteRate = async (r) => {
+    if (!r.id) return;
+    const confirmed = await showConfirm(`Are you sure you want to delete rate contract for "${r.party}" (${r.process} - ₹${r.rate}/${r.uom || 'Kg'})?`, {
+      title: 'Confirm Rate Deletion',
+      confirmText: 'Delete Rate',
+      isDestructive: true
+    });
+    if (confirmed) {
+      try {
+        await deleteJobWorkRate(r.id, r);
+        await showAlert('Rate contract deleted successfully!', { type: 'success' });
+      } catch (err) {
+        console.error('Error deleting rate:', err);
+        await showAlert('Failed to delete rate: ' + err.message, { type: 'error' });
+      }
+    }
+  };
+
+  const handleDeleteValueMaster = async (v) => {
+    if (!v.id) return;
+    const confirmed = await showConfirm(`Are you sure you want to delete valuation entry "${v.code}" (${v.itemDescription} - ₹${v.value}/Kg)?`, {
+      title: 'Confirm Valuation Deletion',
+      confirmText: 'Delete Entry',
+      isDestructive: true
+    });
+    if (confirmed) {
+      try {
+        await deleteJwValueMaster(v.id);
+        await showAlert(`Valuation entry "${v.code}" deleted successfully!`, { type: 'success' });
+      } catch (err) {
+        console.error('Error deleting valuation entry:', err);
+        await showAlert('Failed to delete valuation entry: ' + err.message, { type: 'error' });
+      }
     }
   };
 
@@ -313,6 +470,8 @@ export default function DirectorySettingsView() {
     }, 0);
 
     return {
+      ...v,
+      id: v.id,
       avatar: (v.name || 'VE').slice(0, 2).toUpperCase(),
       name: v.name || 'Vendor',
       processBadge: v.processBadge || 'Job Work Processor',
@@ -321,6 +480,7 @@ export default function DirectorySettingsView() {
       gst: v.gst ? `GST: ${v.gst}` : 'GST: Not Provided',
       rate: typeof v.rate === 'number' ? `₹${v.rate}/KG` : v.rate || '-',
       pending: `${pendingTotal.toLocaleString('en-IN')} KG`,
+      pendingTotal,
       pendingOrange: pendingTotal > 0
     };
   });
@@ -357,6 +517,8 @@ export default function DirectorySettingsView() {
     const bookedLakhs = (totalBookedValue / 100000).toFixed(2);
 
     return {
+      ...b,
+      id: b.id,
       avatar: (b.name || 'CU').slice(0, 2).toUpperCase(),
       name: b.name || 'Customer',
       termsBadge: b.category || b.paymentTerms || 'Wholesale Buyer',
@@ -368,6 +530,7 @@ export default function DirectorySettingsView() {
       location: b.location || '-',
       gst: b.gst ? `GST: ${b.gst}` : 'GST: Not Provided',
       orders: `${totalOrdersCount} Orders`,
+      totalOrdersCount,
       booked: `₹${bookedLakhs}L`
     };
   });
@@ -435,66 +598,44 @@ export default function DirectorySettingsView() {
     <div className="ds-container">
       {/* ── Page Header ── */}
       <div className="ds-page-header">
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <h1 className="ds-page-title">Directory &amp; Master Configuration</h1>
-          <p className="ds-page-subtitle">
-            Maintain supplier and customer registries, job worker rates, tare standards, and plant profile.
-          </p>
+          <HeaderInfoTooltip text="Maintain supplier and customer registries, job worker rates, tare standards, and plant profile." />
         </div>
       </div>
 
-      {/* ── Tabs Bar ── */}
+      {/* ── Streamlined Tabs Bar (5 Merged Modules, No Horizontal Scrolling) ── */}
       <div className="ds-tabs-bar">
         <button
-          className={`ds-tab-btn ${activeTab === 'vendors' ? 'active' : ''}`}
-          onClick={() => setActiveTab('vendors')}
+          className={`ds-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('directory'); setSearchParams({ tab: 'directory' }); }}
         >
           <Building size={14} />
-          Supplier Master
-          <span className="ds-tab-count">{filteredVendors.length}</span>
+          <span>Business Directory</span>
+          <span className="ds-tab-count">{filteredVendors.length + filteredCustomers.length}</span>
         </button>
+
         <button
-          className={`ds-tab-btn ${activeTab === 'rateMaster' ? 'active' : ''}`}
-          onClick={() => setActiveTab('rateMaster')}
+          className={`ds-tab-btn ${activeTab === 'ratesValuation' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('ratesValuation'); setSearchParams({ tab: 'ratesValuation' }); }}
         >
           <Tag size={14} />
-          JW Rate Master
-          <span className="ds-tab-count">{filteredRates.length}</span>
+          <span>Rates &amp; Valuation</span>
+          <span className="ds-tab-count">{filteredRates.length + filteredValueMasters.length}</span>
         </button>
-        <button
-          className={`ds-tab-btn ${activeTab === 'valueMaster' ? 'active' : ''}`}
-          onClick={() => setActiveTab('valueMaster')}
-        >
-          <DollarSign size={14} />
-          JW Value Master
-          <span className="ds-tab-count">{filteredValueMasters.length}</span>
-        </button>
-        <button
-          className={`ds-tab-btn ${activeTab === 'miscMaster' ? 'active' : ''}`}
-          onClick={() => setActiveTab('miscMaster')}
-        >
-          <Package size={14} />
-          Tare &amp; Signatories
-        </button>
-        <button
-          className={`ds-tab-btn ${activeTab === 'customers' ? 'active' : ''}`}
-          onClick={() => setActiveTab('customers')}
-        >
-          <Users size={14} />
-          Customers
-          <span className="ds-tab-count">{filteredCustomers.length}</span>
-        </button>
+
         <button
           className={`ds-tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('settings')}
+          onClick={() => { setActiveTab('settings'); setSearchParams({ tab: 'settings' }); }}
         >
           <ShieldCheck size={14} />
-          ERP Settings
+          <span>Plant &amp; System Settings</span>
         </button>
+
         {isAdmin && (
           <button
             className={`ds-tab-btn ${activeTab === 'rbac' ? 'active' : ''}`}
-            onClick={() => setActiveTab('rbac')}
+            onClick={() => { setActiveTab('rbac'); setSearchParams({ tab: 'rbac' }); }}
             style={{
               borderColor: activeTab === 'rbac' ? '#dc2626' : undefined,
               color: activeTab === 'rbac' ? '#dc2626' : undefined,
@@ -502,14 +643,15 @@ export default function DirectorySettingsView() {
             }}
           >
             <Shield size={14} style={{ color: '#dc2626' }} />
-            User Permissions (RBAC)
+            <span>User Roles &amp; RBAC</span>
             <span className="ds-tab-count" style={{ background: '#fee2e2', color: '#dc2626' }}>{liveUsers.length}</span>
           </button>
         )}
+
         {isAdmin && (
           <button
             className={`ds-tab-btn ${activeTab === 'audit' ? 'active' : ''}`}
-            onClick={() => setActiveTab('audit')}
+            onClick={() => { setActiveTab('audit'); setSearchParams({ tab: 'audit' }); }}
             style={{
               borderColor: activeTab === 'audit' ? '#0284c7' : undefined,
               color: activeTab === 'audit' ? '#0284c7' : undefined,
@@ -517,14 +659,74 @@ export default function DirectorySettingsView() {
             }}
           >
             <Activity size={14} style={{ color: '#0284c7' }} />
-            Audit Trail
+            <span>Security Audit Trail</span>
             <span className="ds-tab-count" style={{ background: '#e0f2fe', color: '#0284c7' }}>{liveAuditLogs.length}</span>
           </button>
         )}
       </div>
 
+      {/* ── Business Directory Switcher ── */}
+      {activeTab === 'directory' && (
+        <div className="erp-subnav-pills" style={{ marginBottom: 18 }}>
+          <button
+            className={`erp-subnav-pill ${directorySubView === 'vendors' ? 'active' : ''}`}
+            onClick={() => setDirectorySubView('vendors')}
+          >
+            <Building size={13} />
+            <span>Suppliers &amp; Job Workers ({filteredVendors.length})</span>
+          </button>
+          <button
+            className={`erp-subnav-pill ${directorySubView === 'customers' ? 'active' : ''}`}
+            onClick={() => setDirectorySubView('customers')}
+          >
+            <Users size={13} />
+            <span>Customers &amp; Buyers ({filteredCustomers.length})</span>
+          </button>
+        </div>
+      )}
+
+      {/* ── Rates & Valuation Switcher ── */}
+      {activeTab === 'ratesValuation' && (
+        <div className="erp-subnav-pills" style={{ marginBottom: 18 }}>
+          <button
+            className={`erp-subnav-pill ${pricingSubView === 'rates' ? 'active' : ''}`}
+            onClick={() => setPricingSubView('rates')}
+          >
+            <Tag size={13} />
+            <span>JW Rate Master (₹/KG)</span>
+          </button>
+          <button
+            className={`erp-subnav-pill ${pricingSubView === 'value' ? 'active' : ''}`}
+            onClick={() => setPricingSubView('value')}
+          >
+            <DollarSign size={13} />
+            <span>JW Value Master (CGST Rule 55)</span>
+          </button>
+        </div>
+      )}
+
+      {/* ── Plant & System Settings Switcher ── */}
+      {activeTab === 'settings' && (
+        <div className="erp-subnav-pills" style={{ marginBottom: 18 }}>
+          <button
+            className={`erp-subnav-pill ${settingsSubView === 'tare' ? 'active' : ''}`}
+            onClick={() => setSettingsSubView('tare')}
+          >
+            <Package size={13} />
+            <span>Tare Standards &amp; Signatories</span>
+          </button>
+          <button
+            className={`erp-subnav-pill ${settingsSubView === 'erp' ? 'active' : ''}`}
+            onClick={() => setSettingsSubView('erp')}
+          >
+            <ShieldCheck size={13} />
+            <span>Financial Year &amp; System Setup</span>
+          </button>
+        </div>
+      )}
+
       {/* ── TAB 1: Processing Vendors ── */}
-      {activeTab === 'vendors' && (
+      {(activeTab === 'vendors' || (activeTab === 'directory' && directorySubView === 'vendors')) && (
         <>
           <div className="ds-filter-row">
             <div className="ds-search-wrap">
@@ -542,7 +744,7 @@ export default function DirectorySettingsView() {
               <button className="ds-btn-ghost" onClick={() => exportToCsv('Vendors_Directory.csv', filteredVendors)}>
                 <Download size={13} /> Export CSV
               </button>
-              <button className="ds-btn-primary" onClick={() => setShowAddVendorModal(true)}>
+              <button className="ds-btn-primary" onClick={() => { setSelectedVendorToEdit(null); setShowAddVendorModal(true); }}>
                 <Plus size={13} /> Add Vendor
               </button>
             </div>
@@ -550,13 +752,38 @@ export default function DirectorySettingsView() {
 
           <div className="ds-cards-grid">
             {filteredVendors.map(v => (
-              <div key={v.name} className="ds-card">
+              <div key={v.id || v.name} className="ds-card">
                 <div className="ds-card-header">
                   <div className="ds-card-title-group">
                     <h3 className="ds-card-name">{v.name}</h3>
                     <span className="ds-process-badge">{v.processBadge}</span>
                   </div>
-                  <span className="ds-avatar-badge">{v.avatar}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      title="Edit Vendor"
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedVendorToEdit(v);
+                        setShowAddVendorModal(true);
+                      }}
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    {v.id && (
+                      <button
+                        title="Delete Vendor"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteVendor(v);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <span className="ds-avatar-badge">{v.avatar}</span>
+                  </div>
                 </div>
 
                 <div className="ds-card-info-list">
@@ -590,7 +817,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 2: Job Work Rate Master (Matching Excel 'JW Rate Master') ── */}
-      {activeTab === 'rateMaster' && (
+      {(activeTab === 'rateMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'rates')) && (
         <div className="jw-ledger-section">
           <div className="ds-filter-row" style={{ flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -621,7 +848,18 @@ export default function DirectorySettingsView() {
               <button className="ds-btn-ghost" onClick={() => exportToCsv('JW_Rate_Master.csv', filteredRates)}>
                 <Download size={13} /> Export CSV
               </button>
-              <button className="ds-btn-primary" onClick={() => setShowAddRateModal(true)}>
+              <button className="ds-btn-primary" onClick={() => {
+                setSelectedRateToEdit(null);
+                setNewRateForm({
+                  party: displayVendors[0]?.name || 'GALAXY.ENTERPRISE',
+                  process: liveProcesses[0]?.processName || '',
+                  item: 'ANCHOR YARN ^ YARN HANK',
+                  uom: 'Kgs',
+                  rate: '17.50',
+                  date: new Date().toISOString().split('T')[0]
+                });
+                setShowAddRateModal(true);
+              }}>
                 <Plus size={13} /> Add Rate Contract
               </button>
             </div>
@@ -638,12 +876,13 @@ export default function DirectorySettingsView() {
                   <th>DATE</th>
                   <th>RATE</th>
                   <th>STATUS</th>
+                  <th style={{ textAlign: 'center' }}>ACTION</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRates.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
                       No rate contracts found in database. Click <strong>"+ Add Rate Contract"</strong> above to create one.
                     </td>
                   </tr>
@@ -661,6 +900,59 @@ export default function DirectorySettingsView() {
                       <td className="td-status">
                         <span className="badge-green-sm">{r.status || 'Active Contract'}</span>
                       </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                          <button
+                            title="Edit Rate Contract"
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid #cbd5e1',
+                              color: '#475569',
+                              borderRadius: '4px',
+                              padding: '3px 8px',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                            onClick={() => {
+                              setSelectedRateToEdit(r);
+                              setNewRateForm({
+                                party: r.party || '',
+                                process: r.process || '',
+                                item: r.item || '',
+                                rate: String(r.rate !== undefined ? r.rate : '17.50'),
+                                uom: r.uom || 'Kgs',
+                                date: r.date || new Date().toISOString().split('T')[0]
+                              });
+                              setShowAddRateModal(true);
+                            }}
+                          >
+                            <Edit2 size={12} /> Edit
+                          </button>
+                          {r.id && (
+                            <button
+                              title="Delete Rate Contract"
+                              style={{
+                                background: 'transparent',
+                                border: '1px solid #fecaca',
+                                color: '#dc2626',
+                                borderRadius: '4px',
+                                padding: '3px 8px',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                              onClick={() => handleDeleteRate(r)}
+                            >
+                              <Trash2 size={12} /> Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -671,7 +963,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB: Job Work Value Master (Sheet: JW Value Master) ── */}
-      {activeTab === 'valueMaster' && (
+      {(activeTab === 'valueMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'value')) && (
         <div className="jw-ledger-section">
           <div className="ds-filter-row">
             <div className="ds-search-wrap">
@@ -689,7 +981,7 @@ export default function DirectorySettingsView() {
               <button className="ds-btn-ghost" onClick={() => exportToCsv('JW_Value_Master.csv', filteredValueMasters)}>
                 <Download size={13} /> Export CSV
               </button>
-              <button className="ds-btn-primary" onClick={() => setShowAddValueModal(true)}>
+              <button className="ds-btn-primary" onClick={() => { setSelectedValueToEdit(null); setShowAddValueModal(true); }}>
                 <Plus size={13} /> Add Valuation Entry
               </button>
             </div>
@@ -723,24 +1015,47 @@ export default function DirectorySettingsView() {
                         ₹{Number(v.value || 0).toFixed(2)} / Kg
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <button
-                          onClick={async () => {
-                            if (window.confirm(`Delete valuation entry ${v.code}?`)) {
-                              await deleteJwValueMaster(v.id);
-                            }
-                          }}
-                          style={{
-                            background: 'transparent',
-                            border: '1px solid #fecaca',
-                            color: '#dc2626',
-                            borderRadius: '4px',
-                            padding: '3px 8px',
-                            fontSize: '0.75rem',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Delete
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                          <button
+                            title="Edit Valuation Entry"
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid #cbd5e1',
+                              color: '#475569',
+                              borderRadius: '4px',
+                              padding: '3px 8px',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                            onClick={() => {
+                              setSelectedValueToEdit(v);
+                              setShowAddValueModal(true);
+                            }}
+                          >
+                            <Edit2 size={12} /> Edit
+                          </button>
+                          <button
+                            title="Delete Valuation Entry"
+                            onClick={() => handleDeleteValueMaster(v)}
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid #fecaca',
+                              color: '#dc2626',
+                              borderRadius: '4px',
+                              padding: '3px 8px',
+                              fontSize: '0.75rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px'
+                            }}
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -753,7 +1068,7 @@ export default function DirectorySettingsView() {
 
       {/* ── TAB 3: Misc Master & Packaging Tare Standards ── */}
       {/* ── TAB 3: Misc Master & Packaging Tare Standards (Sheet: Misc Master) ── */}
-      {activeTab === 'miscMaster' && (
+      {(activeTab === 'miscMaster' || (activeTab === 'settings' && settingsSubView === 'tare')) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
           {/* Packaging Tare Standards Card */}
           <div className="ds-settings-card">
@@ -1013,7 +1328,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 4: Customers ── */}
-      {activeTab === 'customers' && (
+      {(activeTab === 'customers' || (activeTab === 'directory' && directorySubView === 'customers')) && (
         <>
           <div className="ds-filter-row">
             <div className="ds-search-wrap">
@@ -1031,7 +1346,7 @@ export default function DirectorySettingsView() {
               <button className="ds-btn-ghost" onClick={() => exportToCsv('Customers_Directory.csv', filteredCustomers)}>
                 <Download size={13} /> Export CSV
               </button>
-              <button className="ds-btn-primary" onClick={() => setShowAddCustomerModal(true)}>
+              <button className="ds-btn-primary" onClick={() => { setSelectedCustomerToEdit(null); setShowAddCustomerModal(true); }}>
                 <Plus size={13} /> Add Customer
               </button>
             </div>
@@ -1039,13 +1354,38 @@ export default function DirectorySettingsView() {
 
           <div className="ds-cards-grid">
             {filteredCustomers.map(c => (
-              <div key={c.name} className="ds-card">
+              <div key={c.id || c.name} className="ds-card">
                 <div className="ds-card-header">
                   <div className="ds-card-title-group">
                     <h3 className="ds-card-name">{c.name}</h3>
                     <span className="ds-term-badge">{c.termsBadge}</span>
                   </div>
-                  <span className="ds-avatar-badge">{c.avatar}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      title="Edit Customer"
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedCustomerToEdit(c);
+                        setShowAddCustomerModal(true);
+                      }}
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    {c.id && (
+                      <button
+                        title="Delete Customer"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCustomer(c);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                    <span className="ds-avatar-badge">{c.avatar}</span>
+                  </div>
                 </div>
 
                 <div className="ds-card-info-list">
@@ -1146,7 +1486,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 5: ERP Settings ── */}
-      {activeTab === 'settings' && (
+      {(activeTab === 'settings' && settingsSubView === 'erp') && (
         <div className="ds-settings-grid">
           <div className="ds-settings-card">
             <div className="ds-card-header-inner">
@@ -2110,27 +2450,41 @@ export default function DirectorySettingsView() {
       {/* Local Modals */}
       {showAddVendorModal && (
         <AddVendorModal
-          onClose={() => setShowAddVendorModal(false)}
+          initialData={selectedVendorToEdit}
+          vendor={selectedVendorToEdit}
+          onClose={() => {
+            setShowAddVendorModal(false);
+            setSelectedVendorToEdit(null);
+          }}
           onSave={handleSaveVendor}
         />
       )}
       {showAddCustomerModal && (
         <AddCustomerModal
-          onClose={() => setShowAddCustomerModal(false)}
+          initialData={selectedCustomerToEdit}
+          customer={selectedCustomerToEdit}
+          onClose={() => {
+            setShowAddCustomerModal(false);
+            setSelectedCustomerToEdit(null);
+          }}
           onSave={handleSaveCustomer}
         />
       )}
 
-      {/* Add Rate Modal */}
+      {/* Add / Edit Rate Modal */}
       {showAddRateModal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAddRateModal(false)}>
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && (setShowAddRateModal(false), setSelectedRateToEdit(null))}>
           <div className="modal-dialog modal-md">
             <div className="modal-header-dark">
               <div>
-                <h2 className="modal-title">Add Job Work Rate Contract</h2>
-                <p className="modal-subtitle">Configure process processing rate per KG for vendor</p>
+                <h2 className="modal-title">{selectedRateToEdit ? 'Edit Job Work Rate Contract' : 'Add Job Work Rate Contract'}</h2>
+                <p className="modal-subtitle">
+                  {selectedRateToEdit 
+                    ? `Updating rate for ${newRateForm.party} (${newRateForm.process})` 
+                    : 'Configure process processing rate per KG for vendor'}
+                </p>
               </div>
-              <button className="modal-close-btn" onClick={() => setShowAddRateModal(false)}>✕</button>
+              <button className="modal-close-btn" onClick={() => { setShowAddRateModal(false); setSelectedRateToEdit(null); }}>✕</button>
             </div>
             <form className="modal-body" onSubmit={handleSaveNewRate}>
               <div className="mform-field">
@@ -2171,18 +2525,22 @@ export default function DirectorySettingsView() {
                 </div>
               </div>
               <div className="modal-footer" style={{ marginTop: '14px' }}>
-                <button type="button" className="mfooter-btn cancel" onClick={() => setShowAddRateModal(false)}>Cancel</button>
-                <button type="submit" className="mfooter-btn confirm">Save Rate Master</button>
+                <button type="button" className="mfooter-btn cancel" onClick={() => { setShowAddRateModal(false); setSelectedRateToEdit(null); }}>Cancel</button>
+                <button type="submit" className="mfooter-btn confirm">{selectedRateToEdit ? 'Update Rate Master' : 'Save Rate Master'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Add JW Value Master Modal */}
+      {/* Add / Edit JW Value Master Modal */}
       {showAddValueModal && (
         <JwValueMasterModal
-          onClose={() => setShowAddValueModal(false)}
+          initialData={selectedValueToEdit}
+          onClose={() => {
+            setShowAddValueModal(false);
+            setSelectedValueToEdit(null);
+          }}
         />
       )}
     </div>

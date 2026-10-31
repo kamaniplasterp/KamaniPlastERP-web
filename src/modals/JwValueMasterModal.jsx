@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { X, DollarSign, Tag, Calendar, Layers } from 'lucide-react';
 import { RM_ITEM_NAMES } from '../api/inventory.api';
-import { addJwValueMaster } from '../api/directory.api';
+import { addJwValueMaster, updateJwValueMaster } from '../api/directory.api';
 import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
-export default function JwValueMasterModal({ onClose, onSaved }) {
+export default function JwValueMasterModal({ onClose, onSaved, initialData = null }) {
+  const isEditing = Boolean(initialData && (initialData.id || initialData.code));
+
   const [formData, setFormData] = useState({
-    code: `VAL-${Math.floor(1000 + Math.random() * 9000)}`,
-    date: new Date().toISOString().split('T')[0],
-    itemDescription: RM_ITEM_NAMES[0] || 'GRANUALS-HDPE',
-    value: '85.00'
+    code: initialData?.code || `VAL-${Math.floor(1000 + Math.random() * 9000)}`,
+    date: initialData?.date || new Date().toISOString().split('T')[0],
+    itemDescription: initialData?.itemDescription || RM_ITEM_NAMES[0] || 'GRANUALS-HDPE',
+    value: initialData?.value !== undefined ? String(initialData.value) : '85.00'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -36,12 +38,17 @@ export default function JwValueMasterModal({ onClose, onSaved }) {
 
     try {
       setIsSubmitting(true);
-      await addJwValueMaster(formData);
+      if (isEditing) {
+        await updateJwValueMaster(initialData.id, formData);
+        await showAlert(`JW Value Master record (${formData.code}) updated successfully!`, { type: 'success', title: 'Valuation Updated' });
+      } else {
+        await addJwValueMaster(formData);
+        await showAlert(`JW Value Master record (${formData.code}) created successfully!`, { type: 'success', title: 'Valuation Created' });
+      }
       if (onSaved) onSaved(formData);
-      await showAlert(`JW Value Master record (${formData.code}) created successfully!`, { type: 'success', title: 'Valuation Created' });
       onClose();
     } catch (err) {
-      console.error('Error creating JW Value Master record:', err);
+      console.error('Error saving JW Value Master record:', err);
       await showAlert('Failed to save JW Value Master. Please check console for details.', { type: 'error' });
     } finally {
       setIsSubmitting(false);
@@ -58,8 +65,12 @@ export default function JwValueMasterModal({ onClose, onSaved }) {
               <DollarSign size={16} />
             </div>
             <div>
-              <h2 className="modal-title">Add JW Value Master Entry</h2>
-              <p className="modal-subtitle">Define standardized processing valuation rates per item specification</p>
+              <h2 className="modal-title">{isEditing ? 'Edit JW Value Master Entry' : 'Add JW Value Master Entry'}</h2>
+              <p className="modal-subtitle">
+                {isEditing 
+                  ? `Update valuation standard for ${initialData?.code || formData.code}`
+                  : 'Define standardized processing valuation rates per item specification'}
+              </p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -140,7 +151,7 @@ export default function JwValueMasterModal({ onClose, onSaved }) {
               Cancel
             </button>
             <button type="submit" className="mfooter-btn confirm" disabled={isSubmitting}>
-              {isSubmitting ? 'Saving...' : 'Save Value Master'}
+              {isSubmitting ? (isEditing ? 'Updating...' : 'Saving...') : (isEditing ? 'Update Value Master' : 'Save Value Master')}
             </button>
           </div>
         </form>

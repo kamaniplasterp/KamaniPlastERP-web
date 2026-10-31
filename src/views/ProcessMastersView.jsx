@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Search, Plus, Download, Layers, Cog, Warehouse, Edit2, Trash2, Scale,
   MapPin, Users, Sparkles, Check, CheckCircle2, X, SlidersHorizontal,
@@ -19,12 +20,21 @@ import { exportToCsv } from '../utils/exportCsv';
 import ProcessMasterModal from '../modals/ProcessMasterModal';
 import LocationMasterModal from '../modals/LocationMasterModal';
 import { showAlert, showConfirm } from '../context/CustomAlertContext';
+import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
 import '../styles/DirectorySettings.css';
 import '../styles/JobWorkHub.css';
 
 export default function ProcessMastersView() {
-  const [activeTab, setActiveTab] = useState('processMaster');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'processMaster');
   const [processSearch, setProcessSearch] = useState('');
+
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams]);
   const [locationSearch, setLocationSearch] = useState('');
   const [matrixSearch, setMatrixSearch] = useState('');
 
@@ -400,11 +410,9 @@ export default function ProcessMastersView() {
     <div className="ds-container">
       {/* ── Page Header ── */}
       <div className="ds-page-header">
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <h1 className="ds-page-title">Process &amp; Plant Masters</h1>
-          <p className="ds-page-subtitle">
-            Configure manufacturing process conversions, internal &amp; external godowns, and multi-attribute product matrix.
-          </p>
+          <HeaderInfoTooltip text="Configure manufacturing process conversions, internal & external godowns, and multi-attribute product matrix." />
         </div>
       </div>
 
@@ -412,7 +420,7 @@ export default function ProcessMastersView() {
       <div className="ds-tabs-bar">
         <button
           className={`ds-tab-btn ${activeTab === 'processMaster' ? 'active' : ''}`}
-          onClick={() => setActiveTab('processMaster')}
+          onClick={() => { setActiveTab('processMaster'); setSearchParams({ tab: 'processMaster' }); }}
         >
           <Cog size={14} />
           Process Master
@@ -420,7 +428,7 @@ export default function ProcessMastersView() {
         </button>
         <button
           className={`ds-tab-btn ${activeTab === 'locations' ? 'active' : ''}`}
-          onClick={() => setActiveTab('locations')}
+          onClick={() => { setActiveTab('locations'); setSearchParams({ tab: 'locations' }); }}
         >
           <Warehouse size={14} />
           Godowns &amp; Locations
@@ -428,7 +436,7 @@ export default function ProcessMastersView() {
         </button>
         <button
           className={`ds-tab-btn ${activeTab === 'productMatrix' ? 'active' : ''}`}
-          onClick={() => setActiveTab('productMatrix')}
+          onClick={() => { setActiveTab('productMatrix'); setSearchParams({ tab: 'productMatrix' }); }}
         >
           <Layers size={14} />
           Product Matrix

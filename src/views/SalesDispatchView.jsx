@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   ShoppingCart, Truck, Download, Search, Plus, ArrowUpRight,
-  FileText, ChevronRight, CheckCircle2, AlertTriangle, ArrowUpDown, Filter
+  FileText, ChevronRight, CheckCircle2, AlertTriangle, ArrowUpDown, Filter,
+  BarChart3, ChevronDown, ChevronUp
 } from 'lucide-react';
 import SalesOrderModal from '../modals/SalesOrderModal';
 import DispatchChallanModal from '../modals/DispatchChallanModal';
 import SalesOrderDetailView from '../drawers/SalesOrderDetailView';
+import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
 import { printTaxInvoice, printDeliveryChallan } from '../utils/printDocument';
@@ -17,21 +19,31 @@ import '../styles/SalesDispatch.css';
 
 export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModal }) {
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { openOrdersCount, globalSearch } = useWorkflow();
-  const [activeTab, setActiveTab] = useState(location.state?.tab || 'orders');
+
+  const resolveTab = (t) => {
+    if (!t) return 'orders';
+    if (t === 'dispatch' || t === 'dispatches') return 'dispatches';
+    return 'orders';
+  };
+
+  const [activeTab, setActiveTab] = useState(() => resolveTab(searchParams.get('tab') || location.state?.tab));
   const [selectedOrderId, setSelectedOrderId] = useState(location.state?.selectedOrderId || null);
 
   const [liveOrders, setLiveOrders] = useState([]);
   const [liveDispatches, setLiveDispatches] = useState([]);
+  const [showMetrics, setShowMetrics] = useState(false);
 
   useEffect(() => {
-    if (location.state?.tab) {
-      setActiveTab(location.state.tab);
+    const tabFromUrl = searchParams.get('tab') || location.state?.tab;
+    if (tabFromUrl) {
+      setActiveTab(resolveTab(tabFromUrl));
     }
     if (location.state?.selectedOrderId) {
       setSelectedOrderId(location.state.selectedOrderId);
     }
-  }, [location.state]);
+  }, [searchParams, location.state]);
 
   useEffect(() => {
     const unsubSo = subscribeSalesOrders(setLiveOrders);
@@ -335,14 +347,22 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
         <div className="sd-header-left">
           <div className="sd-title-row">
             <h1 className="sd-page-title">Sales &amp; Dispatch</h1>
+            <HeaderInfoTooltip text="Sales booking, inventory allocation, delivery challan generation, and dispatch tracking." />
             <span className="sd-badge-blue">{liveOrders.length} Open Orders</span>
           </div>
-          <p className="sd-page-subtitle">
-            Sales booking, inventory allocation, delivery challan generation, and dispatch tracking.
-          </p>
         </div>
 
-        <div className="sd-header-right">
+        <div className="sd-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            type="button"
+            className={`sd-btn-toggle-stats ${showMetrics ? 'active' : ''}`}
+            onClick={() => setShowMetrics(prev => !prev)}
+            title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
+          >
+            <BarChart3 size={15} />
+            <span>{showMetrics ? 'Hide Stats' : 'Show Stats'}</span>
+            {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
           <button className="sd-btn-primary-blue" onClick={openNewSalesOrder}>
             <Plus size={15} /> New Sales Order
           </button>
@@ -352,8 +372,9 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
         </div>
       </div>
 
-      {/* ── Contextual Metric Area (No Stacked Duplicates) ── */}
-      <div className="sd-top-kpis">
+      {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
+      {showMetrics && (
+        <div className="sd-top-kpis">
         {activeTab === 'dispatches' ? (
           <>
             <div className="sd-kpi-card">
@@ -410,12 +431,13 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
           </>
         )}
       </div>
+      )}
 
       {/* ── Modern Underline Tab Bar ── */}
       <div className="sd-tab-bar">
         <button
           className={`sd-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
-          onClick={() => setActiveTab('orders')}
+          onClick={() => { setActiveTab('orders'); setSearchParams({ tab: 'orders' }); }}
         >
           <ShoppingCart size={14} />
           <span>Sales Orders &amp; Stock Allocation</span>
@@ -424,7 +446,7 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
 
         <button
           className={`sd-tab-btn ${activeTab === 'dispatches' ? 'active' : ''}`}
-          onClick={() => setActiveTab('dispatches')}
+          onClick={() => { setActiveTab('dispatches'); setSearchParams({ tab: 'dispatches' }); }}
         >
           <Truck size={14} />
           <span>Dispatches &amp; Delivery Challans</span>

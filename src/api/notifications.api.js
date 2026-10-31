@@ -175,6 +175,26 @@ export async function markNotificationAsRead(id, userUid) {
 }
 
 /**
+ * Mark all notifications as read in batch for the current user.
+ */
+export async function markAllNotificationsAsRead(ids = [], userUid) {
+  if (!db || !Array.isArray(ids) || ids.length === 0 || !userUid) return;
+  try {
+    const batch = writeBatch(db);
+    for (const id of ids) {
+      const notifRef = doc(db, 'notifications', id);
+      batch.update(notifRef, {
+        readBy: arrayUnion(userUid),
+        updatedAt: serverTimestamp()
+      });
+    }
+    await batch.commit();
+  } catch (err) {
+    console.error('Error marking all notifications as read:', err);
+  }
+}
+
+/**
  * Dismiss a notification for the current user.
  * Persists the user's UID in dismissedBy so it never re-appears for this user.
  */

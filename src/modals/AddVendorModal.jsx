@@ -5,22 +5,27 @@ import SearchableSelect from '../components/SearchableSelect';
 import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
-export default function AddVendorModal({ onClose, onSave }) {
+export default function AddVendorModal({ onClose, onSave, initialData = null, vendor = null }) {
+  const currentVendor = initialData || vendor;
+  const isEditing = Boolean(currentVendor && (currentVendor.id || currentVendor.name));
+
   const [liveProcesses, setLiveProcesses] = useState([]);
 
   const [formData, setFormData] = useState({
-    name: '',
-    processBadge: '',
-    phone: '',
-    location: '',
-    gst: '',
-    rate: '17.5'
+    name: currentVendor?.name || '',
+    processBadge: currentVendor?.processBadge || '',
+    phone: currentVendor?.phone && currentVendor.phone !== '-' ? currentVendor.phone : '',
+    location: currentVendor?.location && currentVendor.location !== '-' ? currentVendor.location : '',
+    gst: currentVendor?.gst ? String(currentVendor.gst).replace(/^GST:\s*/i, '') : '',
+    rate: currentVendor?.rate !== undefined 
+      ? String(currentVendor.rate).replace(/[^0-9.]/g, '') || '17.5' 
+      : '17.5'
   });
 
   useEffect(() => {
     const unsub = subscribeProcesses((procs) => {
       setLiveProcesses(procs);
-      if (procs.length > 0) {
+      if (procs.length > 0 && !formData.processBadge) {
         setFormData(f => f.processBadge ? f : { ...f, processBadge: procs[0].processName });
       }
     });
@@ -37,8 +42,7 @@ export default function AddVendorModal({ onClose, onSave }) {
       await showAlert('Please enter a valid vendor name.', { type: 'warning', title: 'Required Field' });
       return;
     }
-    if (onSave) onSave(formData);
-    await showAlert(`Vendor "${formData.name}" added successfully to Directory!`, { type: 'success', title: 'Vendor Registered' });
+    if (onSave) onSave(formData, currentVendor?.id);
     onClose();
   };
 
@@ -52,8 +56,8 @@ export default function AddVendorModal({ onClose, onSave }) {
               <Building size={16} />
             </div>
             <div>
-              <h2 className="modal-title">Add New Processing Vendor</h2>
-              <p className="modal-subtitle">Register job worker / processing partner in ERP directory</p>
+              <h2 className="modal-title">{isEditing ? 'Edit Processing Vendor' : 'Add New Processing Vendor'}</h2>
+              <p className="modal-subtitle">{isEditing ? `Update details for "${currentVendor?.name || formData.name}"` : 'Register job worker / processing partner in ERP directory'}</p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -144,7 +148,7 @@ export default function AddVendorModal({ onClose, onSave }) {
               Cancel
             </button>
             <button type="submit" className="mfooter-btn confirm">
-              Save Vendor
+              {isEditing ? 'Update Vendor' : 'Save Vendor'}
             </button>
           </div>
         </form>

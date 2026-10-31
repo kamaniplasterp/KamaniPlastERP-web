@@ -114,6 +114,21 @@ export async function updateVendor(id, vendorData) {
 }
 
 /**
+ * Delete vendor document
+ */
+export async function deleteVendor(id, name = '') {
+  if (!db) throw new Error('Firestore not initialized');
+  await deleteDoc(doc(db, 'vendors', id));
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'VENDOR_DELETED',
+    summary: `Deleted vendor / job worker "${name || id}"`,
+    targetId: id
+  });
+}
+
+/**
  * Add a new buyer document
  */
 export async function addBuyer(buyerData) {
@@ -151,6 +166,21 @@ export async function updateBuyer(id, buyerData) {
     summary: `Updated customer "${buyerData.name || id}" details`,
     targetId: buyerData.name || id,
     details: buyerData
+  });
+}
+
+/**
+ * Delete buyer document
+ */
+export async function deleteBuyer(id, name = '') {
+  if (!db) throw new Error('Firestore not initialized');
+  await deleteDoc(doc(db, 'buyers', id));
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'CUSTOMER_DELETED',
+    summary: `Deleted customer / buyer "${name || id}"`,
+    targetId: id
   });
 }
 
@@ -218,6 +248,22 @@ export async function updateJobWorkRate(id, rateData) {
 }
 
 /**
+ * Delete Job Work Rate record
+ */
+export async function deleteJobWorkRate(id, details = {}) {
+  if (!db) throw new Error('Firestore not initialized');
+  await deleteDoc(doc(db, 'jobWorkRates', id));
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'JW_RATE_CONTRACT_DELETED',
+    summary: `Deleted Job Work Rate contract ${details.party ? `for ${details.party} (${details.process || ''})` : id}`,
+    targetId: id,
+    details
+  });
+}
+
+/**
  * Subscribe to real-time JW Value Master collection
  */
 export function subscribeJwValueMasters(callback, limitCount = 100) {
@@ -256,6 +302,27 @@ export async function addJwValueMaster(valueData) {
   });
 
   return ref.id;
+}
+
+/**
+ * Update a JW Value Master entry
+ */
+export async function updateJwValueMaster(id, valueData) {
+  if (!db) throw new Error('Firestore not initialized');
+  const valueRef = doc(db, 'jwValueMasters', id);
+  await updateDoc(valueRef, {
+    ...valueData,
+    value: Number(valueData.value || 0),
+    updatedAt: serverTimestamp()
+  });
+
+  logAuditEvent({
+    category: 'MASTER_DATA',
+    action: 'JW_VALUE_MASTER_UPDATED',
+    summary: `Updated valuation standard for ${valueData.itemDescription || valueData.code}: ₹${valueData.value}/Kg`,
+    targetId: valueData.code || valueData.itemDescription || id,
+    details: valueData
+  });
 }
 
 /**

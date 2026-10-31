@@ -1,19 +1,20 @@
 import { useState, useEffect } from 'react';
 import { X, Scissors, Calendar, User, FileText, DollarSign, Weight, AlertCircle } from 'lucide-react';
-import { addExtraCutting } from '../api/jobwork.api';
+import { addExtraCutting, updateExtraCutting } from '../api/jobwork.api';
 import { subscribeVendors } from '../api/directory.api';
 import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
-export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
+export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor, initialData = null }) {
+  const isEditing = Boolean(initialData && (initialData.id || initialData.partyName));
   const [vendors, setVendors] = useState([]);
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
-    partyName: prefillVendor || '',
-    deductionDetails: '',
-    weightKg: '',
-    rate: '17.50',
-    remarks: ''
+    date: initialData?.date || new Date().toISOString().split('T')[0],
+    partyName: initialData?.partyName || prefillVendor || '',
+    deductionDetails: initialData?.deductionDetails || '',
+    weightKg: initialData?.weightKg !== undefined ? String(initialData.weightKg) : '',
+    rate: initialData?.rate !== undefined ? String(initialData.rate) : '17.50',
+    remarks: initialData?.remarks || ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -52,14 +53,22 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
 
     try {
       setIsSubmitting(true);
-      await addExtraCutting({
+      const payload = {
         ...formData,
         weightKg: weightNum,
         rate: rateNum,
         totalAmount: parseFloat(calculatedTotal)
-      });
-      if (onSaved) onSaved(formData);
-      await showAlert(`Extra Cutting entry of ${weightNum} KG (₹${calculatedTotal}) saved for ${formData.partyName}!`, { type: 'success', title: 'Deduction Saved' });
+      };
+
+      if (isEditing) {
+        await updateExtraCutting(initialData.id, payload);
+        if (onSaved) onSaved(payload);
+        await showAlert(`Extra Cutting entry updated successfully for ${formData.partyName}!`, { type: 'success', title: 'Deduction Updated' });
+      } else {
+        await addExtraCutting(payload);
+        if (onSaved) onSaved(payload);
+        await showAlert(`Extra Cutting entry of ${weightNum} KG (₹${calculatedTotal}) saved for ${formData.partyName}!`, { type: 'success', title: 'Deduction Saved' });
+      }
       onClose();
     } catch (err) {
       console.error('Error saving extra cutting deduction:', err);
@@ -79,8 +88,12 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
               <Scissors size={16} />
             </div>
             <div>
-              <h2 className="modal-title">Record Extra Cutting / Wastage Deduction</h2>
-              <p className="modal-subtitle">Log piece-rate weight deductions &amp; processing allowances (Sheet: Extra Cutting)</p>
+              <h2 className="modal-title">{isEditing ? 'Edit Extra Cutting Deduction' : 'Record Extra Cutting / Wastage Deduction'}</h2>
+              <p className="modal-subtitle">
+                {isEditing 
+                  ? `Update deduction record for ${initialData?.partyName || formData.partyName}`
+                  : 'Log piece-rate weight deductions & processing allowances (Sheet: Extra Cutting)'}
+              </p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -108,30 +121,42 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
             <div className="mform-field">
               <label className="mform-label">
                 <User size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-                Party Name <span className="req">*</span>
+                Job Worker / Party Name <span className="req">*</span>
               </label>
-              <select
-                className="mform-select"
-                value={formData.partyName}
-                onChange={e => handleChange('partyName', e.target.value)}
-                required
-              >
-                {vendors.map(v => (
-                  <option key={v.id || v.name} value={v.name}>{v.name}</option>
-                ))}
-              </select>
+              {vendors.length > 0 ? (
+                <select
+                  className="mform-select"
+                  value={formData.partyName}
+                  onChange={e => handleChange('partyName', e.target.value)}
+                  required
+                >
+                  <option value="">-- Select Job Worker --</option>
+                  {vendors.map(v => (
+                    <option key={v.id || v.name} value={v.name}>{v.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="mform-input"
+                  placeholder="e.g. GALAXY.ENTERPRISE"
+                  value={formData.partyName}
+                  onChange={e => handleChange('partyName', e.target.value)}
+                  required
+                />
+              )}
             </div>
           </div>
 
           <div className="mform-field">
             <label className="mform-label">
               <FileText size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-              Deduction Details <span className="req">*</span>
+              Deduction Details / Process Item <span className="req">*</span>
             </label>
             <input
               type="text"
               className="mform-input"
-              placeholder="e.g. Edge trimming wastage / extra cutting batch #842"
+              placeholder="e.g. ANCHOR YARN ^ YARN HANK (Defect / Cutting Loss)"
               value={formData.deductionDetails}
               onChange={e => handleChange('deductionDetails', e.target.value)}
               required
@@ -142,14 +167,14 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
             <div className="mform-field">
               <label className="mform-label">
                 <Weight size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-                Weight <span className="req">*</span>
+                Deducted Weight (KG) <span className="req">*</span>
               </label>
               <input
                 type="number"
                 step="0.01"
                 min="0.01"
                 className="mform-input"
-                placeholder="0.00"
+                placeholder="e.g. 15.50"
                 value={formData.weightKg}
                 onChange={e => handleChange('weightKg', e.target.value)}
                 required
@@ -159,14 +184,14 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
             <div className="mform-field">
               <label className="mform-label">
                 <DollarSign size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
-                Rate <span className="req">*</span>
+                Rate (₹ / KG) <span className="req">*</span>
               </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 className="mform-input"
-                placeholder="17.50"
+                placeholder="e.g. 17.50"
                 value={formData.rate}
                 onChange={e => handleChange('rate', e.target.value)}
                 required
@@ -175,7 +200,7 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
 
             <div className="mform-field">
               <label className="mform-label">
-                Total
+                Total Deduction Amount
               </label>
               <input
                 type="text"
@@ -203,7 +228,7 @@ export default function ExtraCuttingModal({ onClose, onSaved, prefillVendor }) {
               Cancel
             </button>
             <button type="submit" className="mfooter-btn confirm" disabled={isSubmitting}>
-              {isSubmitting ? 'Saving...' : 'Save Extra Cutting'}
+              {isSubmitting ? (isEditing ? 'Updating...' : 'Saving...') : (isEditing ? 'Update Deduction' : 'Save Extra Cutting')}
             </button>
           </div>
         </form>

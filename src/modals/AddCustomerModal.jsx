@@ -20,21 +20,29 @@ import {
 import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
-export default function AddCustomerModal({ onClose, onSave }) {
-  const isBypassed = isOtpBypassed();
+export default function AddCustomerModal({ onClose, onSave, initialData = null, customer = null }) {
+  const currentCustomer = initialData || customer;
+  const isEditing = Boolean(currentCustomer && (currentCustomer.id || currentCustomer.name));
+  const isBypassed = isOtpBypassed() || isEditing;
 
   const [formData, setFormData] = useState({
-    name: '',
-    category: 'Marine & Fishing Supplies',
-    phone: '',
-    contactPerson: '',
-    whatsapp: '',
-    location: '',
-    gst: '',
-    paymentTerms: '30 Days Net'
+    name: currentCustomer?.name || '',
+    category: currentCustomer?.category || currentCustomer?.termsBadge || 'Marine & Fishing Supplies',
+    phone: currentCustomer?.phone ? String(currentCustomer.phone).replace(/\D/g, '').slice(-10) : '',
+    contactPerson: currentCustomer?.contactPerson || '',
+    whatsapp: currentCustomer?.whatsapp 
+      ? String(currentCustomer.whatsapp).replace(/\D/g, '').slice(-10) 
+      : (currentCustomer?.phone ? String(currentCustomer.phone).replace(/\D/g, '').slice(-10) : ''),
+    location: currentCustomer?.location && currentCustomer.location !== '-' ? currentCustomer.location : '',
+    gst: currentCustomer?.gst ? String(currentCustomer.gst).replace(/^GST:\s*/i, '') : '',
+    paymentTerms: currentCustomer?.paymentTerms || '30 Days Net'
   });
 
-  const [isSameAsPhone, setIsSameAsPhone] = useState(true);
+  const [isSameAsPhone, setIsSameAsPhone] = useState(
+    currentCustomer 
+      ? !currentCustomer.isWhatsAppDifferent && (!currentCustomer.whatsapp || currentCustomer.whatsapp === currentCustomer.phone) 
+      : true
+  );
 
   // Primary Phone OTP state
   const [isPhoneVerified, setIsPhoneVerified] = useState(isBypassed);
@@ -278,8 +286,8 @@ export default function AddCustomerModal({ onClose, onSave }) {
       verificationStatus: isBypassed ? 'bypassed_env' : 'verified'
     };
 
-    if (onSave) onSave(payload);
-    await showAlert(`Customer / Buyer "${formData.name}" registered successfully!`, { type: 'success', title: 'Customer Registered' });
+    if (onSave) onSave(payload, currentCustomer?.id);
+    await showAlert(isEditing ? `Customer "${formData.name}" updated successfully!` : `Customer / Buyer "${formData.name}" registered successfully!`, { type: 'success', title: isEditing ? 'Customer Updated' : 'Customer Registered' });
     onClose();
   };
 
@@ -304,8 +312,8 @@ export default function AddCustomerModal({ onClose, onSave }) {
               <Building size={16} />
             </div>
             <div>
-              <h2 className="modal-title">Add New Customer / Buyer</h2>
-              <p className="modal-subtitle">Register buyer or wholesale distributor in ERP directory</p>
+              <h2 className="modal-title">{isEditing ? 'Edit Customer / Buyer' : 'Add New Customer / Buyer'}</h2>
+              <p className="modal-subtitle">{isEditing ? `Update details for "${currentCustomer?.name || formData.name}"` : 'Register buyer or wholesale distributor in ERP directory'}</p>
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose}>
@@ -645,7 +653,7 @@ export default function AddCustomerModal({ onClose, onSave }) {
                 cursor: canSubmit ? 'pointer' : 'not-allowed'
               }}
             >
-              Save Customer
+              {isEditing ? 'Update Customer' : 'Save Customer'}
             </button>
           </div>
         </form>

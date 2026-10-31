@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Layers, Package, History, GitBranch, Search, Plus, ArrowUpRight,
   AlertTriangle, ArrowUpDown, ChevronRight, Filter, Download,
   CheckCircle2, ArrowRight, Truck, FileText, Scale, BookOpen, Edit3, Check, Calendar,
-  Printer, Clock, ShieldCheck, X, CheckSquare, XCircle
+  Printer, Clock, ShieldCheck, X, CheckSquare, XCircle,
+  BarChart3, ChevronDown, ChevronUp
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import SalesOrderModal from '../modals/SalesOrderModal';
@@ -19,6 +20,7 @@ import AddFinishedGoodsStockModal from '../modals/AddFinishedGoodsStockModal';
 import AddBagBatchModal from '../modals/AddBagBatchModal';
 import QcCheckModal from '../modals/QcCheckModal';
 import QuickBagLookupModal from '../modals/QuickBagLookupModal';
+import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
 import { useWorkflow } from '../context/WorkflowContext';
 import { 
   subscribeRawMaterials, 
@@ -50,8 +52,24 @@ import '../styles/InventoryStock.css';
 export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { rmStock, jobWorkStock, fgStock } = useWorkflow();
-  const [activeTab, setActiveTab] = useState(location.state?.tab || 'rm');
+
+  const [movementsSubView, setMovementsSubView] = useState('history');
+
+  const resolveInvTab = (tabParam) => {
+    if (!tabParam) return 'rm';
+    if (tabParam === 'traceability') {
+      setMovementsSubView('traceability');
+      return 'movements';
+    }
+    if (tabParam === 'movements') {
+      return 'movements';
+    }
+    return tabParam;
+  };
+
+  const [activeTab, setActiveTab] = useState(() => resolveInvTab(searchParams.get('tab') || location.state?.tab));
   const [rmSubView, setRmSubView] = useState(location.state?.subView || 'ledger'); // 'ledger' | 'inward' | 'issue'
 
   const [liveRmList, setLiveRmList] = useState([]);
@@ -67,8 +85,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [scrapInfo, setScrapInfo] = useState({ totalScrapKg: 0, defaultRate: 70 });
 
   useEffect(() => {
-    if (location.state?.tab) {
-      setActiveTab(location.state.tab);
+    const tabFromUrl = searchParams.get('tab') || location.state?.tab;
+    if (tabFromUrl) {
+      setActiveTab(resolveInvTab(tabFromUrl));
     }
     if (location.state?.subView) {
       setRmSubView(location.state.subView);
@@ -76,7 +95,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     if (location.state?.search) {
       setRmSearch(location.state.search);
     }
-  }, [location.state]);
+  }, [searchParams, location.state]);
 
   useEffect(() => {
     const unsubRm = subscribeRawMaterials(setLiveRmList);
@@ -125,6 +144,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [selectedQcForModal, setSelectedQcForModal] = useState(null);
   const [bagViewMode, setBagViewMode] = useState('flat'); // 'flat' | 'diary'
   const [showBagFilters, setShowBagFilters] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(false);
   const [showAddBagBatchModal, setShowAddBagBatchModal] = useState(false);
   const [showQuickLookupModal, setShowQuickLookupModal] = useState(false);
   const [editingBagWeightId, setEditingBagWeightId] = useState(null);
@@ -846,12 +866,20 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         <div className="inv-header-left">
           <div className="inv-title-row">
             <h1 className="inv-page-title">Inventory &amp; Stock Hub</h1>
+            <HeaderInfoTooltip text="Unified management of raw materials (granules/yarn), finished rope stock, warehouse movements, and batch traceability." />
           </div>
-          <p className="inv-page-subtitle">
-            Unified management of raw materials (granules/yarn), finished rope stock, warehouse movements, and batch traceability.
-          </p>
         </div>
         <div className="inv-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            type="button"
+            className={`inv-btn-toggle-stats ${showMetrics ? 'active' : ''}`}
+            onClick={() => setShowMetrics(prev => !prev)}
+            title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
+          >
+            <BarChart3 size={15} />
+            <span>{showMetrics ? 'Hide Stats' : 'Show Stats'}</span>
+            {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
           <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: 700 }}>RECOVERED SCRAP:</span>
             <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#dc2626' }}>{(scrapInfo.totalScrapKg || 0).toFixed(1)} KG</span>
@@ -864,8 +892,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       </div>
 
-      {/* ── Contextual Metric Area (No Stacked Duplicates) ── */}
-      <div className="inv-top-kpis">
+      {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
+      {showMetrics && (
+        <div className="inv-top-kpis">
         {activeTab === 'qc' ? (
           <>
 
@@ -987,7 +1016,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               <div className="inv-kpi-sub">₹{totalFgValuationInr.toLocaleString()}</div>
             </div>
           </>
-        ) : activeTab === 'movements' ? (
+        ) : (activeTab === 'movements' && movementsSubView === 'history') ? (
           <>
             <div className="inv-kpi-card">
               <div className="inv-kpi-card-header">
@@ -1031,7 +1060,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
 
           </>
-        ) : activeTab === 'traceability' ? (
+        ) : (activeTab === 'traceability' || (activeTab === 'movements' && movementsSubView === 'traceability')) ? (
           <>
 
 
@@ -1100,12 +1129,13 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           </>
         )}
       </div>
+      )}
 
-      {/* ── Modern Underline Tab Bar ── */}
+      {/* ── Modern Streamlined Tab Bar (4 Merged Modules, No Overflow) ── */}
       <div className="inv-tab-bar">
         <button
           className={`inv-tab-btn ${activeTab === 'rm' ? 'active' : ''}`}
-          onClick={() => setActiveTab('rm')}
+          onClick={() => { setActiveTab('rm'); setSearchParams({ tab: 'rm' }); }}
         >
           <Layers size={14} />
           <span>Raw Materials (RM)</span>
@@ -1114,7 +1144,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
         <button
           className={`inv-tab-btn ${activeTab === 'fg' ? 'active' : ''}`}
-          onClick={() => setActiveTab('fg')}
+          onClick={() => { setActiveTab('fg'); setSearchParams({ tab: 'fg' }); }}
         >
           <Package size={14} />
           <span>Finished Goods (FG)</span>
@@ -1123,7 +1153,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
         <button
           className={`inv-tab-btn ${activeTab === 'bags' ? 'active' : ''}`}
-          onClick={() => setActiveTab('bags')}
+          onClick={() => { setActiveTab('bags'); setSearchParams({ tab: 'bags' }); }}
         >
           <Scale size={14} />
           <span>Bags &amp; Dual Stock</span>
@@ -1132,18 +1162,10 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
         <button
           className={`inv-tab-btn ${activeTab === 'movements' ? 'active' : ''}`}
-          onClick={() => setActiveTab('movements')}
+          onClick={() => { setActiveTab('movements'); setSearchParams({ tab: 'movements' }); }}
         >
           <History size={14} />
-          <span>Stock Movements</span>
-        </button>
-
-        <button
-          className={`inv-tab-btn ${activeTab === 'traceability' ? 'active' : ''}`}
-          onClick={() => setActiveTab('traceability')}
-        >
-          <GitBranch size={14} />
-          <span>Batch Traceability</span>
+          <span>Stock Movements &amp; Trace</span>
         </button>
       </div>
 
@@ -1920,8 +1942,27 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       )}
 
-      {/* ── TAB 3: Stock Movements Ledger ── */}
+      {/* ── TAB 4: Stock Movements & Traceability (Merged) ── */}
       {activeTab === 'movements' && (
+        <div className="erp-subnav-pills">
+          <button
+            className={`erp-subnav-pill ${movementsSubView === 'history' ? 'active' : ''}`}
+            onClick={() => setMovementsSubView('history')}
+          >
+            <History size={13} />
+            <span>Stock Movements &amp; Audit</span>
+          </button>
+          <button
+            className={`erp-subnav-pill ${movementsSubView === 'traceability' ? 'active' : ''}`}
+            onClick={() => setMovementsSubView('traceability')}
+          >
+            <GitBranch size={13} />
+            <span>Batch Traceability Explorer</span>
+          </button>
+        </div>
+      )}
+
+      {(activeTab === 'movements' && movementsSubView === 'history') && (
         <div className="inv-section-card">
           <div className="inv-section-header">
             <div className="inv-title-group">
@@ -2035,8 +2076,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       )}
 
-      {/* ── TAB 4: Batch Traceability Explorer ── */}
-      {activeTab === 'traceability' && (
+      {/* ── Batch Traceability Explorer ── */}
+      {(activeTab === 'traceability' || (activeTab === 'movements' && movementsSubView === 'traceability')) && (
         <div className="inv-trace-container">
           <div className="inv-section-card">
             <div className="inv-section-header">

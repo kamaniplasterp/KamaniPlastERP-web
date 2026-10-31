@@ -9,8 +9,7 @@ import { ROLE_LABELS, ROLE_COLORS } from '../api/rbac.api';
 import {
   subscribeUserNotifications,
   markNotificationAsRead,
-  dismissNotification,
-  dismissAllNotifications,
+  markAllNotificationsAsRead,
   syncSystemWatchdogAlerts
 } from '../api/notifications.api';
 import {
@@ -25,7 +24,7 @@ import {
   Clock,
   Package,
   Briefcase,
-  ChevronRight,
+  Truck,
   CheckCircle2,
   X
 } from 'lucide-react';
@@ -52,7 +51,6 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
   const [persistentNotifications, setPersistentNotifications] = useState([]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-  const [notifFilter, setNotifFilter] = useState('ALL');
 
   useEffect(() => {
     const unsubInw = subscribeRmInwards(setRmInwards);
@@ -147,37 +145,95 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
     return true;
   });
 
-  const hasHighSeverity = activeNotifications.some(n => n.severity === 'high' || n.severity === 'critical');
+  const unreadCount = activeNotifications.filter(n => !n.isRead).length;
 
-  const allWeightAlerts = activeNotifications.filter(n => n.category === 'WEIGHT');
-  const qcAlerts = activeNotifications.filter(n => isQcNotification(n));
-  const lowStockAlerts = activeNotifications.filter(n => n.category === 'STOCK');
-  const jobWorkAlerts = activeNotifications.filter(n => n.category === 'JOB_WORK');
-
-  const filteredList = activeNotifications.filter(n => {
-    if (notifFilter === 'ALL') return true;
-    return n.category === notifFilter;
-  });
-
-  const handleDismissAll = async () => {
+  const handleMarkAllRead = async () => {
     if (!user?.uid || activeNotifications.length === 0) return;
-    await dismissAllNotifications(activeNotifications.map(n => n.id), user.uid);
-  };
+    const unreadIds = activeNotifications.filter(n => !n.isRead).map(n => n.id);
+    if (unreadIds.length === 0) return;
 
-  const handleDismissSingle = async (e, id) => {
-    e.stopPropagation();
-    if (!user?.uid || !id) return;
-    await dismissNotification(id, user.uid);
+    // Optimistic UI update
+    setPersistentNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+
+    await markAllNotificationsAsRead(unreadIds, user.uid);
   };
 
   const handleItemClick = (item) => {
     setShowNotifDropdown(false);
-    if (user?.uid) {
+
+    if (user?.uid && !item.isRead) {
+      setPersistentNotifications(prev => prev.map(n => n.id === item.id ? { ...n, isRead: true } : n));
       markNotificationAsRead(item.id, user.uid);
     }
-    const path = item.actionPath || item.path || defaultRoute || (hasAccess('dashboard') ? '/dashboard' : '/job-work');
-    const state = item.actionState || item.state;
+
+    let path = item.actionPath || item.path || defaultRoute || (hasAccess('dashboard') ? '/dashboard' : '/job-work');
+    const state = item.actionState || item.state || {};
+
+    if (state.tab) {
+      const hasQuery = path.includes('?');
+      path = `${path}${hasQuery ? '&' : '?'}tab=${encodeURIComponent(state.tab)}`;
+    }
+
     navigate(path, { state });
+  };
+
+  const formatNotificationTime = (item) => {
+    const d = item.createdAtDate || (item.createdAt?.toDate ? item.createdAt.toDate() : (item.createdAt ? new Date(item.createdAt) : null));
+    if (!d || isNaN(d.getTime())) return item.timeTag || '';
+
+    const now = new Date();
+    const isToday = now.toDateString() === d.toDateString();
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = yesterday.toDateString() === d.toDateString();
+
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    if (isToday) return timeStr;
+    if (isYesterday) return `Yesterday, ${timeStr}`;
+    return `${d.toLocaleDateString([], { day: '2-digit', month: 'short' })}, ${timeStr}`;
+  };
+
+  const getNotificationIcon = (category) => {
+    switch (category) {
+      case 'WEIGHT':
+        return {
+          icon: <AlertTriangle size={15} />,
+          bg: '#fef2f2',
+          color: '#ef4444'
+        };
+      case 'QC':
+        return {
+          icon: <Clock size={15} />,
+          bg: '#fffbeb',
+          color: '#f59e0b'
+        };
+      case 'STOCK':
+        return {
+          icon: <Package size={15} />,
+          bg: '#f0f9ff',
+          color: '#0284c7'
+        };
+      case 'JOB_WORK':
+        return {
+          icon: <Briefcase size={15} />,
+          bg: '#f5f3ff',
+          color: '#8b5cf6'
+        };
+      case 'SALES':
+        return {
+          icon: <Truck size={15} />,
+          bg: '#f0fdf4',
+          color: '#16a34a'
+        };
+      default:
+        return {
+          icon: <AlertTriangle size={15} />,
+          bg: '#fef2f2',
+          color: '#ef4444'
+        };
+    }
   };
 
   return (
@@ -210,18 +266,12 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
       {/* Right Actions */}
       <div className="topnav-actions">
-        {/* Workspace / Plant Indicator */}
-        <div className="topnav-plant-pill" title="Connected Manufacturing Plant: Rajkot GIDC">
-          <span className="plant-live-dot" />
-          <span className="plant-pill-name">Plant 1 (Rajkot GIDC)</span>
-        </div>
-
         {/* Notifications & Warnings Bell */}
         <div style={{ position: 'relative' }} ref={notifRef}>
           <button 
             type="button"
             className="tnav-icon-btn notif-btn" 
-            title={activeNotifications.length > 0 ? `${activeNotifications.length} Active System Warnings & Notifications` : "No active alerts"}
+            title={unreadCount > 0 ? `${unreadCount} Unread Notifications` : "Notifications"}
             onClick={() => setShowNotifDropdown(prev => !prev)}
             style={{ 
               position: 'relative',
@@ -229,99 +279,83 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
             }}
           >
             <Bell size={16} />
-            {activeNotifications.length > 0 && (
+            {unreadCount > 0 && (
               <span 
                 style={{
                   position: 'absolute',
-                  top: '-5px',
-                  right: '-5px',
-                  background: hasHighSeverity ? '#dc2626' : '#ea580c',
+                  top: '-4px',
+                  right: '-4px',
+                  background: '#ef4444',
                   color: '#ffffff',
-                  fontSize: '0.65rem',
-                  fontWeight: 800,
+                  fontSize: '0.64rem',
+                  fontWeight: 700,
                   padding: '1px 5px',
                   borderRadius: '10px',
-                  minWidth: '17px',
-                  height: '17px',
+                  minWidth: '16px',
+                  height: '16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   border: '2px solid #ffffff',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.15)'
                 }}
               >
-                {activeNotifications.length}
+                {unreadCount}
               </span>
             )}
           </button>
 
-          {/* Notification Dropdown Panel */}
+          {/* Clean Minimal Notification Panel (Image 2 style) */}
           {showNotifDropdown && (
             <div 
               style={{
                 position: 'absolute',
-                top: 'calc(100% + 10px)',
+                top: 'calc(100% + 12px)',
                 right: 0,
                 width: '390px',
                 maxWidth: '92vw',
                 background: '#ffffff',
-                borderRadius: '12px',
-                boxShadow: '0 14px 40px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08)',
-                border: '1px solid #e2e8f0',
+                borderRadius: '16px',
+                boxShadow: '0 16px 40px rgba(15, 23, 42, 0.14), 0 3px 8px rgba(15, 23, 42, 0.05)',
+                border: '1px solid #f1f5f9',
                 zIndex: 9999,
                 overflow: 'hidden'
               }}
             >
-              {/* Dropdown Header */}
+              {/* Header */}
               <div 
                 style={{
-                  padding: '14px 16px',
-                  borderBottom: '1px solid #f1f5f9',
-                  background: '#f8fafc',
+                  padding: '18px 20px 14px 20px',
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
                   justifyContent: 'space-between'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bell size={16} style={{ color: '#0f172a' }} />
-                  <span style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a' }}>
-                    Warnings &amp; Alerts
-                  </span>
-                  {activeNotifications.length > 0 && (
-                    <span 
-                      style={{
-                        background: '#fee2e2',
-                        color: '#dc2626',
-                        border: '1px solid #fecaca',
-                        fontSize: '0.68rem',
-                        fontWeight: 800,
-                        padding: '1px 7px',
-                        borderRadius: '10px'
-                      }}
-                    >
-                      {activeNotifications.length} Active
-                    </span>
-                  )}
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.12rem', fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>
+                    Notification
+                  </h3>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '3px' }}>
+                    {unreadCount} unread
+                  </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {activeNotifications.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', paddingTop: '2px' }}>
+                  {unreadCount > 0 && (
                     <button
                       type="button"
-                      onClick={handleDismissAll}
+                      onClick={handleMarkAllRead}
                       style={{
                         background: 'transparent',
                         border: 'none',
-                        color: '#64748b',
-                        fontSize: '0.72rem',
+                        color: '#0284c7',
+                        fontSize: '0.8rem',
                         fontWeight: 600,
                         cursor: 'pointer',
-                        textDecoration: 'underline'
+                        padding: 0
                       }}
-                      title="Permanently dismiss all active notifications for your account"
                     >
-                      Dismiss All
+                      Mark All read
                     </button>
                   )}
                   <button
@@ -330,200 +364,107 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      color: '#94a3b8',
+                      color: '#64748b',
                       cursor: 'pointer',
                       padding: '2px',
                       display: 'flex',
-                      alignItems: 'center'
+                      alignItems: 'center',
+                      borderRadius: '4px'
                     }}
+                    title="Close"
                   >
-                    <X size={15} />
+                    <X size={17} />
                   </button>
                 </div>
               </div>
 
-              {/* Filter Tabs */}
-              <div 
-                style={{
-                  display: 'flex',
-                  padding: '8px 12px',
-                  gap: '6px',
-                  borderBottom: '1px solid #f1f5f9',
-                  background: '#ffffff',
-                  overflowX: 'auto'
-                }}
-              >
-                {[
-                  { key: 'ALL', label: `All (${activeNotifications.length})`, show: true },
-                  { key: 'WEIGHT', label: `⚠️ Weight (${allWeightAlerts.length})`, show: true },
-                  { key: 'QC', label: `⏱️ QC Overdue (${qcAlerts.length})`, show: isUserAdmin },
-                  { key: 'STOCK', label: `📦 Stock (${lowStockAlerts.length})`, show: true },
-                  { key: 'JOB_WORK', label: `💼 Job Work (${jobWorkAlerts.length})`, show: true }
-                ].filter(tab => tab.show).map(tab => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setNotifFilter(tab.key)}
-                    style={{
-                      background: notifFilter === tab.key ? '#0f172a' : '#f1f5f9',
-                      color: notifFilter === tab.key ? '#ffffff' : '#475569',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '4px 8px',
-                      fontSize: '0.7rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              <div style={{ height: '1px', background: '#f1f5f9' }} />
 
               {/* Notification List */}
-              <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
-                {filteredList.length === 0 ? (
-                  <div style={{ padding: '36px 20px', textAlign: 'center', color: '#64748b' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', color: '#16a34a' }}>
-                      <CheckCircle2 size={22} />
+              <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                {activeNotifications.length === 0 ? (
+                  <div style={{ padding: '36px 20px', textAlign: 'center', color: '#94a3b8' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', color: '#16a34a' }}>
+                      <CheckCircle2 size={20} />
                     </div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>All Clear!</div>
-                    <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>No active alerts in this category.</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a' }}>All caught up!</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>No notifications to display.</div>
                   </div>
                 ) : (
-                  filteredList.map(item => (
-                    <div
-                      key={item.id}
-                      onClick={() => handleItemClick(item)}
-                      style={{
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #f1f5f9',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        gap: '12px',
-                        alignItems: 'flex-start',
-                        transition: 'background 0.15s ease',
-                        position: 'relative',
-                        background: !item.isRead ? '#f8fafc' : '#ffffff'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
-                      onMouseLeave={e => e.currentTarget.style.background = !item.isRead ? '#f8fafc' : '#ffffff'}
-                    >
-                      {/* Unread Indicator Dot */}
-                      {!item.isRead && (
-                        <span 
-                          style={{
-                            position: 'absolute',
-                            left: '6px',
-                            top: '16px',
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            background: '#2563eb'
-                          }} 
-                          title="Unread alert"
-                        />
-                      )}
+                  activeNotifications.map(item => {
+                    const iconConfig = getNotificationIcon(item.category);
+                    const timeLabel = formatNotificationTime(item);
 
-                      {/* Icon */}
-                      <div 
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => handleItemClick(item)}
                         style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '8px',
-                          background: item.category === 'WEIGHT' ? '#fee2e2' : item.category === 'QC' ? '#fff1f2' : item.category === 'STOCK' ? '#fef3c7' : '#e0f2fe',
-                          color: item.category === 'WEIGHT' ? '#dc2626' : item.category === 'QC' ? '#e11d48' : item.category === 'STOCK' ? '#b45309' : '#0369a1',
+                          padding: '13px 20px',
+                          borderBottom: '1px solid #f8fafc',
+                          cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          marginTop: '2px'
+                          gap: '14px',
+                          transition: 'background 0.15s ease',
+                          background: '#ffffff'
                         }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
                       >
-                        {item.category === 'WEIGHT' ? <AlertTriangle size={16} /> :
-                         item.category === 'QC' ? <Clock size={16} /> :
-                         item.category === 'STOCK' ? <Package size={16} /> :
-                         <Briefcase size={16} />}
-                      </div>
+                        {/* Circular Icon */}
+                        <div 
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            background: iconConfig.bg,
+                            color: iconConfig.color,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}
+                        >
+                          {iconConfig.icon}
+                        </div>
 
-                      {/* Content */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                          <span style={{ fontSize: '0.8rem', fontWeight: !item.isRead ? 800 : 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {/* Title & Message & Time */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '0.83rem', fontWeight: item.isRead ? 400 : 500, color: '#1e293b', lineHeight: 1.38 }}>
                             {item.title}
-                          </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '0.65rem', color: (item.severity === 'high' || item.severity === 'critical') ? '#dc2626' : '#94a3b8', fontWeight: (item.severity === 'high' || item.severity === 'critical') ? 700 : 500, whiteSpace: 'nowrap' }}>
-                              {item.timeTag || 'Alert'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={(e) => handleDismissSingle(e, item.id)}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#94a3b8',
-                                cursor: 'pointer',
-                                padding: '2px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                borderRadius: '4px'
-                              }}
-                              title="Dismiss this alert"
-                            >
-                              <X size={12} />
-                            </button>
+                          </div>
+                          {item.message && (
+                            <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '2px', lineHeight: 1.35 }}>
+                              {item.message}
+                            </div>
+                          )}
+                          <div style={{ fontSize: '0.71rem', color: '#94a3b8', marginTop: '4px', fontWeight: 400 }}>
+                            {timeLabel}
                           </div>
                         </div>
-                        <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: '3px', lineHeight: 1.35 }}>
-                          {item.message}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
-                          <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
-                            {item.meta}
-                          </span>
-                          <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                            View <ChevronRight size={11} />
-                          </span>
+
+                        {/* Unread indicator dot */}
+                        <div style={{ width: '10px', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                          {!item.isRead && (
+                            <span 
+                              style={{
+                                width: '7px',
+                                height: '7px',
+                                borderRadius: '50%',
+                                background: '#0284c7'
+                              }}
+                            />
+                          )}
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
-              </div>
-
-              {/* Footer */}
-              <div 
-                style={{
-                  padding: '10px 16px',
-                  background: '#f8fafc',
-                  borderTop: '1px solid #f1f5f9',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  fontSize: '0.72rem',
-                  color: '#64748b'
-                }}
-              >
-                <span>Plant 1 (Rajkot GIDC) • Live Watchdog</span>
-                <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                  {activeNotifications.length} Active Alerts
-                </span>
               </div>
             </div>
           )}
         </div>
-
-        <button className="topnav-profile" onClick={logout} title="Click to Sign Out">
-          <div className="profile-info">
-            <span className="profile-name">{username}</span>
-            <span className="profile-role">{ROLE_LABELS[userRole] || 'Administrator'}</span>
-          </div>
-          <div className="profile-avatar">{initials}</div>
-          <LogOut size={14} style={{ color: '#94a3b8', marginLeft: '4px' }} />
-        </button>
       </div>
     </header>
   );

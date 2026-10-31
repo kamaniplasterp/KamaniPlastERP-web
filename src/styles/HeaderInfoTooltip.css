@@ -1,0 +1,76 @@
+.header-info-tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.header-info-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #f5f3ff;
+  border: 1px solid #ede9fe;
+  color: #6366f1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.08);
+}
+
+.header-info-btn:hover,
+.header-info-btn:focus-visible {
+  background: #ede9fe;
+  color: #4338ca;
+  border-color: #ddd6fe;
+  transform: scale(1.06);
+  outline: none;
+}
+
+/* Floating dark tooltip bubble */
+.header-info-popover {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.45;
+  width: max-content;
+  max-width: 340px;
+  min-width: 180px;
+  box-shadow: 0 10px 25px -3px rgba(15, 23, 42, 0.4), 0 4px 6px -4px rgba(15, 23, 42, 0.2);
+  z-index: 1000;
+  pointer-events: none;
+  animation: headerTooltipFadeIn 0.15s ease-out;
+}
+
+/* Arrow indicator pointing up at the (i) circle */
+.header-info-arrow {
+  position: absolute;
+  top: -4px;
+  left: 8px;
+  width: 8px;
+  height: 8px;
+  background: #0f172a;
+  transform: rotate(45deg);
+  border-top-left-radius: 2px;
+}
+
+@keyframes headerTooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
