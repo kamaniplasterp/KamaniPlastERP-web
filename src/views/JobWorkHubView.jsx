@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   Plus, Search, Download, ArrowUpDown, Printer, ChevronRight,
@@ -19,6 +19,7 @@ import { subscribeJobWorks, receiveJobWork, createJobWork, subscribeExtraCutting
 import { subscribeVendors } from '../api/directory.api';
 import { showConfirm } from '../context/CustomAlertContext';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
+import PageHeader, { HeaderButton } from '../components/PageHeader';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkHubView({ onOpenNewJobWork }) {
@@ -163,10 +164,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   };
-
-  if (selectedJwId) {
-    return <JobWorkDetailView jwId={selectedJwId} onBack={handleBack} />;
-  }
 
   const handleOpenModal = () => {
     if (onOpenNewJobWork) {
@@ -599,34 +596,328 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
   const monthNetPayable = Math.max(0, monthGrossCharges - monthScrapCreditInr - monthExtraCuttingTotal);
 
+  // Dynamic PageHeader configuration based on activeTab and subviews
+  let headerTitle = 'Job Work Operations';
+  let headerTooltip = 'Rule 55 CGST Outward Challans, Inward Delivery Slips, Tare & B.Loss tracking, and Worker Ledger.';
+  let breadcrumbs = [
+    { label: 'Job Work Hub', route: '/job-work' },
+    { label: 'Outward & Inward Orders' }
+  ];
+
+  if (activeTab === 'challanReport') {
+    headerTitle = 'Challan Register & Trace';
+    headerTooltip = 'Comprehensive audit of Net Weight, Burning Loss % (B.Loss), Inward Received, and Balance Weight.';
+    breadcrumbs = [
+      { label: 'Job Work Hub', route: '/job-work' },
+      { label: 'Challan Register & Trace' }
+    ];
+  } else if (activeTab === 'processorLedger' || ['statement', 'material', 'wastage'].includes(activeTab)) {
+    const subLabel = processorSubView === 'material' 
+      ? 'Material at Outside Processors' 
+      : processorSubView === 'wastage' 
+        ? 'Vendor Wastage & Yield' 
+        : 'Job Worker Statement & Ledger';
+    headerTitle = subLabel;
+    headerTooltip = 'Reconciliation of materials at outside processing vendors, financial ledger, and wastage analysis.';
+    breadcrumbs = [
+      { label: 'Job Work Hub', route: '/job-work' },
+      { label: 'Processor Stock & Wastage', route: '/job-work?tab=processorLedger' },
+      { label: subLabel }
+    ];
+  } else if (activeTab === 'scrapSettlement' || ['monthlySettlement', 'extraCutting'].includes(activeTab)) {
+    const subLabel = settlementSubView === 'extraCutting'
+      ? 'Extra Cutting Deductions'
+      : 'Month-End Scrap Settlement';
+    headerTitle = subLabel;
+    headerTooltip = 'Monthly scrap credit settlements, rate calculations, and extra cutting deductions.';
+    breadcrumbs = [
+      { label: 'Job Work Hub', route: '/job-work' },
+      { label: 'Scrap Settlement & Deductions', route: '/job-work?tab=scrapSettlement' },
+      { label: subLabel }
+    ];
+  }
+
+  // Dynamic filter categories for Job Work tabs
+  const jwFilterCategories = useMemo(() => [
+    {
+      id: 'status',
+      label: 'Status',
+      icon: CheckCircle2,
+      allLabel: 'All Statuses',
+      options: [
+        { value: 'All', label: 'All Statuses' },
+        { value: 'SENT', label: 'SENT' },
+        { value: 'PARTIALLY RECEIVED', label: 'PARTIALLY RECEIVED' },
+        { value: 'FULLY RECEIVED', label: 'FULLY RECEIVED' }
+      ]
+    },
+    {
+      id: 'party',
+      label: 'Job Worker',
+      icon: Users,
+      allLabel: 'All Job Workers',
+      options: [
+        { value: 'All', label: 'All Job Workers' },
+        ...uniqueJwParties.map(p => ({ value: p, label: p }))
+      ]
+    },
+    {
+      id: 'material',
+      label: 'Raw Material',
+      icon: Package,
+      allLabel: 'All Raw Materials',
+      options: [
+        { value: 'All', label: 'All Raw Materials' },
+        ...uniqueJwMaterials.map(m => ({ value: m, label: m }))
+      ]
+    }
+  ], [uniqueJwParties, uniqueJwMaterials]);
+
+  const statementFilterCategories = useMemo(() => [
+    {
+      id: 'party',
+      label: 'Job Worker',
+      icon: Users,
+      allLabel: 'All Job Workers',
+      options: [
+        { value: 'All', label: 'All Job Workers' },
+        ...uniqueJwParties.map(p => ({ value: p, label: p }))
+      ]
+    }
+  ], [uniqueJwParties]);
+
+  // Dynamic settlement months from Job Work records or recent 12 months
+  const availableSettlementMonths = useMemo(() => {
+    const monthSet = new Set();
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthSet.add(iso);
+    }
+    allJobWorkData.forEach(jw => {
+      const d = jw.date || jw.issueDate || jw.createdAt;
+      if (d && typeof d === 'string' && d.length >= 7) {
+        const iso = d.substring(0, 7);
+        if (iso.includes('-')) monthSet.add(iso);
+      }
+    });
+    return Array.from(monthSet).sort().reverse().map(m => {
+      const [y, mo] = m.split('-');
+      const dObj = new Date(Number(y), Number(mo) - 1, 1);
+      const label = dObj.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      return { value: m, label };
+    });
+  }, [allJobWorkData]);
+
+  const settlementFilterCategories = useMemo(() => [
+    {
+      id: 'vendor',
+      label: 'Job Worker',
+      icon: Users,
+      allLabel: 'All Job Workers',
+      options: [
+        { value: 'All', label: 'All Job Workers' },
+        ...allJobWorkersList.map(w => ({ value: w, label: w }))
+      ]
+    },
+    {
+      id: 'month',
+      label: 'Settlement Month',
+      icon: Calendar,
+      allLabel: 'Current Month',
+      options: availableSettlementMonths
+    }
+  ], [allJobWorkersList, availableSettlementMonths]);
+
+  let currentSearchProps = null;
+  let currentFilterProps = null;
+
+  if (activeTab === 'orders' || (activeTab === 'processorLedger' && processorSubView === 'material')) {
+    currentSearchProps = {
+      value: searchQuery,
+      onChange: setSearchQuery,
+      placeholder: 'Search Challan#, Party, Material, Process...'
+    };
+    currentFilterProps = {
+      categories: jwFilterCategories,
+      activeFilters: {
+        status: statusFilter,
+        party: partyFilter,
+        material: materialFilter
+      },
+      onApply: (newFilters) => {
+        if (newFilters.status !== undefined) setStatusFilter(newFilters.status);
+        if (newFilters.party !== undefined) setPartyFilter(newFilters.party);
+        if (newFilters.material !== undefined) setMaterialFilter(newFilters.material);
+      },
+      onReset: () => {
+        setStatusFilter('All');
+        setPartyFilter('All');
+        setMaterialFilter('All');
+      }
+    };
+  } else if (activeTab === 'challanReport') {
+    currentSearchProps = {
+      value: searchQuery,
+      onChange: setSearchQuery,
+      placeholder: 'Search Challan Register...'
+    };
+  } else if (activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) {
+    currentFilterProps = {
+      categories: statementFilterCategories,
+      activeFilters: { party: currentStatementParty },
+      onApply: (newFilters) => {
+        if (newFilters.party && newFilters.party !== 'All') {
+          setStatementParty(newFilters.party);
+        }
+      },
+      onReset: () => {
+        setStatementParty(uniqueJwParties[0] || '');
+      }
+    };
+  } else if (activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) {
+    currentFilterProps = {
+      categories: settlementFilterCategories,
+      activeFilters: { 
+        vendor: settlementVendor,
+        month: settlementMonth 
+      },
+      onApply: (newFilters) => {
+        if (newFilters.vendor !== undefined) setSettlementVendor(newFilters.vendor);
+        if (newFilters.month !== undefined) setSettlementMonth(newFilters.month);
+      },
+      onReset: () => {
+        setSettlementVendor('All');
+        setSettlementMonth(new Date().toISOString().substring(0, 7));
+      }
+    };
+  } else if (activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) {
+    currentSearchProps = {
+      value: extraCuttingSearch,
+      onChange: setExtraCuttingSearch,
+      placeholder: 'Search deduction remarks, party...'
+    };
+  }
+
+  const renderHeaderActions = () => (
+    <>
+      {activeTab === 'orders' && (
+        <>
+          <HeaderButton
+            icon={Columns}
+            label={showAuditColumns ? 'Standard Columns' : 'Audit Columns'}
+            onClick={() => setShowAuditColumns(!showAuditColumns)}
+            active={showAuditColumns}
+            title="Toggle Audit Columns"
+          />
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('Job_Work_Register.csv', filteredData)}
+            title="Export CSV"
+          />
+        </>
+      )}
+
+      {activeTab === 'challanReport' && (
+        <HeaderButton
+          icon={Download}
+          label="Export CSV"
+          onClick={() => exportToCsv('Challan_Balance_Report.csv', allJobWorkData)}
+          title="Export CSV"
+        />
+      )}
+
+      {(activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) && (
+        <HeaderButton
+          icon={Download}
+          label="Export CSV"
+          onClick={() => exportToCsv(`Statement_${currentStatementParty}.csv`, statementOrders)}
+          title="Export CSV"
+        />
+      )}
+
+      {(activeTab === 'wastage' || (activeTab === 'processorLedger' && processorSubView === 'wastage')) && (
+        <HeaderButton
+          icon={Download}
+          label="Export CSV"
+          onClick={() => exportToCsv('Vendor_Executive_Report.csv', computedVendorPerformance)}
+          title="Export CSV"
+        />
+      )}
+
+      {(activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv(`MonthEnd_Scrap_Settlement_${settlementMonth}_${settlementVendor}.csv`, monthSettlementOrders)}
+            title="Export CSV"
+          />
+          <HeaderButton
+            icon={Printer}
+            label="Print Statement Slip"
+            variant="primary"
+            onClick={() => window.print()}
+            title="Print Statement Slip"
+          />
+        </>
+      )}
+
+      {(activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('Extra_Cutting_Register.csv', filteredExtraCuttings)}
+            title="Export CSV"
+          />
+          <HeaderButton
+            icon={Plus}
+            label="Record Extra Cutting"
+            variant="primary"
+            onClick={() => { setSelectedExtraCuttingToEdit(null); setShowExtraCuttingModal(true); }}
+            title="Record Extra Cutting"
+          />
+        </>
+      )}
+
+      <HeaderButton
+        icon={BarChart3}
+        label={showMetrics ? 'Hide Stats' : 'Show Stats'}
+        onClick={() => setShowMetrics(prev => !prev)}
+        active={showMetrics}
+        title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
+      />
+
+      {(activeTab === 'orders' || (activeTab === 'processorLedger' && processorSubView === 'material')) && (
+        <HeaderButton
+          icon={Plus}
+          label="New Outward Challan"
+          variant="primary"
+          onClick={handleOpenModal}
+          title="New Outward Challan"
+        />
+      )}
+    </>
+  );
+
+  if (selectedJwId) {
+    return <JobWorkDetailView jwId={selectedJwId} onBack={handleBack} />;
+  }
+
   return (
     <div className="jw-hub-container">
-      {/* ── Page Header ── */}
-      <div className="jw-page-header">
-        <div className="jw-header-left">
-          <div className="jw-title-row">
-            <h1 className="jw-page-title">Job Work Operations</h1>
-            <HeaderInfoTooltip text="Rule 55 CGST Outward Challans, Inward Delivery Slips, Tare & B.Loss tracking, and Worker Ledger." />
-            <span className="jw-badge-orange">{activeJobWorksCount} Active Consignments</span>
-          </div>
-        </div>
-        <div className="jw-header-right">
-          <button
-            type="button"
-            className={`jw-btn-toggle-stats ${showMetrics ? 'active' : ''}`}
-            onClick={() => setShowMetrics(prev => !prev)}
-            title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
-          >
-            <BarChart3 size={15} />
-            <span>{showMetrics ? 'Hide Stats' : 'Show Stats'}</span>
-            {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          <button className="jw-btn-primary-blue" onClick={handleOpenModal}>
-            <Plus size={15} />
-            New Outward Challan
-          </button>
-        </div>
-      </div>
+      {/* ── Standard Unified Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={breadcrumbs}
+        title={headerTitle}
+        tooltip={headerTooltip}
+        searchProps={currentSearchProps}
+        filterProps={currentFilterProps}
+        actions={renderHeaderActions()}
+      />
 
       {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
       {showMetrics && (
@@ -800,44 +1091,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       </div>
       )}
 
-      {/* ── Streamlined Underline Tab Bar (4 Merged Modules, No Overflow) ── */}
-      <div className="jw-tab-bar">
-        <button
-          className={`jw-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('orders'); setSearchParams({ tab: 'orders' }); }}
-        >
-          <Briefcase size={14} />
-          <span>Orders &amp; Challans</span>
-          <span className="jw-tab-badge">{allJobWorkData.length}</span>
-        </button>
 
-        <button
-          className={`jw-tab-btn ${activeTab === 'challanReport' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('challanReport'); setSearchParams({ tab: 'challanReport' }); }}
-        >
-          <FileSpreadsheet size={14} />
-          <span>Challan Register &amp; Trace</span>
-          <span className="jw-tab-badge-orange">{allJobWorkData.filter(j => j.status !== 'FULLY RECEIVED').length} Open</span>
-        </button>
-
-        <button
-          className={`jw-tab-btn ${activeTab === 'processorLedger' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('processorLedger'); setSearchParams({ tab: 'processorLedger' }); }}
-        >
-          <Package size={14} />
-          <span>Processor Stock &amp; Wastage</span>
-          <span className="jw-tab-badge-orange">{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} KG</span>
-        </button>
-
-        <button
-          className={`jw-tab-btn ${activeTab === 'scrapSettlement' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('scrapSettlement'); setSearchParams({ tab: 'scrapSettlement' }); }}
-        >
-          <Scale size={14} />
-          <span>Scrap Settlement &amp; Deductions</span>
-          <span className="jw-tab-badge">{liveExtraCuttings.length}</span>
-        </button>
-      </div>
 
       {/* ── TAB 1: Job Work Ledger ── */}
       {activeTab === 'orders' && (
@@ -847,124 +1101,9 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
             const activeFilterCount = (statusFilter !== 'All' ? 1 : 0) + (partyFilter !== 'All' ? 1 : 0) + (materialFilter !== 'All' ? 1 : 0);
             return (
               <>
-                <div className="jw-filter-bar">
-                  <div className="jw-search-input-wrap">
-                    <Search size={14} className="jw-search-icon" />
-                    <input
-                      type="text"
-                      placeholder="Search Challan#, Party, Material, Process..."
-                      className="jw-filter-search"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                    />
-                    {searchQuery && (
-                      <button 
-                        type="button" 
-                        onClick={() => setSearchQuery('')}
-                        className="jw-filter-clear-icon"
-                        title="Clear search"
-                      >
-                        <X size={13} />
-                      </button>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    className={`jw-btn-ghost jw-filter-toggle-btn ${showFilterPanel || activeFilterCount > 0 ? 'active' : ''}`}
-                    onClick={() => setShowFilterPanel(!showFilterPanel)}
-                  >
-                    <SlidersHorizontal size={14} />
-                    <span>Filters</span>
-                    {activeFilterCount > 0 && <span className="jw-filter-count-badge">{activeFilterCount}</span>}
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`jw-btn-ghost ${showAuditColumns ? 'active' : ''}`}
-                    onClick={() => setShowAuditColumns(!showAuditColumns)}
-                    title="Toggle secondary audit columns (Gross, Bora, B.Loss, Issued By)"
-                  >
-                    <Columns size={14} />
-                    <span>{showAuditColumns ? 'Standard Columns' : 'Audit Columns'}</span>
-                  </button>
-
-                  <button
-                    className="jw-btn-ghost"
-                    onClick={() => exportToCsv('Job_Work_Register.csv', filteredData)}
-                    style={{ marginLeft: 'auto' }}
-                    title="Export filtered records to CSV"
-                  >
-                    <Download size={14} />
-                    Export CSV
-                  </button>
-                </div>
-
-                {/* Expandable Filter Panel (Progressive Disclosure) */}
-                {showFilterPanel && (
-                  <div className="jw-expanded-filters-panel">
-                    <div className="jw-filter-field">
-                      <label>Status</label>
-                      <select
-                        className="jw-filter-select"
-                        value={statusFilter}
-                        onChange={e => setStatusFilter(e.target.value)}
-                      >
-                        <option value="All">All Statuses ({allJobWorkData.length})</option>
-                        <option value="SENT">SENT</option>
-                        <option value="PARTIALLY RECEIVED">PARTIALLY RECEIVED</option>
-                        <option value="FULLY RECEIVED">FULLY RECEIVED</option>
-                      </select>
-                    </div>
-
-                    <div className="jw-filter-field">
-                      <label>Job Worker / Party</label>
-                      <select
-                        className="jw-filter-select"
-                        value={partyFilter}
-                        onChange={e => setPartyFilter(e.target.value)}
-                      >
-                        <option value="All">All Job Work Parties</option>
-                        {uniqueJwParties.map(p => (
-                          <option key={p} value={p}>{p}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="jw-filter-field">
-                      <label>Raw Material</label>
-                      <select
-                        className="jw-filter-select"
-                        value={materialFilter}
-                        onChange={e => setMaterialFilter(e.target.value)}
-                      >
-                        <option value="All">All Raw Materials</option>
-                        {uniqueJwMaterials.map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {activeFilterCount > 0 && (
-                      <button
-                        type="button"
-                        className="jw-btn-reset-filters"
-                        onClick={() => {
-                          setStatusFilter('All');
-                          setPartyFilter('All');
-                          setMaterialFilter('All');
-                        }}
-                      >
-                        <RotateCcw size={12} />
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                )}
-
                 {/* Active Filter Chips */}
                 {activeFilterCount > 0 && (
-                  <div className="jw-active-chips-row">
+                  <div className="jw-active-chips-row" style={{ marginTop: '4px', marginBottom: '10px' }}>
                     <span className="jw-active-chips-label">Active:</span>
                     {statusFilter !== 'All' && (
                       <span className="jw-filter-chip">
@@ -1188,24 +1327,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       {/* ── TAB 2: Challan Balance Report ── */}
       {activeTab === 'challanReport' && (
         <div className="jw-ledger-section">
-          <div className="jw-ledger-header">
-            <div className="jw-ledger-title-group">
-              <div className="jw-ledger-title-row">
-                <h2 className="jw-ledger-title">Challan Balance Report (Analytical Register)</h2>
-                <span className="jw-badge-blue">Excel Challan Wise Co.</span>
-              </div>
-              <p className="jw-ledger-subtitle">
-                Comprehensive audit of Net Weight, Burning Loss % (B.Loss), Burning Loss Weight, Net Receivable, Inward Received, and Balance Weight per Challan.
-              </p>
-            </div>
-
-            <div className="jw-ledger-actions">
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('Challan_Balance_Report.csv', allJobWorkData)} style={{ cursor: 'pointer' }}>
-                <Download size={14} />
-                Export Challan Report
-              </button>
-            </div>
-          </div>
 
           {/* Challan Wise Table (Stacked KPI grid eliminated; contextual metrics displayed in Top Area) */}
           <div className="jw-table-container">
@@ -1305,7 +1426,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           >
             <Package size={13} />
             <span>Material at Outside Processors</span>
-            <span className="jw-tab-badge-orange" style={{ marginLeft: 6 }}>{totalPendingKg.toLocaleString('en-IN', { maximumFractionDigits: 0 })} KG</span>
           </button>
           <button
             className={`erp-subnav-pill ${processorSubView === 'wastage' ? 'active' : ''}`}
@@ -1319,35 +1439,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
       {(activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) && (
         <div className="jw-ledger-section">
-          <div className="jw-ledger-header">
-            <div className="jw-ledger-title-group">
-              <div className="jw-ledger-title-row">
-                <h2 className="jw-ledger-title">Job Worker Statement &amp; Financial Ledger</h2>
-                <span className="jw-badge-orange">{currentStatementParty}</span>
-              </div>
-              <p className="jw-ledger-subtitle">
-                Complete party ledger tracking material weight reconciliation, Bora packaging balance, payable charges, extra cutting deductions, and payment receipts.
-              </p>
-            </div>
-
-            <div className="jw-ledger-actions">
-              <button
-                type="button"
-                className={`jw-btn-ghost ${showStatementFilterPanel ? 'active' : ''}`}
-                onClick={() => setShowStatementFilterPanel(!showStatementFilterPanel)}
-                style={{ cursor: 'pointer' }}
-                title="Toggle Job Worker & Date Filters"
-              >
-                <Filter size={14} />
-                <span>Filters</span>
-              </button>
-              <button className="jw-btn-ghost" onClick={() => exportToCsv(`Statement_${currentStatementParty}.csv`, statementOrders)} style={{ cursor: 'pointer' }}>
-                <Download size={14} />
-                Export Statement CSV
-              </button>
-            </div>
-          </div>
-
           {/* Party & Date Range Selector - Only visible when Filters is clicked */}
           {showStatementFilterPanel && (
           <div className="jw-filter-bar" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '10px', marginBottom: '14px', animation: 'fadeIn 0.15s ease-out' }}>
@@ -1527,22 +1618,6 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       {(activeTab === 'material' || (activeTab === 'processorLedger' && processorSubView === 'material')) && (
         <div className="jw-material-tab-container">
           <div className="jw-ledger-section">
-            <div className="jw-ledger-header">
-              <div className="jw-ledger-title-group">
-                <div className="jw-ledger-title-row">
-                  <h2 className="jw-ledger-title">Material at Job Work (Outside Factory)</h2>
-                  <span className="jw-badge-orange">{allJobWorkData.filter(j => j.status !== 'FULLY RECEIVED').length} Active Consignments</span>
-                </div>
-                <p className="jw-ledger-subtitle">
-                  Real-time audit of all company-owned raw materials currently lying at outside processing vendor facilities.
-                </p>
-              </div>
-
-              <button className="jw-btn-dark-pill" onClick={handleOpenModal}>
-                <Plus size={14} /> Issue New Job Work
-              </button>
-            </div>
-
             {/* Vendor Grouped Cards & Tables */}
             <div className="jw-vendor-groups">
               {computedVendorGroups.map((vg, idx) => (
@@ -1637,35 +1712,10 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       {(activeTab === 'wastage' || (activeTab === 'processorLedger' && processorSubView === 'wastage')) && (
         <div className="jw-wastage-tab-container">
           <div className="jw-ledger-section">
-            <div className="jw-ledger-header">
-              <div className="jw-ledger-title-group">
-                <div className="jw-ledger-title-row">
-                  <h2 className="jw-ledger-title">Executive Manufacturing &amp; Yield Analytics</h2>
-                  <span className="jw-badge-blue">Live BI Engine</span>
-                </div>
-                <p className="jw-ledger-subtitle">
-                  Vendor yield benchmarking, polymer wastage tracking, inventory balance valuation, and dispatch velocity.
-                </p>
-              </div>
-
-              <div className="jw-ledger-actions">
-                <button className="jw-btn-dark" onClick={() => exportToCsv('Vendor_Executive_Report.csv', computedVendorPerformance)} style={{ cursor: 'pointer' }}>
-                  <Download size={14} />
-                  Export Executive Report
-                </button>
-              </div>
-            </div>
-
             {/* Performance Section Table */}
             <div className="jw-section-block">
               <div className="jw-sblock-header">
-                <h3 className="jw-sblock-title">
-                  <ShieldCheck size={16} className="jw-text-orange" />
-                  Job Work Vendor Wastage &amp; Processing Performance
-                </h3>
-                <p className="jw-sblock-sub">Audits actual scrap/wastage % against contracted allowable threshold for every processing unit.</p>
               </div>
-
               <div className="jw-table-container">
                 <table className="jw-ledger-table">
                   <thead>
@@ -1726,55 +1776,19 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
           >
             <Scissors size={13} />
             <span>Extra Cutting / Deductions</span>
-            <span className="jw-tab-badge" style={{ marginLeft: 6 }}>{liveExtraCuttings.length}</span>
           </button>
         </div>
       )}
 
       {(activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) && (
         <div className="jw-ledger-section">
-          <div className="jw-ledger-header">
-            <div className="jw-ledger-title-group">
-              <div className="jw-ledger-title-row">
-                <h2 className="jw-ledger-title">Extra Cutting &amp; Wastage Deductions Register</h2>
-                <span className="jw-badge-orange">{filteredExtraCuttings.length} Deductions</span>
-              </div>
-              <p className="jw-ledger-subtitle">
-                Track piece-rate weight deductions, batch trimming waste, and processing adjustments (Sheet: Extra Cutting).
-              </p>
+          {/* Summary Metric Pills */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700', color: '#b91c1c' }}>
+              Total Deduction: ₹{totalExtraCuttingVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
             </div>
-
-            <div className="jw-ledger-actions">
-              <button className="jw-btn-ghost" onClick={() => exportToCsv('Extra_Cutting_Register.csv', filteredExtraCuttings)} style={{ cursor: 'pointer' }}>
-                <Download size={14} /> Export CSV
-              </button>
-
-              <button className="jw-btn-dark-pill" onClick={() => { setSelectedExtraCuttingToEdit(null); setShowExtraCuttingModal(true); }}>
-                <Plus size={14} /> Record Extra Cutting
-              </button>
-            </div>
-          </div>
-
-          {/* Filter & Metric Bar */}
-          <div className="jw-filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-            <div className="jw-search-input-wrap" style={{ flex: 1, minWidth: '240px' }}>
-              <Search size={14} className="jw-search-icon" />
-              <input
-                type="text"
-                placeholder="Search by party name, deduction reason, remarks..."
-                className="jw-filter-search"
-                value={extraCuttingSearch}
-                onChange={e => setExtraCuttingSearch(e.target.value)}
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700', color: '#b91c1c' }}>
-                Total Deduction: ₹{totalExtraCuttingVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-              </div>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700', color: '#334155' }}>
-                Total Weight: {totalExtraCuttingKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG
-              </div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px 12px', fontSize: '0.78rem', fontWeight: '700', color: '#334155' }}>
+              Total Weight: {totalExtraCuttingKg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} KG
             </div>
           </div>
 
@@ -1883,96 +1897,8 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       {/* ── Month-End Consolidated Scrap Settlement Hub ── */}
       {(activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) && (
         <div className="jw-settlement-panel">
-          {/* Controls Card */}
-          <div className="jw-settlement-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <h3 style={{ fontSize: '0.98rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-                  Consolidated Monthly Scrap Settlement &amp; Vendor Clearance
-                </h3>
-                <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                  Filter job worker consignments by billing month, enter consolidated scrap return, and generate deduction settlement statement.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  className={`jw-btn-ghost ${showSettlementFilterPanel ? 'active' : ''}`}
-                  onClick={() => setShowSettlementFilterPanel(!showSettlementFilterPanel)}
-                  style={{ cursor: 'pointer' }}
-                  title="Toggle Settlement Month & Rate Controls"
-                >
-                  <Filter size={14} />
-                  <span>Filters</span>
-                </button>
-                <button
-                  className="jw-btn-ghost"
-                  onClick={() => exportToCsv(`MonthEnd_Scrap_Settlement_${settlementMonth}_${settlementVendor}.csv`, monthSettlementOrders)}
-                >
-                  <Download size={14} /> Export CSV
-                </button>
-                <button
-                  className="jw-btn-primary-blue"
-                  onClick={() => window.print()}
-                >
-                  <Printer size={14} /> Print Statement Slip
-                </button>
-              </div>
-            </div>
-
-            {showSettlementFilterPanel && (
-            <div className="jw-settlement-grid" style={{ animation: 'fadeIn 0.15s ease-out' }}>
-              <div className="jw-field-group">
-                <label className="jw-field-label">Select Job Worker</label>
-                <select
-                  value={settlementVendor}
-                  onChange={e => setSettlementVendor(e.target.value)}
-                  className="jw-field-select"
-                >
-                  <option value="All">All Job Workers</option>
-                  {allJobWorkersList.map(w => (
-                    <option key={w} value={w}>{w}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="jw-field-group">
-                <label className="jw-field-label">Settlement Month</label>
-                <input
-                  type="month"
-                  value={settlementMonth}
-                  onChange={e => setSettlementMonth(e.target.value)}
-                  className="jw-field-input"
-                />
-              </div>
-
-              <div className="jw-field-group">
-                <label className="jw-field-label">Scrap Rate (₹/KG)</label>
-                <input
-                  type="number"
-                  value={settlementScrapRate}
-                  onChange={e => setSettlementScrapRate(Number(e.target.value))}
-                  className="jw-field-input"
-                />
-              </div>
-
-              <div className="jw-field-group">
-                <label className="jw-field-label">Actual Scrap Returned (KG)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  placeholder={`Expected: ${monthExpectedScrapKg.toFixed(1)} KG`}
-                  value={manualScrapKg}
-                  onChange={e => setManualScrapKg(e.target.value)}
-                  className="jw-field-input"
-                />
-              </div>
-            </div>
-            )}
-          </div>
-
           {/* Consolidated Financial & Material Balance Summary Banner */}
-          <div className="jw-stmt-summary-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginTop: '0' }}>
+          <div className="jw-stmt-summary-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginTop: '4px' }}>
             <div className="jw-stmt-box">
               <div className="jw-stmt-box-header">
                 📦 1. Monthly Material Reconciliation
@@ -1995,7 +1921,27 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
               </div>
               <div className="jw-stmt-closing-row">
                 <span>Actual Scrap Settled:</span>
-                <span style={{ color: '#2563eb' }}>{monthActualScrapKg.toFixed(1)} KG</span>
+                <span style={{ color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder={monthExpectedScrapKg.toFixed(1)}
+                    value={manualScrapKg}
+                    onChange={e => setManualScrapKg(e.target.value)}
+                    style={{
+                      width: '80px',
+                      padding: '2px 6px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      color: '#2563eb',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      textAlign: 'right',
+                      background: '#ffffff'
+                    }}
+                    title="Actual Scrap Returned (KG)"
+                  /> KG
+                </span>
               </div>
             </div>
 
@@ -2008,7 +1954,26 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
                 <span className="jw-stmt-row-val">₹{Math.round(monthGrossCharges).toLocaleString('en-IN')}</span>
               </div>
               <div className="jw-stmt-row">
-                <span className="jw-stmt-row-label">Less Scrap Rebate (@ ₹{settlementScrapRate}/kg):</span>
+                <span className="jw-stmt-row-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  Less Scrap Rebate (@ ₹
+                  <input
+                    type="number"
+                    value={settlementScrapRate}
+                    onChange={e => setSettlementScrapRate(Number(e.target.value))}
+                    style={{
+                      width: '45px',
+                      padding: '1px 4px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px',
+                      textAlign: 'center',
+                      background: '#ffffff'
+                    }}
+                    title="Scrap Rate (₹/KG)"
+                  />
+                  /kg):
+                </span>
                 <span className="jw-stmt-row-val" style={{ color: '#ea580c' }}>- ₹{Math.round(monthScrapCreditInr).toLocaleString('en-IN')}</span>
               </div>
               {monthExtraCuttingTotal > 0 && (

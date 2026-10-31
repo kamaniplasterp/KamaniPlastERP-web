@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   ShoppingCart, Truck, Download, Search, Plus, ArrowUpRight,
   FileText, ChevronRight, CheckCircle2, AlertTriangle, ArrowUpDown, Filter,
-  BarChart3, ChevronDown, ChevronUp
+  BarChart3, ChevronDown, ChevronUp, Users, Package, SlidersHorizontal
 } from 'lucide-react';
 import SalesOrderModal from '../modals/SalesOrderModal';
 import DispatchChallanModal from '../modals/DispatchChallanModal';
 import SalesOrderDetailView from '../drawers/SalesOrderDetailView';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
+import PageHeader, { HeaderButton } from '../components/PageHeader';
 import { useWorkflow } from '../context/WorkflowContext';
 import { exportToCsv } from '../utils/exportCsv';
 import { printTaxInvoice, printDeliveryChallan } from '../utils/printDocument';
@@ -315,6 +316,137 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
     return matchesSearch && matchesStatus;
   });
 
+  const isDispatches = activeTab === 'dispatches';
+  const sdTitle = isDispatches ? 'Dispatches & Delivery Challans' : 'Sales Orders & Stock Allocation';
+  const sdTooltip = isDispatches 
+    ? 'Outward delivery challans, truck logistics, tax invoice tracking, and customer dispatch receipts.'
+    : 'Sales booking, inventory allocation, delivery challan generation, and dispatch tracking.';
+  const sdBadge = isDispatches ? `${liveDispatches.length} Shipments` : `${liveOrders.length} Open Orders`;
+  const sdCrumbs = [
+    { label: 'Sales & Dispatch', route: '/sales' },
+    { label: isDispatches ? 'Dispatches & Delivery Challans' : 'Sales Orders & Allocation' }
+  ];
+
+  // Dynamic filter categories for Sales & Dispatch
+  const orderFilterCategories = useMemo(() => [
+    {
+      id: 'status',
+      label: 'Order Status',
+      icon: CheckCircle2,
+      allLabel: 'All Statuses',
+      options: [
+        { value: 'All', label: 'All Order Statuses' },
+        { value: 'Confirmed', label: 'Confirmed / Reserved' },
+        { value: 'Ready', label: 'Ready for Dispatch' },
+        { value: 'Partially', label: 'Partially Dispatched' },
+        { value: 'Completed', label: 'Completed / Dispatched' }
+      ]
+    },
+    {
+      id: 'customer',
+      label: 'Customer',
+      icon: Users,
+      allLabel: 'All Customers',
+      options: [
+        { value: 'All', label: 'All Customers' },
+        ...uniqueCustomers.map(c => ({ value: c, label: c }))
+      ]
+    }
+  ], [uniqueCustomers]);
+
+  const dispatchFilterCategories = useMemo(() => [
+    {
+      id: 'status',
+      label: 'Dispatch Status',
+      icon: Truck,
+      allLabel: 'All Statuses',
+      options: [
+        { value: 'All', label: 'All Statuses' },
+        { value: 'DISPATCHED', label: 'Dispatched' },
+        { value: 'DELIVERED', label: 'Delivered' }
+      ]
+    }
+  ], []);
+
+  let sdSearchProps = null;
+  let sdFilterProps = null;
+
+  if (activeTab === 'orders') {
+    sdSearchProps = {
+      value: orderSearch,
+      onChange: setOrderSearch,
+      placeholder: 'Search Order No (SO-...), Customer, PO...'
+    };
+    sdFilterProps = {
+      categories: orderFilterCategories,
+      activeFilters: { status: orderStatusFilter, customer: orderCustomerFilter },
+      onApply: (f) => {
+        if (f.status !== undefined) setOrderStatusFilter(f.status);
+        if (f.customer !== undefined) setOrderCustomerFilter(f.customer);
+      },
+      onReset: () => {
+        setOrderStatusFilter('All');
+        setOrderCustomerFilter('All');
+      }
+    };
+  } else if (activeTab === 'dispatches') {
+    sdSearchProps = {
+      value: dispatchSearch,
+      onChange: setDispatchSearch,
+      placeholder: 'Search Dispatch No, Challan, Invoice, Customer...'
+    };
+    sdFilterProps = {
+      categories: dispatchFilterCategories,
+      activeFilters: { status: dispatchStatusFilter },
+      onApply: (f) => {
+        if (f.status !== undefined) setDispatchStatusFilter(f.status);
+      },
+      onReset: () => {
+        setDispatchStatusFilter('All');
+      }
+    };
+  }
+
+  const renderSdActions = () => (
+    <>
+      <HeaderButton
+        icon={Download}
+        label="Export CSV"
+        onClick={() => {
+          if (isDispatches) exportToCsv('Delivery_Dispatches_Ledger.csv', filteredDispatches);
+          else exportToCsv('Sales_Orders_Ledger.csv', filteredOrders);
+        }}
+        title="Export CSV"
+      />
+
+      <HeaderButton
+        icon={BarChart3}
+        label={showMetrics ? 'Hide Stats' : 'Show Stats'}
+        onClick={() => setShowMetrics(prev => !prev)}
+        active={showMetrics}
+        title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
+      />
+
+      {isDispatches ? (
+        <HeaderButton
+          icon={Plus}
+          label="Dispatch Challan"
+          variant="primary"
+          onClick={openDispatchChallan}
+          title="Create Delivery Dispatch Challan"
+        />
+      ) : (
+        <HeaderButton
+          icon={Plus}
+          label="New Sales Order"
+          variant="primary"
+          onClick={openNewSalesOrder}
+          title="Book New Sales Order"
+        />
+      )}
+    </>
+  );
+
   if (selectedOrderId) {
     return (
       <div className="sd-hub-container">
@@ -342,35 +474,15 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
 
   return (
     <div className="sd-hub-container">
-      {/* ── Page Header ── */}
-      <div className="sd-page-header">
-        <div className="sd-header-left">
-          <div className="sd-title-row">
-            <h1 className="sd-page-title">Sales &amp; Dispatch</h1>
-            <HeaderInfoTooltip text="Sales booking, inventory allocation, delivery challan generation, and dispatch tracking." />
-            <span className="sd-badge-blue">{liveOrders.length} Open Orders</span>
-          </div>
-        </div>
-
-        <div className="sd-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            type="button"
-            className={`sd-btn-toggle-stats ${showMetrics ? 'active' : ''}`}
-            onClick={() => setShowMetrics(prev => !prev)}
-            title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
-          >
-            <BarChart3 size={15} />
-            <span>{showMetrics ? 'Hide Stats' : 'Show Stats'}</span>
-            {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          <button className="sd-btn-primary-blue" onClick={openNewSalesOrder}>
-            <Plus size={15} /> New Sales Order
-          </button>
-          <button className="sd-btn-dark-head" onClick={openDispatchChallan}>
-            <Plus size={15} /> Dispatch Challan
-          </button>
-        </div>
-      </div>
+      {/* ── Standard Unified Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={sdCrumbs}
+        title={sdTitle}
+        tooltip={sdTooltip}
+        searchProps={sdSearchProps}
+        filterProps={sdFilterProps}
+        actions={renderSdActions()}
+      />
 
       {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
       {showMetrics && (
@@ -433,108 +545,37 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       </div>
       )}
 
-      {/* ── Modern Underline Tab Bar ── */}
-      <div className="sd-tab-bar">
-        <button
-          className={`sd-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('orders'); setSearchParams({ tab: 'orders' }); }}
-        >
-          <ShoppingCart size={14} />
-          <span>Sales Orders &amp; Stock Allocation</span>
-          <span className="sd-tab-badge">{liveOrders.length}</span>
-        </button>
 
-        <button
-          className={`sd-tab-btn ${activeTab === 'dispatches' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('dispatches'); setSearchParams({ tab: 'dispatches' }); }}
-        >
-          <Truck size={14} />
-          <span>Dispatches &amp; Delivery Challans</span>
-          <span className="sd-tab-badge">{liveDispatches.length}</span>
-        </button>
-      </div>
 
       {/* ── TAB 1: Sales Orders & Stock Allocation ── */}
       {activeTab === 'orders' && (
         <div className="sd-section-card">
-          {/* Filter Bar */}
-          <div className="sd-filter-bar">
-
-            <div className="sd-search-input-wrap">
-              <Search size={14} className="sd-search-icon" />
-              <input
-                type="text"
-                placeholder="Search Order No (SO-...), Customer Name, PO Number..."
-                className="sd-filter-search"
-                value={orderSearch}
-                onChange={e => setOrderSearch(e.target.value)}
-              />
-            </div>
-
-            {(() => {
-              const activeCount = (orderStatusFilter !== 'All' ? 1 : 0) + (orderCustomerFilter !== 'All' ? 1 : 0);
-              return (
-                <button
-                  type="button"
-                  className={`sd-filter-toggle-btn ${showOrderFilterPanel || activeCount > 0 ? 'active' : ''}`}
-                  onClick={() => setShowOrderFilterPanel(!showOrderFilterPanel)}
-                  title="Toggle Order Filters"
-                >
-                  <Filter size={14} />
-                  <span>Filters</span>
-                  {activeCount > 0 && <span className="sd-filter-count-badge">{activeCount}</span>}
-                </button>
-              );
-            })()}
-
-            <button className="sd-btn-ghost" onClick={() => exportToCsv('Sales_Orders_Ledger.csv', filteredOrders)} style={{ cursor: 'pointer', marginLeft: 'auto' }}>
-              <Download size={14} /> Export CSV
-            </button>
-          </div>
-
-          {showOrderFilterPanel && (
-            <div className="sd-expanded-filters-panel">
-              <div className="sd-filter-field">
-                <label>Order Status</label>
-                <select
-                  className="sd-filter-select"
-                  value={orderStatusFilter}
-                  onChange={e => setOrderStatusFilter(e.target.value)}
-                >
-                  <option value="All">All Order Statuses</option>
-                  <option value="Confirmed">Confirmed / Reserved</option>
-                  <option value="Ready">Ready for Dispatch</option>
-                  <option value="Partially">Partially Dispatched</option>
-                  <option value="Completed">Completed / Dispatched</option>
-                </select>
-              </div>
-
-              <div className="sd-filter-field">
-                <label>Customer</label>
-                <select
-                  className="sd-filter-select"
-                  value={orderCustomerFilter}
-                  onChange={e => setOrderCustomerFilter(e.target.value)}
-                >
-                  <option value="All">All Customers</option>
-                  {uniqueCustomers.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              {(orderStatusFilter !== 'All' || orderCustomerFilter !== 'All') && (
-                <button
-                  type="button"
-                  className="sd-btn-reset-filters"
-                  onClick={() => {
-                    setOrderStatusFilter('All');
-                    setOrderCustomerFilter('All');
-                  }}
-                >
-                  Reset Filters
-                </button>
+          {/* Active Filter Chips */}
+          {(orderStatusFilter !== 'All' || orderCustomerFilter !== 'All') && (
+            <div className="jw-active-chips-row" style={{ marginBottom: '10px' }}>
+              <span className="jw-active-chips-label">Active:</span>
+              {orderStatusFilter !== 'All' && (
+                <span className="jw-filter-chip">
+                  Status: <strong>{orderStatusFilter}</strong>
+                  <button type="button" onClick={() => setOrderStatusFilter('All')}><CheckCircle2 size={11} /></button>
+                </span>
               )}
+              {orderCustomerFilter !== 'All' && (
+                <span className="jw-filter-chip">
+                  Customer: <strong>{orderCustomerFilter}</strong>
+                  <button type="button" onClick={() => setOrderCustomerFilter('All')}><CheckCircle2 size={11} /></button>
+                </span>
+              )}
+              <button
+                type="button"
+                className="jw-clear-all-link"
+                onClick={() => {
+                  setOrderStatusFilter('All');
+                  setOrderCustomerFilter('All');
+                }}
+              >
+                Clear all
+              </button>
             </div>
           )}
 
@@ -612,60 +653,21 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       {/* ── TAB 2: Dispatches & Delivery Challans ── */}
       {activeTab === 'dispatches' && (
         <div className="sd-section-card">
-          {/* Filter Bar */}
-          <div className="sd-filter-bar">
-            <div className="sd-search-input-wrap">
-              <Search size={14} className="sd-search-icon" />
-              <input
-                type="text"
-                placeholder="Search Dispatch No, Challan No (DC-...), Tax Invoice (INV-...), Vehicle, Customer..."
-                className="sd-filter-search"
-                value={dispatchSearch}
-                onChange={e => setDispatchSearch(e.target.value)}
-              />
-            </div>
-
-            <button
-              type="button"
-              className={`sd-filter-toggle-btn ${showDispatchFilterPanel || dispatchStatusFilter !== 'All' ? 'active' : ''}`}
-              onClick={() => setShowDispatchFilterPanel(!showDispatchFilterPanel)}
-              title="Toggle Dispatch Filters"
-            >
-              <Filter size={14} />
-              <span>Filters</span>
-              {dispatchStatusFilter !== 'All' && <span className="sd-filter-count-badge">1</span>}
-            </button>
-
-            <button className="sd-btn-ghost" onClick={() => exportToCsv('Delivery_Dispatches_Ledger.csv', filteredDispatches)} style={{ cursor: 'pointer', marginLeft: 'auto' }}>
-              <Download size={14} /> Export CSV
-            </button>
-          </div>
-
-          {showDispatchFilterPanel && (
-            <div className="sd-expanded-filters-panel">
-              <div className="sd-filter-field">
-                <label>Dispatch Status</label>
-                <select
-                  className="sd-filter-select"
-                  value={dispatchStatusFilter}
-                  onChange={e => setDispatchStatusFilter(e.target.value)}
-                >
-                  <option value="All">All Dispatch Statuses</option>
-                  <option value="Dispatched">Dispatched</option>
-                  <option value="In Transit">In Transit</option>
-                  <option value="Delivered">Delivered</option>
-                </select>
-              </div>
-
-              {dispatchStatusFilter !== 'All' && (
-                <button
-                  type="button"
-                  className="sd-btn-reset-filters"
-                  onClick={() => setDispatchStatusFilter('All')}
-                >
-                  Reset Filter
-                </button>
-              )}
+          {/* Active Filter Chips */}
+          {dispatchStatusFilter !== 'All' && (
+            <div className="jw-active-chips-row" style={{ marginBottom: '10px' }}>
+              <span className="jw-active-chips-label">Active:</span>
+              <span className="jw-filter-chip">
+                Status: <strong>{dispatchStatusFilter}</strong>
+                <button type="button" onClick={() => setDispatchStatusFilter('All')}><CheckCircle2 size={11} /></button>
+              </span>
+              <button
+                type="button"
+                className="jw-clear-all-link"
+                onClick={() => setDispatchStatusFilter('All')}
+              >
+                Clear all
+              </button>
             </div>
           )}
 

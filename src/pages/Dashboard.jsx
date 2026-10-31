@@ -14,6 +14,7 @@ import {
   Zap, Circle
 } from 'lucide-react';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
+import PageHeader, { HeaderButton } from '../components/PageHeader';
 import '../styles/Dashboard.css';
 
 /* ─── Baseline KPI Templates ─── */
@@ -558,25 +559,33 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
 
   return (
     <>
-      {/* ── Page Header ── */}
-      <div className="page-header">
-        <div className="page-header-left">
-          <div className="page-title-row">
-            <h1 className="page-title">Operations Dashboard</h1>
-            <HeaderInfoTooltip text="Real-time material flow, job worker balances, production stock, and sales dispatches." />
-          </div>
-        </div>
-        <div className="page-header-right">
-          <button className="page-btn blue-sm" onClick={openJobWork}>
-            <Plus size={13} />
-            New Job Work
-          </button>
-          <button className="page-btn dark-sm" onClick={openDispatch}>
-            <Plus size={13} />
-            Dispatch Order
-          </button>
-        </div>
-      </div>
+      {/* ── Standard Unified Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Dashboard', route: '/dashboard' },
+          { label: 'Operations Overview' }
+        ]}
+        title="Operations Dashboard"
+        tooltip="Real-time material flow, job worker balances, production stock, and sales dispatches."
+        actions={
+          <>
+            <HeaderButton
+              icon={Plus}
+              label="New Job Work"
+              variant="primary"
+              onClick={openJobWork}
+              title="Create New Job Work Consignment"
+            />
+            <HeaderButton
+              icon={Plus}
+              label="Dispatch Order"
+              variant="secondary"
+              onClick={openDispatch}
+              title="Create Delivery Dispatch"
+            />
+          </>
+        }
+      />
 
       {/* ── KPI Cards ── */}
       <div className="kpi-grid">

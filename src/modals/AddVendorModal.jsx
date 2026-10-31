@@ -33,16 +33,33 @@ export default function AddVendorModal({ onClose, onSave, initialData = null, ve
   }, []);
 
   const handleChange = (field, val) => {
-    setFormData(prev => ({ ...prev, [field]: val }));
+    const rawVal = (val && typeof val === 'object' && 'target' in val) ? (val.target?.value ?? '') : val;
+    setFormData(prev => ({ ...prev, [field]: rawVal }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
+    const cleanName = (typeof formData.name === 'object' && formData.name) ? (formData.name.target?.value || formData.name.value || '') : String(formData.name || '').trim();
+    if (!cleanName) {
       await showAlert('Please enter a valid vendor name.', { type: 'warning', title: 'Required Field' });
       return;
     }
-    if (onSave) onSave(formData, currentVendor?.id);
+    const cleanBadge = (typeof formData.processBadge === 'object' && formData.processBadge) ? (formData.processBadge.target?.value || formData.processBadge.value || formData.processBadge.label || '') : String(formData.processBadge || '').trim();
+    const cleanPhone = (typeof formData.phone === 'object' && formData.phone) ? (formData.phone.target?.value || formData.phone.value || '') : String(formData.phone || '').trim();
+    const cleanLocation = (typeof formData.location === 'object' && formData.location) ? (formData.location.target?.value || formData.location.value || '') : String(formData.location || '').trim();
+    const cleanGst = (typeof formData.gst === 'object' && formData.gst) ? (formData.gst.target?.value || formData.gst.value || '') : String(formData.gst || '').trim();
+    const cleanRate = Number(typeof formData.rate === 'object' && formData.rate ? formData.rate.target?.value : formData.rate) || 17.5;
+
+    const payload = {
+      name: cleanName,
+      processBadge: cleanBadge,
+      phone: cleanPhone,
+      location: cleanLocation,
+      gst: cleanGst,
+      rate: cleanRate
+    };
+
+    if (onSave) onSave(payload, currentVendor?.id);
     onClose();
   };
 

@@ -21,6 +21,7 @@ import ProcessMasterModal from '../modals/ProcessMasterModal';
 import LocationMasterModal from '../modals/LocationMasterModal';
 import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
+import PageHeader, { HeaderButton } from '../components/PageHeader';
 import '../styles/DirectorySettings.css';
 import '../styles/JobWorkHub.css';
 
@@ -406,71 +407,130 @@ export default function ProcessMastersView() {
     }
   };
 
+  let pmTitle = 'Operations & Wastage Master';
+  let pmTooltip = 'Configure manufacturing process conversions, standard burning losses, and wastage yields.';
+  let pmBadge = `${filteredProcesses.length} Processes`;
+  let pmCrumbs = [
+    { label: 'Process & Plant Masters', route: '/process-masters' },
+    { label: 'Operations & Wastage' }
+  ];
+
+  if (activeTab === 'locations') {
+    pmTitle = 'Godowns & Plant Locations';
+    pmTooltip = 'Manage internal factory godowns, RM warehouses, finished rope storage, and outside job worker locations.';
+    pmBadge = `${filteredLocations.length} Godowns`;
+    pmCrumbs = [
+      { label: 'Process & Plant Masters', route: '/process-masters' },
+      { label: 'Godowns & Locations' }
+    ];
+  } else if (activeTab === 'productMatrix') {
+    pmTitle = 'Product Matrix & SKUs';
+    pmTooltip = 'Auto-generate and synchronize combinations of raw material qualities, sizes, and colors directly into FG Master.';
+    pmBadge = `${(productAttrs.qualities?.length || 0)}×${(productAttrs.sizes?.length || 0)} Matrix`;
+    pmCrumbs = [
+      { label: 'Process & Plant Masters', route: '/process-masters' },
+      { label: 'Product Matrix & SKUs' }
+    ];
+  }
+
+  let pmSearchProps = null;
+  if (activeTab === 'processMaster') {
+    pmSearchProps = {
+      value: processSearch,
+      onChange: setProcessSearch,
+      placeholder: 'Search processes by name, code, material...'
+    };
+  } else if (activeTab === 'locations' || activeTab === 'godowns') {
+    pmSearchProps = {
+      value: locationSearch,
+      onChange: setLocationSearch,
+      placeholder: 'Search locations by code, plant, type...'
+    };
+  } else if (activeTab === 'productMatrix') {
+    pmSearchProps = {
+      value: matrixSearch,
+      onChange: setMatrixSearch,
+      placeholder: 'Search product combinations...'
+    };
+  }
+
+  const renderPmActions = () => (
+    <>
+      {activeTab === 'processMaster' && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('Process_Master.csv', filteredProcesses)}
+            title="Export CSV"
+          />
+          <HeaderButton
+            icon={Plus}
+            label="Add Process"
+            variant="primary"
+            onClick={() => { setSelectedProcessToEdit(null); setShowAddProcessModal(true); }}
+            title="Add Process"
+          />
+        </>
+      )}
+
+      {(activeTab === 'locations' || activeTab === 'godowns') && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('Plant_Locations_Godowns.csv', filteredLocations)}
+            title="Export CSV"
+          />
+          <HeaderButton
+            icon={Plus}
+            label="Add Location"
+            variant="primary"
+            onClick={() => { setSelectedLocationToEdit(null); setShowAddLocationModal(true); }}
+            title="Add Location"
+          />
+        </>
+      )}
+
+      {activeTab === 'productMatrix' && (
+        <>
+          {generatedMatrix.length > 0 && (
+            <HeaderButton
+              icon={Download}
+              label="Export Matrix CSV"
+              onClick={() => exportToCsv('Custom_Product_Matrix.csv', generatedMatrix)}
+              title="Export Matrix CSV"
+            />
+          )}
+          <HeaderButton
+            icon={Layers}
+            label={isSyncingMatrix ? 'Syncing...' : 'Sync to FG Catalog'}
+            variant="primary"
+            onClick={handleSyncMatrixToFg}
+            disabled={isSyncingMatrix || generatedMatrix.length === 0}
+            title="Sync Matrix to FG Catalog"
+          />
+        </>
+      )}
+    </>
+  );
+
   return (
     <div className="ds-container">
-      {/* ── Page Header ── */}
-      <div className="ds-page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <h1 className="ds-page-title">Process &amp; Plant Masters</h1>
-          <HeaderInfoTooltip text="Configure manufacturing process conversions, internal & external godowns, and multi-attribute product matrix." />
-        </div>
-      </div>
+      {/* ── Standard Unified Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={pmCrumbs}
+        title={pmTitle}
+        tooltip={pmTooltip}
+        searchProps={pmSearchProps}
+        actions={renderPmActions()}
+      />
 
-      {/* ── Tabs Bar ── */}
-      <div className="ds-tabs-bar">
-        <button
-          className={`ds-tab-btn ${activeTab === 'processMaster' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('processMaster'); setSearchParams({ tab: 'processMaster' }); }}
-        >
-          <Cog size={14} />
-          Process Master
-          <span className="ds-tab-count">{filteredProcesses.length}</span>
-        </button>
-        <button
-          className={`ds-tab-btn ${activeTab === 'locations' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('locations'); setSearchParams({ tab: 'locations' }); }}
-        >
-          <Warehouse size={14} />
-          Godowns &amp; Locations
-          <span className="ds-tab-count">{filteredLocations.length}</span>
-        </button>
-        <button
-          className={`ds-tab-btn ${activeTab === 'productMatrix' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('productMatrix'); setSearchParams({ tab: 'productMatrix' }); }}
-        >
-          <Layers size={14} />
-          Product Matrix
-          <span className="ds-tab-count">
-            {(productAttrs.qualities?.length || 0)}×{(productAttrs.sizes?.length || 0)}
-          </span>
-        </button>
-      </div>
+
 
       {/* ── TAB 1: Process Master ── */}
       {activeTab === 'processMaster' && (
         <>
-          <div className="ds-filter-row">
-            <div className="ds-search-wrap">
-              <Search size={14} className="ds-search-icon" />
-              <input
-                type="text"
-                placeholder="Search processes by name, code, material..."
-                className="ds-search-input"
-                value={processSearch}
-                onChange={e => setProcessSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className="ds-records-count">{filteredProcesses.length} processes</span>
-              <button className="ds-btn-ghost" onClick={() => exportToCsv('Process_Master.csv', filteredProcesses)}>
-                <Download size={13} /> Export CSV
-              </button>
-              <button className="ds-btn-primary" onClick={() => { setSelectedProcessToEdit(null); setShowAddProcessModal(true); }}>
-                <Plus size={13} /> Add Process
-              </button>
-            </div>
-          </div>
-
           <div className="ds-cards-grid">
             {filteredProcesses.map(proc => (
               <div key={proc.processCode || proc.id} className="ds-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
@@ -557,28 +617,6 @@ export default function ProcessMastersView() {
       {/* ── TAB 2: Godowns & Locations ── */}
       {activeTab === 'locations' && (
         <>
-          <div className="ds-filter-row">
-            <div className="ds-search-wrap">
-              <Search size={14} className="ds-search-icon" />
-              <input
-                type="text"
-                placeholder="Search godowns by name, code, contact..."
-                className="ds-search-input"
-                value={locationSearch}
-                onChange={e => setLocationSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className="ds-records-count">{filteredLocations.length} locations</span>
-              <button className="ds-btn-ghost" onClick={() => exportToCsv('Locations_Directory.csv', filteredLocations)}>
-                <Download size={13} /> Export CSV
-              </button>
-              <button className="ds-btn-primary" onClick={() => { setSelectedLocationToEdit(null); setShowAddLocationModal(true); }}>
-                <Plus size={13} /> Add Godown / Site
-              </button>
-            </div>
-          </div>
-
           <div className="ds-cards-grid">
             {filteredLocations.map(loc => (
               <div key={loc.locationCode || loc.id} className="ds-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
@@ -1223,19 +1261,6 @@ export default function ProcessMastersView() {
               </div>
             ) : (
               <>
-                <div className="ds-filter-row" style={{ padding: '0 0 12px 0' }}>
-                  <div className="ds-search-wrap">
-                    <Search size={14} className="ds-search-icon" />
-                    <input
-                      type="text"
-                      placeholder="Filter combinations by SKU, Quality, Form, Size, Color..."
-                      className="ds-search-input"
-                      value={matrixSearch}
-                      onChange={e => setMatrixSearch(e.target.value)}
-                    />
-                  </div>
-                </div>
-
                 {/* Paginated Combinations Table */}
                 {(() => {
                   const filteredMatrix = generatedMatrix.filter(m => 

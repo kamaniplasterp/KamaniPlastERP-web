@@ -15,7 +15,6 @@ const navItems = [
       {
         id: 'dashboard',
         label: 'Dashboard',
-        sublabel: 'Executive Overview',
         icon: LayoutDashboard,
         route: '/dashboard',
         badge: null,
@@ -23,7 +22,6 @@ const navItems = [
       {
         id: 'jobwork',
         label: 'Job Work Hub',
-        sublabel: 'Challans & Outside Stock',
         icon: Briefcase,
         route: '/job-work',
         children: [
@@ -36,7 +34,6 @@ const navItems = [
       {
         id: 'inventory',
         label: 'Inventory & Stock',
-        sublabel: 'Raw, Finished & Dual Stock',
         icon: Package,
         route: '/inventory',
         children: [
@@ -49,7 +46,6 @@ const navItems = [
       {
         id: 'sales',
         label: 'Sales & Dispatch',
-        sublabel: 'Orders, Allocation & Challans',
         icon: Truck,
         route: '/sales',
         children: [
@@ -60,7 +56,6 @@ const navItems = [
       {
         id: 'processMasters',
         label: 'Process & Plant Masters',
-        sublabel: 'Processes, Godowns & Matrix',
         icon: Cog,
         route: '/process-masters',
         children: [
@@ -72,7 +67,6 @@ const navItems = [
       {
         id: 'directory',
         label: 'Directory & Admin',
-        sublabel: 'Directory, Rates & Access',
         icon: BookUser,
         route: '/directory',
         children: [
@@ -271,7 +265,6 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
                       {!collapsed && (
                         <div className="nav-item-text">
                           <span className="nav-item-label">{item.label}</span>
-                          <span className="nav-item-sub">{item.sublabel}</span>
                         </div>
                       )}
                       {!collapsed && item.badge && (

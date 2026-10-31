@@ -9,6 +9,7 @@ import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
 import { useWorkflow } from '../context/WorkflowContext';
 import { receiveJobWork } from '../api/jobwork.api';
 import { printJobWorkChallan, printInwardDeliverySlip, printGRN } from '../utils/printDocument';
+import PageHeader from '../components/PageHeader';
 import '../styles/JobWorkHub.css';
 
 export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
@@ -226,54 +227,47 @@ export default function JobWorkDetailView({ jwId = 'JW-2026-0024', onBack }) {
 
   return (
     <div className="jw-detail-container">
-      {/* ── Top Navigation Bar ── */}
-      <div className="jw-detail-header-card">
-        <div className="jwd-header-left">
-          <button className="jwd-back-btn" onClick={onBack} title="Back to Job Work List">
-            <ArrowLeft size={18} />
-          </button>
-          <div className="jwd-title-box">
-            <div className="jwd-title-row">
-              <h1 className="jwd-id-title">{detailData.id}</h1>
-              <span className={`jw-status-pill ${detailData.status === 'FULLY RECEIVED' ? 'pill-completed' : 'pill-partial'}`}>• {detailData.status}</span>
-            </div>
-            <p className="jwd-subtitle">
-              Party: <strong>{detailData.party}</strong> • Challan: <strong>#{detailData.challan}</strong> • Dept: <strong>{detailData.department}</strong>
-            </p>
-          </div>
-        </div>
-
-        <div className="jwd-header-right">
-          {isCompleted ? (
-            <button className="jwd-btn-orange" disabled style={{ opacity: 0.6, cursor: 'not-allowed', background: '#f1f5f9', color: '#64748b', borderColor: '#cbd5e1' }} title="Material fully received (0 KG pending)">
-              <CheckCircle2 size={15} />
-              Fully Received
+      {/* ── Standard Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Job Work Hub', route: '/job-work' },
+          { label: 'Outward & Inward Orders', route: '/job-work?tab=orders' },
+          { label: detailData.challan ? `Challan #${detailData.challan}` : detailData.id }
+        ]}
+        title={detailData.id}
+        tooltip={`Party: ${detailData.party} • Challan: #${detailData.challan} • Dept: ${detailData.department}`}
+        actions={
+          <>
+            <button className="header-btn header-btn-secondary" onClick={onBack} title="Back to Job Work List">
+              <ArrowLeft size={14} />
+              <span>Back to Orders</span>
             </button>
-          ) : (
-            <button className="jwd-btn-orange" onClick={() => setShowReceiveModal(true)}>
-              <FileText size={15} />
-              Record Inward Slip
+            <button className="header-btn header-btn-secondary" title="Print Rule 55 Delivery Challan (Outward)" onClick={() => printJobWorkChallan(detailData)}>
+              <Printer size={14} />
+              <span>Print Challan</span>
             </button>
-          )}
-          <button className="jwd-btn-dark" title="Print Rule 55 Delivery Challan (Outward)" onClick={() => printJobWorkChallan(detailData)}>
-            <Printer size={15} />
-            Print Rule 55 Challan
-          </button>
-          <button
-            className="jwd-btn-dark"
-            style={{ background: '#0284c7', borderColor: '#0284c7', color: '#ffffff' }}
-            title="Print Job Work Inward Delivery Slip (Sheet 22: Inward Slip)"
-            onClick={handlePrintInwardSlip}
-          >
-            <Receipt size={15} />
-            Print Inward Slip
-          </button>
-          <button className="jwd-btn-ghost" onClick={handleTraceLifecycle} title="Explore Material Genealogy">
-            <GitBranch size={15} />
-            Trace Lifecycle
-          </button>
-        </div>
-      </div>
+            <button
+              className="header-btn header-btn-secondary"
+              style={{ color: '#0284c7', borderColor: '#bae6fd' }}
+              title="Print Job Work Inward Delivery Slip"
+              onClick={handlePrintInwardSlip}
+            >
+              <Receipt size={14} />
+              <span>Inward Slip</span>
+            </button>
+            <button className="header-btn header-btn-secondary" onClick={handleTraceLifecycle} title="Explore Material Genealogy">
+              <GitBranch size={14} />
+              <span>Trace</span>
+            </button>
+            {!isCompleted && (
+              <button className="header-btn header-btn-primary" onClick={() => setShowReceiveModal(true)}>
+                <FileText size={14} />
+                <span>Record Inward Slip</span>
+              </button>
+            )}
+          </>
+        }
+      />
 
       {/* ── JOB WORK EXECUTION PIPELINE (Stepper Bar) ── */}
       <div className="jwd-card jwd-stepper-card">

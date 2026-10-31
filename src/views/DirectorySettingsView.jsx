@@ -58,6 +58,7 @@ import AddVendorModal from '../modals/AddVendorModal';
 import AddCustomerModal from '../modals/AddCustomerModal';
 import JwValueMasterModal from '../modals/JwValueMasterModal';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
+import PageHeader, { HeaderButton } from '../components/PageHeader';
 import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import '../styles/DirectorySettings.css';
 
@@ -241,27 +242,34 @@ export default function DirectorySettingsView() {
   const handleSaveVendor = async (data, existingId) => {
     const targetId = existingId || selectedVendorToEdit?.id;
     try {
+      const cleanName = typeof data.name === 'object' && data.name ? (data.name.target?.value || data.name.value || '') : String(data.name || '').trim();
+      const cleanBadge = typeof data.processBadge === 'object' && data.processBadge ? (data.processBadge.target?.value || data.processBadge.value || data.processBadge.label || '') : String(data.processBadge || '').trim();
+      const cleanPhone = typeof data.phone === 'object' && data.phone ? (data.phone.target?.value || data.phone.value || '') : String(data.phone || '').trim();
+      const cleanLocation = typeof data.location === 'object' && data.location ? (data.location.target?.value || data.location.value || '') : String(data.location || '').trim();
+      const cleanGst = typeof data.gst === 'object' && data.gst ? (data.gst.target?.value || data.gst.value || '') : String(data.gst || '').trim();
+      const cleanRate = Number(typeof data.rate === 'object' && data.rate ? data.rate.target?.value : data.rate) || 17.5;
+
       if (targetId) {
         await updateVendor(targetId, {
-          name: data.name,
-          processBadge: data.processBadge,
-          phone: data.phone,
-          location: data.location,
-          gst: data.gst,
-          rate: Number(data.rate || 17.5)
+          name: cleanName,
+          processBadge: cleanBadge,
+          phone: cleanPhone,
+          location: cleanLocation,
+          gst: cleanGst,
+          rate: cleanRate
         });
-        await showAlert(`Vendor "${data.name}" updated successfully!`, { type: 'success', title: 'Vendor Updated' });
+        await showAlert(`Vendor "${cleanName}" updated successfully!`, { type: 'success', title: 'Vendor Updated' });
       } else {
         await addVendor({
-          name: data.name,
-          processBadge: data.processBadge,
-          phone: data.phone,
-          location: data.location,
-          gst: data.gst,
-          rate: Number(data.rate || 17.5),
+          name: cleanName,
+          processBadge: cleanBadge,
+          phone: cleanPhone,
+          location: cleanLocation,
+          gst: cleanGst,
+          rate: cleanRate,
           pendingKg: 0
         });
-        await showAlert(`Vendor "${data.name}" added successfully!\n✓ Godown location auto-created for "${data.name}" for instant inventory tracking.`, { type: 'success', title: 'Vendor Registered' });
+        await showAlert(`Vendor "${cleanName}" added successfully!\n✓ Godown location auto-created for "${cleanName}" for instant inventory tracking.`, { type: 'success', title: 'Vendor Registered' });
       }
       setSelectedVendorToEdit(null);
     } catch (err) {
@@ -459,10 +467,16 @@ export default function DirectorySettingsView() {
   });
 
   const displayVendors = Array.from(uniqueVendorsMap.values()).map(v => {
+    const safeName = typeof v.name === 'object' && v.name ? (v.name.target?.value || v.name.value || 'Vendor') : String(v.name || 'Vendor');
+    const safeBadge = typeof v.processBadge === 'object' && v.processBadge ? (v.processBadge.target?.value || v.processBadge.value || v.processBadge.label || 'Job Work Processor') : String(v.processBadge || 'Job Work Processor');
+    const safePhone = typeof v.phone === 'object' && v.phone ? (v.phone.target?.value || v.phone.value || '-') : String(v.phone || '-');
+    const safeLoc = typeof v.location === 'object' && v.location ? (v.location.target?.value || v.location.value || '-') : String(v.location || '-');
+    const safeGst = typeof v.gst === 'object' && v.gst ? (v.gst.target?.value || v.gst.value || '') : String(v.gst || '');
+
     const matchingJw = liveJobWorks.filter(j => 
       j.vendorId === v.id || 
-      j.vendor === v.name || 
-      (j.vendor && v.name && j.vendor.toLowerCase().includes(v.name.toLowerCase()))
+      j.vendor === safeName || 
+      (j.vendor && typeof j.vendor === 'string' && j.vendor.toLowerCase().includes(safeName.toLowerCase()))
     );
     const pendingTotal = matchingJw.reduce((sum, j) => {
       const p = j.balQtyKg !== undefined ? Number(j.balQtyKg) : (j.balQty ? parseFloat(String(j.balQty).replace(/[^0-9.]/g, '')) : 0);
@@ -472,13 +486,13 @@ export default function DirectorySettingsView() {
     return {
       ...v,
       id: v.id,
-      avatar: (v.name || 'VE').slice(0, 2).toUpperCase(),
-      name: v.name || 'Vendor',
-      processBadge: v.processBadge || 'Job Work Processor',
-      phone: v.phone || '-',
-      location: v.location || '-',
-      gst: v.gst ? `GST: ${v.gst}` : 'GST: Not Provided',
-      rate: typeof v.rate === 'number' ? `₹${v.rate}/KG` : v.rate || '-',
+      avatar: (safeName || 'VE').slice(0, 2).toUpperCase(),
+      name: safeName,
+      processBadge: safeBadge,
+      phone: safePhone,
+      location: safeLoc,
+      gst: safeGst ? `GST: ${safeGst}` : 'GST: Not Provided',
+      rate: typeof v.rate === 'number' ? `₹${v.rate}/KG` : (typeof v.rate === 'object' && v.rate ? `₹${v.rate.target?.value || 17.5}/KG` : String(v.rate || '-')),
       pending: `${pendingTotal.toLocaleString('en-IN')} KG`,
       pendingTotal,
       pendingOrange: pendingTotal > 0
@@ -495,11 +509,17 @@ export default function DirectorySettingsView() {
   });
 
   const displayBuyers = Array.from(uniqueBuyersMap.values()).map(b => {
+    const safeBuyerName = typeof b.name === 'object' && b.name ? (b.name.target?.value || b.name.value || 'Customer') : String(b.name || 'Customer');
+    const safeBuyerLoc = typeof b.location === 'object' && b.location ? (b.location.target?.value || b.location.value || '-') : String(b.location || '-');
+    const safeTerms = typeof b.category === 'object' && b.category ? (b.category.target?.value || b.category.value || 'Wholesale Buyer') : String(b.category || b.paymentTerms || 'Wholesale Buyer');
+    const safeBuyerPhone = typeof b.phone === 'object' && b.phone ? (b.phone.target?.value || b.phone.value || '') : String(b.phone || '');
+    const safeBuyerGst = typeof b.gst === 'object' && b.gst ? (b.gst.target?.value || b.gst.value || '') : String(b.gst || '');
+
     const matchingOrders = liveSalesOrders.filter(so => 
       so.customerId === b.id || 
-      so.customer === b.name || 
-      (so.customer && b.name && so.customer.toLowerCase().includes(b.name.toLowerCase())) ||
-      (b.name && so.customer && b.name.toLowerCase().includes(so.customer.toLowerCase()))
+      so.customer === safeBuyerName || 
+      (so.customer && typeof so.customer === 'string' && so.customer.toLowerCase().includes(safeBuyerName.toLowerCase())) ||
+      (typeof so.customer === 'string' && safeBuyerName.toLowerCase().includes(so.customer.toLowerCase()))
     );
 
     const totalOrdersCount = matchingOrders.length;
@@ -519,16 +539,16 @@ export default function DirectorySettingsView() {
     return {
       ...b,
       id: b.id,
-      avatar: (b.name || 'CU').slice(0, 2).toUpperCase(),
-      name: b.name || 'Customer',
-      termsBadge: b.category || b.paymentTerms || 'Wholesale Buyer',
-      phone: b.phone || '',
-      whatsapp: b.whatsapp || b.phone || '',
+      avatar: (safeBuyerName || 'CU').slice(0, 2).toUpperCase(),
+      name: safeBuyerName,
+      termsBadge: safeTerms,
+      phone: safeBuyerPhone,
+      whatsapp: b.whatsapp || safeBuyerPhone || '',
       isPhoneVerified: !!b.isPhoneVerified,
       isWhatsappVerified: !!(b.isWhatsappVerified || (b.isPhoneVerified && !b.isWhatsAppDifferent)),
       contactPerson: b.contactPerson || '',
-      location: b.location || '-',
-      gst: b.gst ? `GST: ${b.gst}` : 'GST: Not Provided',
+      location: safeBuyerLoc,
+      gst: safeBuyerGst ? `GST: ${safeBuyerGst}` : 'GST: Not Provided',
       orders: `${totalOrdersCount} Orders`,
       totalOrdersCount,
       booked: `₹${bookedLakhs}L`
@@ -594,76 +614,209 @@ export default function DirectorySettingsView() {
     return matchesSearch && matchesCategory;
   });
 
+  let dirTitle = 'Business Directory';
+  let dirTooltip = 'Maintain verified suppliers, job work processors, wholesale customers, and contact directories.';
+  let dirBadge = `${filteredVendors.length + filteredCustomers.length} Parties`;
+  let dirCrumbs = [
+    { label: 'Directory & Admin', route: '/directory' },
+    { label: 'Business Directory' }
+  ];
+
+  if (activeTab === 'ratesValuation') {
+    const subLabel = pricingSubView === 'value' ? 'Valuation Master' : 'Job Work Rates Master';
+    dirTitle = subLabel;
+    dirTooltip = 'Standardized unit processing rates per job worker and statutory customs valuation standards.';
+    dirBadge = `${filteredRates.length + filteredValueMasters.length} Contracts`;
+    dirCrumbs = [
+      { label: 'Directory & Admin', route: '/directory' },
+      { label: 'Rates & Valuation', route: '/directory?tab=ratesValuation' },
+      { label: subLabel }
+    ];
+  } else if (activeTab === 'settings') {
+    dirTitle = 'Plant & System Settings';
+    dirTooltip = 'Configure factory company letterhead profile, GSTIN, default tare bag standards, and signatories.';
+    dirBadge = null;
+    dirCrumbs = [
+      { label: 'Directory & Admin', route: '/directory' },
+      { label: 'Plant & System Settings' }
+    ];
+  } else if (activeTab === 'rbac') {
+    dirTitle = 'User Roles & RBAC Access';
+    dirTooltip = 'Granular role-based access control, operator module permissions, and active credential status.';
+    dirBadge = `${liveUsers.length} Users`;
+    dirCrumbs = [
+      { label: 'Directory & Admin', route: '/directory' },
+      { label: 'User Roles & RBAC' }
+    ];
+  } else if (activeTab === 'audit') {
+    dirTitle = 'Security Audit Trail';
+    dirTooltip = 'Perpetual immutable audit log of administrative actions, user logins, and data modifications.';
+    dirBadge = `${liveAuditLogs.length} Events`;
+    dirCrumbs = [
+      { label: 'Directory & Admin', route: '/directory' },
+      { label: 'Security Audit Trail' }
+    ];
+  }
+
+  // Dynamic filter categories for Rates Master
+  const rateFilterCategories = useMemo(() => [
+    {
+      id: 'party',
+      label: 'Job Worker (Party)',
+      icon: Users,
+      allLabel: 'All Parties',
+      options: [
+        { value: 'ALL', label: 'All Parties' },
+        ...displayVendors.map(v => ({ value: v.name, label: v.name }))
+      ]
+    }
+  ], [displayVendors]);
+
+  // Dynamic filter categories for Audit logs
+  const auditFilterCategories = useMemo(() => [
+    {
+      id: 'category',
+      label: 'Event Category',
+      icon: Shield,
+      allLabel: 'All Categories',
+      options: [
+        { value: 'ALL', label: 'All Categories' },
+        { value: 'LOGIN', label: 'Authentication / Login' },
+        { value: 'CREATE', label: 'Create Record' },
+        { value: 'UPDATE', label: 'Update Record' },
+        { value: 'DELETE', label: 'Delete Record' },
+        { value: 'SECURITY', label: 'Security & Permissions' }
+      ]
+    }
+  ], []);
+
+  let dirSearchProps = null;
+  let dirFilterProps = null;
+
+  if (activeTab === 'directory' || activeTab === 'vendors' || activeTab === 'customers') {
+    const isVendors = directorySubView === 'vendors';
+    dirSearchProps = {
+      value: isVendors ? vendorSearch : customerSearch,
+      onChange: isVendors ? setVendorSearch : setCustomerSearch,
+      placeholder: isVendors ? 'Search vendor name, GSTIN, city, phone...' : 'Search customer name, GSTIN, city, phone...'
+    };
+  } else if (activeTab === 'ratesValuation' || activeTab === 'rateMaster' || activeTab === 'valueMaster') {
+    const isRates = pricingSubView === 'rates';
+    dirSearchProps = {
+      value: isRates ? rateSearch : valueSearch,
+      onChange: isRates ? setRateSearch : setValueSearch,
+      placeholder: isRates ? 'Search rate by party, item, process...' : 'Search valuation by item, hsn...'
+    };
+    if (isRates) {
+      dirFilterProps = {
+        categories: rateFilterCategories,
+        activeFilters: { party: ratePartyFilter },
+        onApply: (f) => { if (f.party !== undefined) setRatePartyFilter(f.party); },
+        onReset: () => setRatePartyFilter('ALL')
+      };
+    }
+  } else if (activeTab === 'rbac') {
+    dirSearchProps = {
+      value: userSearch,
+      onChange: setUserSearch,
+      placeholder: 'Search user by name, email, role...'
+    };
+  } else if (activeTab === 'audit') {
+    dirSearchProps = {
+      value: auditSearch,
+      onChange: setAuditSearch,
+      placeholder: 'Search audit events by user, action, module...'
+    };
+    dirFilterProps = {
+      categories: auditFilterCategories,
+      activeFilters: { category: auditCategoryFilter },
+      onApply: (f) => { if (f.category !== undefined) setAuditCategoryFilter(f.category); },
+      onReset: () => setAuditCategoryFilter('ALL')
+    };
+  }
+
+  const renderDirActions = () => (
+    <>
+      {activeTab === 'directory' && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv(directorySubView === 'vendors' ? 'Vendors_Directory.csv' : 'Customers_Directory.csv', directorySubView === 'vendors' ? filteredVendors : filteredCustomers)}
+            title="Export CSV"
+          />
+          {directorySubView === 'vendors' ? (
+            <HeaderButton
+              icon={Plus}
+              label="Add Vendor"
+              variant="primary"
+              onClick={() => { setSelectedVendorToEdit(null); setShowAddVendorModal(true); }}
+              title="Add Vendor"
+            />
+          ) : (
+            <HeaderButton
+              icon={Plus}
+              label="Add Customer"
+              variant="primary"
+              onClick={() => { setSelectedCustomerToEdit(null); setShowAddCustomerModal(true); }}
+              title="Add Customer"
+            />
+          )}
+        </>
+      )}
+
+      {activeTab === 'ratesValuation' && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv(pricingSubView === 'rates' ? 'Job_Work_Rates.csv' : 'Valuation_Master.csv', pricingSubView === 'rates' ? filteredRates : filteredValueMasters)}
+            title="Export CSV"
+          />
+          {pricingSubView === 'rates' ? (
+            <HeaderButton
+              icon={Plus}
+              label="Add Rate Contract"
+              variant="primary"
+              onClick={() => { setSelectedRateToEdit(null); setShowAddRateModal(true); }}
+              title="Add Rate Contract"
+            />
+          ) : (
+            <HeaderButton
+              icon={Plus}
+              label="Add Valuation Standard"
+              variant="primary"
+              onClick={() => { setSelectedValueToEdit(null); setShowAddValueModal(true); }}
+              title="Add Valuation Standard"
+            />
+          )}
+        </>
+      )}
+
+      {activeTab === 'audit' && (
+        <HeaderButton
+          icon={Download}
+          label="Export Audit Log"
+          onClick={() => exportToCsv('Security_Audit_Logs.csv', filteredAuditLogs)}
+          title="Export Audit Log"
+        />
+      )}
+    </>
+  );
+
   return (
     <div className="ds-container">
-      {/* ── Page Header ── */}
-      <div className="ds-page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <h1 className="ds-page-title">Directory &amp; Master Configuration</h1>
-          <HeaderInfoTooltip text="Maintain supplier and customer registries, job worker rates, tare standards, and plant profile." />
-        </div>
-      </div>
+      {/* ── Standard Unified Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={dirCrumbs}
+        title={dirTitle}
+        tooltip={dirTooltip}
+        searchProps={dirSearchProps}
+        filterProps={dirFilterProps}
+        actions={renderDirActions()}
+      />
 
-      {/* ── Streamlined Tabs Bar (5 Merged Modules, No Horizontal Scrolling) ── */}
-      <div className="ds-tabs-bar">
-        <button
-          className={`ds-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('directory'); setSearchParams({ tab: 'directory' }); }}
-        >
-          <Building size={14} />
-          <span>Business Directory</span>
-          <span className="ds-tab-count">{filteredVendors.length + filteredCustomers.length}</span>
-        </button>
 
-        <button
-          className={`ds-tab-btn ${activeTab === 'ratesValuation' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('ratesValuation'); setSearchParams({ tab: 'ratesValuation' }); }}
-        >
-          <Tag size={14} />
-          <span>Rates &amp; Valuation</span>
-          <span className="ds-tab-count">{filteredRates.length + filteredValueMasters.length}</span>
-        </button>
-
-        <button
-          className={`ds-tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('settings'); setSearchParams({ tab: 'settings' }); }}
-        >
-          <ShieldCheck size={14} />
-          <span>Plant &amp; System Settings</span>
-        </button>
-
-        {isAdmin && (
-          <button
-            className={`ds-tab-btn ${activeTab === 'rbac' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('rbac'); setSearchParams({ tab: 'rbac' }); }}
-            style={{
-              borderColor: activeTab === 'rbac' ? '#dc2626' : undefined,
-              color: activeTab === 'rbac' ? '#dc2626' : undefined,
-              fontWeight: 700
-            }}
-          >
-            <Shield size={14} style={{ color: '#dc2626' }} />
-            <span>User Roles &amp; RBAC</span>
-            <span className="ds-tab-count" style={{ background: '#fee2e2', color: '#dc2626' }}>{liveUsers.length}</span>
-          </button>
-        )}
-
-        {isAdmin && (
-          <button
-            className={`ds-tab-btn ${activeTab === 'audit' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('audit'); setSearchParams({ tab: 'audit' }); }}
-            style={{
-              borderColor: activeTab === 'audit' ? '#0284c7' : undefined,
-              color: activeTab === 'audit' ? '#0284c7' : undefined,
-              fontWeight: 700
-            }}
-          >
-            <Activity size={14} style={{ color: '#0284c7' }} />
-            <span>Security Audit Trail</span>
-            <span className="ds-tab-count" style={{ background: '#e0f2fe', color: '#0284c7' }}>{liveAuditLogs.length}</span>
-          </button>
-        )}
-      </div>
 
       {/* ── Business Directory Switcher ── */}
       {activeTab === 'directory' && (
@@ -728,28 +881,6 @@ export default function DirectorySettingsView() {
       {/* ── TAB 1: Processing Vendors ── */}
       {(activeTab === 'vendors' || (activeTab === 'directory' && directorySubView === 'vendors')) && (
         <>
-          <div className="ds-filter-row">
-            <div className="ds-search-wrap">
-              <Search size={14} className="ds-search-icon" />
-              <input
-                type="text"
-                placeholder="Search vendors by name, contact, city..."
-                className="ds-search-input"
-                value={vendorSearch}
-                onChange={e => setVendorSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className="ds-records-count">{filteredVendors.length} records</span>
-              <button className="ds-btn-ghost" onClick={() => exportToCsv('Vendors_Directory.csv', filteredVendors)}>
-                <Download size={13} /> Export CSV
-              </button>
-              <button className="ds-btn-primary" onClick={() => { setSelectedVendorToEdit(null); setShowAddVendorModal(true); }}>
-                <Plus size={13} /> Add Vendor
-              </button>
-            </div>
-          </div>
-
           <div className="ds-cards-grid">
             {filteredVendors.map(v => (
               <div key={v.id || v.name} className="ds-card">
@@ -819,53 +950,7 @@ export default function DirectorySettingsView() {
       {/* ── TAB 2: Job Work Rate Master (Matching Excel 'JW Rate Master') ── */}
       {(activeTab === 'rateMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'rates')) && (
         <div className="jw-ledger-section">
-          <div className="ds-filter-row" style={{ flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>Party (Job Worker):</span>
-              <select
-                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.82rem', fontWeight: 600, background: '#ffffff', color: '#0f172a' }}
-                value={ratePartyFilter}
-                onChange={e => setRatePartyFilter(e.target.value)}
-              >
-                <option value="ALL">All Parties ({displayVendors.length})</option>
-                {displayVendors.map(v => (
-                  <option key={v.name} value={v.name}>{v.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="ds-search-wrap" style={{ flex: 1, minWidth: '220px' }}>
-              <Search size={14} className="ds-search-icon" />
-              <input
-                type="text"
-                placeholder="Search by Process, Item..."
-                className="ds-search-input"
-                value={rateSearch}
-                onChange={e => setRateSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className="ds-records-count">{filteredRates.length} rates</span>
-              <button className="ds-btn-ghost" onClick={() => exportToCsv('JW_Rate_Master.csv', filteredRates)}>
-                <Download size={13} /> Export CSV
-              </button>
-              <button className="ds-btn-primary" onClick={() => {
-                setSelectedRateToEdit(null);
-                setNewRateForm({
-                  party: displayVendors[0]?.name || 'GALAXY.ENTERPRISE',
-                  process: liveProcesses[0]?.processName || '',
-                  item: 'ANCHOR YARN ^ YARN HANK',
-                  uom: 'Kgs',
-                  rate: '17.50',
-                  date: new Date().toISOString().split('T')[0]
-                });
-                setShowAddRateModal(true);
-              }}>
-                <Plus size={13} /> Add Rate Contract
-              </button>
-            </div>
-          </div>
-
-          <div className="jw-table-container" style={{ marginTop: '12px' }}>
+          <div className="jw-table-container">
             <table className="jw-ledger-table">
               <thead>
                 <tr>
@@ -965,29 +1050,7 @@ export default function DirectorySettingsView() {
       {/* ── TAB: Job Work Value Master (Sheet: JW Value Master) ── */}
       {(activeTab === 'valueMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'value')) && (
         <div className="jw-ledger-section">
-          <div className="ds-filter-row">
-            <div className="ds-search-wrap">
-              <Search size={14} className="ds-search-icon" />
-              <input
-                type="text"
-                placeholder="Search by Code, Item Description..."
-                className="ds-search-input"
-                value={valueSearch}
-                onChange={e => setValueSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className="ds-records-count">{filteredValueMasters.length} valuation entries</span>
-              <button className="ds-btn-ghost" onClick={() => exportToCsv('JW_Value_Master.csv', filteredValueMasters)}>
-                <Download size={13} /> Export CSV
-              </button>
-              <button className="ds-btn-primary" onClick={() => { setSelectedValueToEdit(null); setShowAddValueModal(true); }}>
-                <Plus size={13} /> Add Valuation Entry
-              </button>
-            </div>
-          </div>
-
-          <div className="jw-table-container" style={{ marginTop: '12px' }}>
+          <div className="jw-table-container">
             <table className="jw-ledger-table">
               <thead>
                 <tr>
@@ -1330,28 +1393,6 @@ export default function DirectorySettingsView() {
       {/* ── TAB 4: Customers ── */}
       {(activeTab === 'customers' || (activeTab === 'directory' && directorySubView === 'customers')) && (
         <>
-          <div className="ds-filter-row">
-            <div className="ds-search-wrap">
-              <Search size={14} className="ds-search-icon" />
-              <input
-                type="text"
-                placeholder="Search customers by company, GSTIN..."
-                className="ds-search-input"
-                value={customerSearch}
-                onChange={e => setCustomerSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className="ds-records-count">{filteredCustomers.length} records</span>
-              <button className="ds-btn-ghost" onClick={() => exportToCsv('Customers_Directory.csv', filteredCustomers)}>
-                <Download size={13} /> Export CSV
-              </button>
-              <button className="ds-btn-primary" onClick={() => { setSelectedCustomerToEdit(null); setShowAddCustomerModal(true); }}>
-                <Plus size={13} /> Add Customer
-              </button>
-            </div>
-          </div>
-
           <div className="ds-cards-grid">
             {filteredCustomers.map(c => (
               <div key={c.id || c.name} className="ds-card">
@@ -1740,127 +1781,12 @@ export default function DirectorySettingsView() {
       {/* ── TAB 9: Audit Trail (Admin Only) ── */}
       {activeTab === 'audit' && isAdmin && (
         <>
-          <div className="ds-filter-row" style={{ flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-            <div className="ds-search-wrap" style={{ flex: '1 1 280px' }}>
-              <Search className="ds-search-icon" size={15} />
-              <input
-                type="text"
-                placeholder="Search audit trail by user, action, target, or keywords..."
-                className="ds-search-input"
-                value={auditSearch}
-                onChange={e => setAuditSearch(e.target.value)}
-              />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className={`ds-filter-toggle-btn ${showAuditFilterPanel || auditCategoryFilter !== 'ALL' ? 'active' : ''}`}
-                onClick={() => setShowAuditFilterPanel(!showAuditFilterPanel)}
-                title="Toggle Category Filters"
-              >
-                <Filter size={14} />
-                <span>Filters</span>
-                {auditCategoryFilter !== 'ALL' && <span className="ds-filter-count-badge">1</span>}
+          {auditCategoryFilter !== 'ALL' && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '4px 10px', fontSize: '0.78rem', color: '#1d4ed8', fontWeight: 600, marginBottom: '10px' }}>
+              <span>Category: <strong>{auditCategoryFilter}</strong></span>
+              <button type="button" onClick={() => setAuditCategoryFilter('ALL')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1d4ed8', padding: 0, display: 'flex' }}>
+                <X size={12} />
               </button>
-
-              <button
-                type="button"
-                className="ds-btn-export"
-                onClick={() => {
-                  const exportRows = filteredAuditLogs.map(l => ({
-                    'Date & Time': l.timestamp ? new Date(l.timestamp).toLocaleString('en-IN') : '-',
-                    'User Name': l.user?.name || 'System',
-                    'User Email': l.user?.email || '-',
-                    'User Role': l.user?.role || '-',
-                    'Category': l.category || '-',
-                    'Action Code': l.action || '-',
-                    'Target ID': l.targetId || '-',
-                    'Summary': l.summary || '-'
-                  }));
-                  exportToCsv('Kamani_ERP_Audit_Trail.csv', exportRows);
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 12px',
-                  borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  background: '#ffffff',
-                  fontSize: '0.8125rem',
-                  fontWeight: 600,
-                  color: '#334155',
-                  cursor: 'pointer'
-                }}
-              >
-                <Download size={14} />
-                Export Audit Log
-              </button>
-            </div>
-          </div>
-
-          {/* Category Filter Panel - Only visible when Filter button is clicked */}
-          {showAuditFilterPanel && (
-            <div className="ds-expanded-filters-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Filter by Audit Category
-                </span>
-                {auditCategoryFilter !== 'ALL' && (
-                  <button
-                    type="button"
-                    className="ds-btn-reset-filters"
-                    onClick={() => setAuditCategoryFilter('ALL')}
-                    style={{ height: '28px', padding: '2px 8px', fontSize: '0.72rem' }}
-                  >
-                    Reset Filter
-                  </button>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingBottom: '4px' }}>
-            {['ALL', 'SECURITY', 'QUALITY_CONTROL', 'INVENTORY', 'JOB_WORK', 'SALES', 'MASTER_DATA'].map(cat => {
-              const count = cat === 'ALL' 
-                ? liveAuditLogs.length 
-                : liveAuditLogs.filter(l => l.category === cat).length;
-              const catCfg = cat === 'ALL' 
-                ? { label: 'All Events', color: '#0f172a', bg: '#f1f5f9', border: '#cbd5e1' }
-                : (AUDIT_CATEGORIES[cat] || { label: cat, color: '#475569', bg: '#f8fafc', border: '#e2e8f0' });
-              const isActive = auditCategoryFilter === cat;
-
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setAuditCategoryFilter(cat)}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '9999px',
-                    fontSize: '0.725rem',
-                    fontWeight: 600,
-                    border: isActive ? `2px solid ${catCfg.color}` : `1px solid ${catCfg.border}`,
-                    background: isActive ? catCfg.bg : '#ffffff',
-                    color: catCfg.color,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                >
-                  {catCfg.label}
-                  <span style={{
-                    background: isActive ? catCfg.color : '#e2e8f0',
-                    color: isActive ? '#ffffff' : '#475569',
-                    borderRadius: '9999px',
-                    padding: '0 5px',
-                    fontSize: '0.675rem'
-                  }}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-              </div>
             </div>
           )}
 

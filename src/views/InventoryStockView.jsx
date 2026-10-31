@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Layers, Package, History, GitBranch, Search, Plus, ArrowUpRight,
   AlertTriangle, ArrowUpDown, ChevronRight, Filter, Download,
   CheckCircle2, ArrowRight, Truck, FileText, Scale, BookOpen, Edit3, Check, Calendar,
-  Printer, Clock, ShieldCheck, X, CheckSquare, XCircle,
+  Printer, Clock, ShieldCheck, X, CheckSquare, XCircle, MapPin, ClipboardCheck,
   BarChart3, ChevronDown, ChevronUp
 } from 'lucide-react';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
@@ -21,6 +21,7 @@ import AddBagBatchModal from '../modals/AddBagBatchModal';
 import QcCheckModal from '../modals/QcCheckModal';
 import QuickBagLookupModal from '../modals/QuickBagLookupModal';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
+import PageHeader, { HeaderButton } from '../components/PageHeader';
 import { useWorkflow } from '../context/WorkflowContext';
 import { 
   subscribeRawMaterials, 
@@ -45,6 +46,7 @@ import { db } from '../firebase/firebase';
 import { exportToCsv } from '../utils/exportCsv';
 import { showAlert } from '../context/CustomAlertContext';
 import { logAuditEvent } from '../api/audit.api';
+import { subscribeTareStandards, DEFAULT_TARE_STANDARDS } from '../api/directory.api';
 import '../styles/InventoryStock.css';
 
 
@@ -109,6 +111,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     const unsubBags = subscribeInventoryBags(setLiveBags);
     const unsubScrap = subscribeScrapStock(setScrapInfo);
     const unsubQc = subscribeQcChecks(setLiveQcChecks);
+    const unsubTare = subscribeTareStandards(setTareStandards);
     return () => {
       unsubRm();
       unsubFg();
@@ -121,8 +124,11 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       unsubBags();
       unsubScrap();
       unsubQc();
+      if (unsubTare) unsubTare();
     };
   }, []);
+
+  const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
 
   const [rmSearch, setRmSearch] = useState('');
   const [rmCategoryFilter, setRmCategoryFilter] = useState('All');
@@ -842,6 +848,312 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     return matchesQuery && matchesStatus;
   });
 
+  // Dynamic PageHeader configuration based on activeTab
+  let invTitle = 'Raw Materials & GRN';
+  let invTooltip = 'Excel-aligned Raw Material Inward (GRN), Factory Issue Consumption, and Job Worker Outward balance.';
+  let invBadge = `${displayRmList.length} SKU Materials`;
+  let invCrumbs = [
+    { label: 'Inventory & Stock', route: '/inventory' },
+    { label: 'Raw Materials & GRN' }
+  ];
+
+  if (activeTab === 'fg') {
+    invTitle = 'Finished Goods (FG)';
+    invTooltip = 'Track manufactured coils, reels, and hanks with free stock vs reserved stock allocation.';
+    invBadge = `${liveFgList.length} Product SKUs`;
+    invCrumbs = [
+      { label: 'Inventory & Stock', route: '/inventory' },
+      { label: 'Finished Goods (FG)' }
+    ];
+  } else if (activeTab === 'bags') {
+    invTitle = 'Bags & Dual Stock';
+    invTooltip = 'Individual bag tracking with sequential integer serials (1, 2, 3...) & scale weights.';
+    invBadge = `${filteredBags.length} Bags`;
+    invCrumbs = [
+      { label: 'Inventory & Stock', route: '/inventory' },
+      { label: 'Bags & Dual Stock' }
+    ];
+  } else if (activeTab === 'movements' || activeTab === 'traceability') {
+    const subLabel = movementsSubView === 'traceability' ? 'Material Traceability Explorer' : 'Stock Movements & Audit';
+    invTitle = subLabel;
+    invTooltip = 'Immutable perpetual audit log of raw material inwards, job work dispatches, and sales dispatches.';
+    invBadge = `${liveMovements.length} Transactions`;
+    invCrumbs = [
+      { label: 'Inventory & Stock', route: '/inventory' },
+      { label: 'Stock Movements & Trace', route: '/inventory?tab=movements' },
+      { label: subLabel }
+    ];
+  } else if (activeTab === 'qc') {
+    invTitle = 'Raw Material Quality Control (QC)';
+    invTooltip = 'Mandatory inbound material inspection workflow: Pending evaluation → Inspector Pass/Fail → Approval.';
+    invBadge = overdueQcChecks.length > 0 ? `⚠️ ${overdueQcChecks.length} SLA Overdue` : `${filteredQcChecks.length} Records`;
+    invCrumbs = [
+      { label: 'Inventory & Stock', route: '/inventory' },
+      { label: 'QC Inspection Register' }
+    ];
+  }
+
+  // Dynamic filter categories for Inventory tabs
+  const rmFilterCategories = useMemo(() => [
+    {
+      id: 'category',
+      label: 'Polymer Category',
+      icon: Layers,
+      allLabel: 'All Categories',
+      options: [
+        { value: 'All', label: 'All Categories' },
+        ...uniqueRmCategories.map(c => ({ value: c, label: c }))
+      ]
+    }
+  ], [uniqueRmCategories]);
+
+  const fgFilterCategories = useMemo(() => [
+    {
+      id: 'category',
+      label: 'Product Category',
+      icon: Package,
+      allLabel: 'All Categories',
+      options: [
+        { value: 'All', label: 'All Categories' },
+        ...uniqueFgCategories.map(c => ({ value: c, label: c }))
+      ]
+    }
+  ], [uniqueFgCategories]);
+
+  const bagFilterCategories = useMemo(() => [
+    {
+      id: 'stockType',
+      label: 'Stock Type',
+      icon: Package,
+      allLabel: 'All Types',
+      options: [
+        { value: 'All', label: 'All Types' },
+        { value: 'FIXED', label: 'Fixed Stock (50kg std)' },
+        { value: 'LOOSE', label: 'Loose Stock (Cut / Odd)' }
+      ]
+    },
+    {
+      id: 'location',
+      label: 'Location / Godown',
+      icon: MapPin,
+      allLabel: 'All Locations',
+      options: [
+        { value: 'All', label: 'All Locations' },
+        ...uniqueBagLocations.map(l => ({ value: l, label: l }))
+      ]
+    }
+  ], [uniqueBagLocations]);
+
+  const movementFilterCategories = useMemo(() => [
+    {
+      id: 'type',
+      label: 'Transaction Type',
+      icon: History,
+      allLabel: 'All Transaction Types',
+      options: [
+        { value: 'All', label: 'All Transaction Types' },
+        { value: 'Receipt', label: 'Purchase Receipts' },
+        { value: 'JWIssue', label: 'Job Work Issues' },
+        { value: 'JWReturn', label: 'Job Work Returns' },
+        { value: 'Production', label: 'FG Production' },
+        { value: 'Dispatch', label: 'Customer Dispatches' }
+      ]
+    }
+  ], []);
+
+  const qcFilterCategories = useMemo(() => [
+    {
+      id: 'status',
+      label: 'QC Status',
+      icon: CheckCircle2,
+      allLabel: 'All QC Statuses',
+      options: [
+        { value: 'All', label: 'All QC Statuses' },
+        { value: 'PENDING', label: `Pending Evaluation (${pendingQcChecks.length})` },
+        { value: 'SENT_FOR_APPROVAL', label: `Sent for Approval (${sentForApprovalQc.length})` },
+        { value: 'APPROVED', label: `Approved (${approvedQcChecks.length})` },
+        { value: 'OVERDUE', label: `⚠️ SLA Overdue (${overdueQcChecks.length})` },
+        { value: 'PASS', label: `Result: PASS (${passedQcChecks.length})` },
+        { value: 'FAIL', label: `Result: FAIL (${failedQcChecks.length})` }
+      ]
+    }
+  ], [pendingQcChecks.length, sentForApprovalQc.length, approvedQcChecks.length, overdueQcChecks.length, passedQcChecks.length, failedQcChecks.length]);
+
+  let invSearchProps = null;
+  let invFilterProps = null;
+
+  if (activeTab === 'rm') {
+    invSearchProps = {
+      value: rmSearch,
+      onChange: setRmSearch,
+      placeholder: 'Search Item Name, Grade, Supplier, GRN No...'
+    };
+    invFilterProps = {
+      categories: rmFilterCategories,
+      activeFilters: { category: rmCategoryFilter },
+      onApply: (f) => { if (f.category !== undefined) setRmCategoryFilter(f.category); },
+      onReset: () => setRmCategoryFilter('All')
+    };
+  } else if (activeTab === 'fg') {
+    invSearchProps = {
+      value: fgSearch,
+      onChange: setFgSearch,
+      placeholder: 'Search Product Code, Name, Diameter, Color...'
+    };
+    invFilterProps = {
+      categories: fgFilterCategories,
+      activeFilters: { category: fgCategoryFilter },
+      onApply: (f) => { if (f.category !== undefined) setFgCategoryFilter(f.category); },
+      onReset: () => setFgCategoryFilter('All')
+    };
+  } else if (activeTab === 'bags') {
+    invSearchProps = {
+      value: bagSearch,
+      onChange: setBagSearch,
+      placeholder: 'Search Bag No, Batch, Material, Location...'
+    };
+    invFilterProps = {
+      categories: bagFilterCategories,
+      activeFilters: { stockType: bagStockTypeFilter, location: bagLocationFilter },
+      onApply: (f) => {
+        if (f.stockType !== undefined) setBagStockTypeFilter(f.stockType);
+        if (f.location !== undefined) setBagLocationFilter(f.location);
+      },
+      onReset: () => {
+        setBagStockTypeFilter('All');
+        setBagLocationFilter('All');
+      }
+    };
+  } else if (activeTab === 'movements' || activeTab === 'traceability') {
+    const isTrace = movementsSubView === 'traceability';
+    invSearchProps = {
+      value: isTrace ? traceSearch : movementSearch,
+      onChange: isTrace ? setTraceSearch : setMovementSearch,
+      placeholder: isTrace ? 'Enter Batch/JW/SO ID to trace...' : 'Search Movement ID, Party, Material...'
+    };
+    if (!isTrace) {
+      invFilterProps = {
+        categories: movementFilterCategories,
+        activeFilters: { type: movementTypeFilter },
+        onApply: (f) => { if (f.type !== undefined) setMovementTypeFilter(f.type); },
+        onReset: () => setMovementTypeFilter('All')
+      };
+    }
+  } else if (activeTab === 'qc') {
+    invSearchProps = {
+      value: qcSearch,
+      onChange: setQcSearch,
+      placeholder: 'Search QC check by material, supplier, GRN...'
+    };
+    invFilterProps = {
+      categories: qcFilterCategories,
+      activeFilters: { status: qcStatusFilter },
+      onApply: (f) => { if (f.status !== undefined) setQcStatusFilter(f.status); },
+      onReset: () => setQcStatusFilter('All')
+    };
+  }
+
+  const renderInvActions = () => (
+    <>
+      {activeTab === 'rm' && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => {
+              if (rmSubView === 'ledger') exportToCsv('RM_Stock_Ledger.csv', filteredRm);
+              else if (rmSubView === 'inward') exportToCsv('RM_Inward_Register.csv', filteredRmInwards);
+              else exportToCsv('RM_Factory_Issue_Register.csv', filteredRmIssues);
+            }}
+            title="Export CSV"
+          />
+          <HeaderButton
+            icon={Plus}
+            label="Inward RM (GRN)"
+            onClick={() => setShowRmInwardModal(true)}
+            style={{ color: '#16a34a', borderColor: '#bbf7d0' }}
+            title="Record Raw Material Inward (GRN)"
+          />
+          <HeaderButton
+            icon={Plus}
+            label="Issue to Factory"
+            variant="primary"
+            onClick={() => setShowIssueFactoryModal(true)}
+            title="Issue to Factory Extrusion Plant"
+          />
+        </>
+      )}
+
+      {activeTab === 'fg' && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('Finished_Goods_Inventory.csv', filteredFg)}
+            title="Export CSV"
+          />
+          <HeaderButton
+            icon={Plus}
+            label="Add Product SKU"
+            variant="primary"
+            onClick={() => setShowAddProductModal(true)}
+            title="Add Product SKU"
+          />
+        </>
+      )}
+
+      {activeTab === 'bags' && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('Bags_Dual_Stock_Register.csv', filteredBags)}
+            title="Export CSV"
+          />
+          <HeaderButton
+            icon={Printer}
+            label={`Print Stickers (${filteredBags.length})`}
+            onClick={() => printMultipleBagStickers(filteredBags)}
+            title="Print Barcode Stickers (100mm x 75mm) for all filtered bags"
+          />
+          <HeaderButton
+            icon={Search}
+            label="Scan / Find Bag"
+            variant="primary"
+            onClick={() => setShowQuickLookupModal(true)}
+            title="Scan / Find Bag"
+          />
+        </>
+      )}
+
+      {activeTab === 'movements' && movementsSubView === 'history' && (
+        <HeaderButton
+          icon={Download}
+          label="Export Audit Trail"
+          onClick={() => exportToCsv('Inventory_Stock_Movements_Audit.csv', liveMovements)}
+          title="Export Audit Trail"
+        />
+      )}
+
+      {activeTab === 'qc' && (
+        <HeaderButton
+          icon={Download}
+          label="Export QC Log"
+          onClick={() => exportToCsv('RM_Quality_Control_Register.csv', filteredQcChecks)}
+          title="Export QC Log"
+        />
+      )}
+
+      <HeaderButton
+        icon={BarChart3}
+        label={showMetrics ? 'Hide Stats' : 'Show Stats'}
+        onClick={() => setShowMetrics(prev => !prev)}
+        active={showMetrics}
+        title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
+      />
+    </>
+  );
+
   if (selectedInward) {
     const currentInw = liveRmInwards.find(i => (i.id && i.id === selectedInward.id) || (i.grnNo && i.grnNo === selectedInward.grnNo)) || selectedInward;
     const matchQc = liveQcChecks.find(q => (q.grnId && q.grnId === currentInw.id) || (q.grnNo && q.grnNo === currentInw.grnNo));
@@ -861,36 +1173,15 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
   return (
     <div className="inv-hub-container">
-      {/* ── Page Header ── */}
-      <div className="inv-page-header">
-        <div className="inv-header-left">
-          <div className="inv-title-row">
-            <h1 className="inv-page-title">Inventory &amp; Stock Hub</h1>
-            <HeaderInfoTooltip text="Unified management of raw materials (granules/yarn), finished rope stock, warehouse movements, and batch traceability." />
-          </div>
-        </div>
-        <div className="inv-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            type="button"
-            className={`inv-btn-toggle-stats ${showMetrics ? 'active' : ''}`}
-            onClick={() => setShowMetrics(prev => !prev)}
-            title={showMetrics ? 'Hide summary KPI statistics' : 'Show summary KPI statistics'}
-          >
-            <BarChart3 size={15} />
-            <span>{showMetrics ? 'Hide Stats' : 'Show Stats'}</span>
-            {showMetrics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.72rem', color: '#991b1b', fontWeight: 700 }}>RECOVERED SCRAP:</span>
-            <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#dc2626' }}>{(scrapInfo.totalScrapKg || 0).toFixed(1)} KG</span>
-            <span style={{ fontSize: '0.72rem', color: '#b91c1c' }}>(@ ₹{scrapInfo.defaultRate || 70}/KG)</span>
-          </div>
-          <div className="inv-alert-banner">
-            <AlertTriangle size={15} />
-            {liveRmList.filter(r => (Number(r.availFactory) || 0) <= 1000).length} Items need attention
-          </div>
-        </div>
-      </div>
+      {/* ── Standard Unified Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={invCrumbs}
+        title={invTitle}
+        tooltip={invTooltip}
+        searchProps={invSearchProps}
+        filterProps={invFilterProps}
+        actions={renderInvActions()}
+      />
 
       {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
       {showMetrics && (
@@ -1131,78 +1422,11 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       </div>
       )}
 
-      {/* ── Modern Streamlined Tab Bar (4 Merged Modules, No Overflow) ── */}
-      <div className="inv-tab-bar">
-        <button
-          className={`inv-tab-btn ${activeTab === 'rm' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('rm'); setSearchParams({ tab: 'rm' }); }}
-        >
-          <Layers size={14} />
-          <span>Raw Materials (RM)</span>
-          <span className="inv-tab-badge">{displayRmList.length}</span>
-        </button>
 
-        <button
-          className={`inv-tab-btn ${activeTab === 'fg' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('fg'); setSearchParams({ tab: 'fg' }); }}
-        >
-          <Package size={14} />
-          <span>Finished Goods (FG)</span>
-          <span className="inv-tab-badge-green">{displayFgList.length}</span>
-        </button>
-
-        <button
-          className={`inv-tab-btn ${activeTab === 'bags' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('bags'); setSearchParams({ tab: 'bags' }); }}
-        >
-          <Scale size={14} />
-          <span>Bags &amp; Dual Stock</span>
-          <span className="inv-tab-badge-blue">{liveBags.length} Bags</span>
-        </button>
-
-        <button
-          className={`inv-tab-btn ${activeTab === 'movements' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('movements'); setSearchParams({ tab: 'movements' }); }}
-        >
-          <History size={14} />
-          <span>Stock Movements &amp; Trace</span>
-        </button>
-      </div>
 
       {/* ── TAB 1: Raw Materials (RM) ── */}
       {activeTab === 'rm' && (
         <div className="inv-section-card">
-          <div className="inv-section-header">
-            <div className="inv-title-group">
-              <div className="inv-title-row-inner">
-                <h2 className="inv-section-title">Raw Materials Inventory &amp; Registers</h2>
-                <span className="inv-badge-blue">{displayRmList.length} SKU Materials</span>
-              </div>
-              <p className="inv-section-subtitle">
-                Excel-aligned Raw Material Inward (GRN), Factory Issue Consumption, and Job Worker Outward balance.
-              </p>
-            </div>
-
-            {/* Quick Action Buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <button 
-                className="inv-btn-dark" 
-                onClick={() => setShowRmInwardModal(true)}
-                style={{ background: '#16a34a', color: '#ffffff' }}
-                title="Record Raw Material Inward with Gross/Tare Deductions"
-              >
-                <Plus size={14} /> Inward RM (GRN)
-              </button>
-              <button 
-                className="inv-btn-dark" 
-                onClick={() => setShowIssueFactoryModal(true)}
-                style={{ background: '#7c3aed', color: '#ffffff' }}
-                title="Issue Material to Factory Extrusion Plant"
-              >
-                <Plus size={14} /> Issue to Factory
-              </button>
-            </div>
-          </div>
 
           {/* Sub-view Selector Tabs for RM Module */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', margin: '14px 0 10px 0', background: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -1273,45 +1497,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
               }}
             >
               Stock Reconciliation
-            </button>
-          </div>
-
-          {/* Filter Bar */}
-          <div className="inv-filter-bar">
-            <div className="inv-search-input-wrap">
-              <Search size={14} className="inv-search-icon" />
-              <input
-                type="text"
-                placeholder="Search Item Name, Grade, Supplier, GRN No..."
-                className="inv-filter-search"
-                value={rmSearch}
-                onChange={e => setRmSearch(e.target.value)}
-              />
-            </div>
-
-            {rmSubView === 'ledger' && (
-              <select
-                className="inv-filter-select"
-                value={rmCategoryFilter}
-                onChange={e => setRmCategoryFilter(e.target.value)}
-              >
-                <option value="All">All Polymer Categories</option>
-                {uniqueRmCategories.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            )}
-
-            <button 
-              className="jw-btn-ghost" 
-              onClick={() => {
-                if (rmSubView === 'ledger') exportToCsv('RM_Stock_Ledger.csv', filteredRm);
-                else if (rmSubView === 'inward') exportToCsv('RM_Inward_Register.csv', filteredRmInwards);
-                else exportToCsv('RM_Factory_Issue_Register.csv', filteredRmIssues);
-              }}
-              style={{ cursor: 'pointer', marginLeft: 'auto' }}
-            >
-              <Download size={13} /> Export CSV
             </button>
           </div>
 
@@ -1442,7 +1627,38 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                     filteredRmInwards.map((inw, idx) => {
                       const billedWeight = Number(inw.challanWeight || 0);
                       const grossWeight = Number(inw.grossWeight || 0);
+                      const netWeight = Number(inw.netWeight || 0);
                       const isBilledExceedsGross = billedWeight > 0 && billedWeight > grossWeight;
+
+                      // Packaging tare deduction & variance calculations
+                      const tareWeight = Number(
+                        inw.tareVarianceKg !== undefined
+                          ? inw.tareVarianceKg
+                          : (inw.varianceKg !== undefined
+                              ? inw.varianceKg
+                              : (inw.articleWeight !== undefined
+                                  ? inw.articleWeight
+                                  : (inw.tareDeduct !== undefined
+                                      ? inw.tareDeduct
+                                      : (grossWeight > 0 && netWeight > 0 ? Math.max(0, grossWeight - netWeight) : 0))))
+                      );
+                      const tareLimitKg = Number(
+                        inw.varianceThresholdKg !== undefined
+                          ? inw.varianceThresholdKg
+                          : (tareStandards?.varianceAllowanceKg !== undefined ? tareStandards.varianceAllowanceKg : 50)
+                      );
+                      const tareLimitPct = Number(tareStandards?.varianceAllowancePct !== undefined ? tareStandards.varianceAllowancePct : 2.0);
+                      const tarePct = grossWeight > 0 ? (tareWeight / grossWeight) * 100 : 0;
+
+                      // Flag whether tare variance or short delivery limit is exceeded
+                      const isTareVarianceExceeded = Boolean(
+                        inw.isTareVarianceExceeded ||
+                        (tareWeight > 0 && tareWeight > tareLimitKg) ||
+                        (tarePct > 0 && tareLimitPct > 0 && tarePct > tareLimitPct) ||
+                        inw.isShortDelivery ||
+                        (inw.shortfallKg !== undefined && Number(inw.shortfallKg) < -tareLimitKg) ||
+                        isBilledExceedsGross
+                      );
 
                       return (
                         <tr 
@@ -1466,16 +1682,24 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ fontWeight: '600', color: '#0f172a' }}>{inw.itemName}</span>
                               {inw.batchNumber && (
-                                <span style={{ 
-                                  fontSize: '0.7rem', 
-                                  fontWeight: '700', 
-                                  color: isBilledExceedsGross ? '#dc2626' : '#2563eb',
-                                  background: isBilledExceedsGross ? '#fef2f2' : '#eff6ff',
-                                  border: `1px solid ${isBilledExceedsGross ? '#fecaca' : '#bfdbfe'}`,
-                                  padding: '1px 5px',
-                                  borderRadius: '3px'
-                                }}>
-                                  {isBilledExceedsGross ? '⚠️ ' : ''}Batch: {inw.batchNumber}
+                                <span 
+                                  style={{ 
+                                    fontSize: '0.7rem', 
+                                    fontWeight: '700', 
+                                    color: isTareVarianceExceeded ? '#dc2626' : '#2563eb',
+                                    background: isTareVarianceExceeded ? '#fef2f2' : '#eff6ff',
+                                    border: `1px solid ${isTareVarianceExceeded ? '#fecaca' : '#bfdbfe'}`,
+                                    padding: '1px 6px',
+                                    borderRadius: '3px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px'
+                                  }}
+                                  title={isTareVarianceExceeded 
+                                    ? `⚠️ Tare Variance Exceeded: ${tareWeight.toFixed(1)} KG (Tolerance Limit: ${tareLimitKg} KG)` 
+                                    : `Batch: ${inw.batchNumber}`}
+                                >
+                                  {isTareVarianceExceeded ? '⚠️ ' : ''}Batch: {inw.batchNumber}
                                 </span>
                               )}
                             </div>
@@ -1769,73 +1993,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       {/* ── TAB 2: Finished Goods (FG) ── */}
       {activeTab === 'fg' && (
         <div className="inv-section-card">
-          <div className="inv-section-header">
-            <div className="inv-title-group">
-              <div className="inv-title-row-inner">
-                <h2 className="inv-section-title">Finished Goods Inventory</h2>
-                <span className="inv-tab-badge-green">{liveFgList.length} Product SKUs</span>
-              </div>
-              <p className="inv-section-subtitle">
-                Track manufactured coils, reels, and hanks with free stock vs reserved stock allocation for customer orders.
-              </p>
-            </div>
-
-            <button className="inv-btn-dark" onClick={() => setShowAddProductModal(true)}>
-              <Plus size={14} /> Add Product SKU
-            </button>
-          </div>
-
-          {/* Filter Bar */}
-          <div className="inv-filter-bar">
-            <div className="inv-search-input-wrap">
-              <Search size={14} className="inv-search-icon" />
-              <input
-                type="text"
-                placeholder="Search Product Code, Name, Diameter, Color..."
-                className="inv-filter-search"
-                value={fgSearch}
-                onChange={e => setFgSearch(e.target.value)}
-              />
-            </div>
-
-            <button
-              type="button"
-              className={`inv-filter-toggle-btn ${showFgFilterPanel || fgCategoryFilter !== 'All' ? 'active' : ''}`}
-              onClick={() => setShowFgFilterPanel(!showFgFilterPanel)}
-              title="Toggle Product Filters"
-            >
-              <Filter size={14} />
-              <span>Filters</span>
-              {fgCategoryFilter !== 'All' && <span className="inv-filter-count-badge">1</span>}
-            </button>
-          </div>
-
-          {showFgFilterPanel && (
-            <div className="inv-expanded-filters-panel">
-              <div className="inv-filter-field">
-                <label>Product Category</label>
-                <select
-                  className="inv-filter-select"
-                  value={fgCategoryFilter}
-                  onChange={e => setFgCategoryFilter(e.target.value)}
-                >
-                  <option value="All">All Product Categories ({uniqueFgCategories.length})</option>
-                  {uniqueFgCategories.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              {fgCategoryFilter !== 'All' && (
-                <button
-                  type="button"
-                  className="inv-btn-reset-filters"
-                  onClick={() => setFgCategoryFilter('All')}
-                >
-                  Reset Filter
-                </button>
-              )}
-            </div>
-          )}
 
           {/* Change 9: Active Filters Bar */}
           {(fgSearch || fgCategoryFilter !== 'All') && (
@@ -1964,73 +2121,24 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
       {(activeTab === 'movements' && movementsSubView === 'history') && (
         <div className="inv-section-card">
-          <div className="inv-section-header">
-            <div className="inv-title-group">
-              <div className="inv-title-row-inner">
-                <h2 className="inv-section-title">Stock Movements &amp; Audit Ledger</h2>
-                <span className="inv-badge-blue">7 Recorded Transactions</span>
-              </div>
-              <p className="inv-section-subtitle">
-                Immutable perpetual audit log of all raw material inward, job work dispatches, GRN returns, sales reservations, and customer dispatches.
-              </p>
-            </div>
 
-            <button className="inv-btn-dark" onClick={() => exportToCsv('Inventory_Stock_Movements_Audit.csv', liveMovements)} style={{ cursor: 'pointer' }}>
-              <Download size={14} /> Export Audit Trail
-            </button>
-          </div>
-
-          {/* Filter Bar */}
-          <div className="inv-filter-bar">
-            <div className="inv-search-input-wrap">
-              <Search size={14} className="inv-search-icon" />
-              <input
-                type="text"
-                placeholder="Search Reference No (JW-..., DSP-..., SO-...), Item, Batch, Notes..."
-                className="inv-filter-search"
-                value={movementSearch}
-                onChange={e => setMovementSearch(e.target.value)}
-              />
-            </div>
-
-            <button
-              type="button"
-              className={`inv-filter-toggle-btn ${showMovFilterPanel || movementTypeFilter !== 'All' ? 'active' : ''}`}
-              onClick={() => setShowMovFilterPanel(!showMovFilterPanel)}
-              title="Toggle Transaction Type Filters"
-            >
-              <Filter size={14} />
-              <span>Filters</span>
-              {movementTypeFilter !== 'All' && <span className="inv-filter-count-badge">1</span>}
-            </button>
-          </div>
-
-          {showMovFilterPanel && (
-            <div className="inv-expanded-filters-panel">
-              <div className="inv-filter-field">
-                <label>Transaction Type</label>
-                <select
-                  className="inv-filter-select"
-                  value={movementTypeFilter}
-                  onChange={e => setMovementTypeFilter(e.target.value)}
-                >
-                  <option value="All">All Transaction Types</option>
-                  <option value="Receipt">Purchase Receipts</option>
-                  <option value="JWIssue">Job Work Issues</option>
-                  <option value="JWReturn">Job Work Returns</option>
-                  <option value="Production">FG Production</option>
-                  <option value="Dispatch">Customer Dispatches</option>
-                </select>
-              </div>
-              {movementTypeFilter !== 'All' && (
-                <button
-                  type="button"
-                  className="inv-btn-reset-filters"
-                  onClick={() => setMovementTypeFilter('All')}
-                >
-                  Reset Filter
+          {/* Active Filter Chips */}
+          {movementTypeFilter !== 'All' && (
+            <div className="inv-active-filters-bar" style={{ marginBottom: 12 }}>
+              <span style={{ color: '#64748b', fontWeight: 600 }}>Active Filters:</span>
+              <span className="inv-filter-chip">
+                Type: {movementTypeFilter}
+                <button type="button" className="inv-filter-chip-remove" onClick={() => setMovementTypeFilter('All')}>
+                  <X size={12} />
                 </button>
-              )}
+              </span>
+              <button
+                type="button"
+                className="inv-filter-clear-all-btn"
+                onClick={() => setMovementTypeFilter('All')}
+              >
+                Clear All
+              </button>
             </div>
           )}
 
@@ -2080,29 +2188,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       {(activeTab === 'traceability' || (activeTab === 'movements' && movementsSubView === 'traceability')) && (
         <div className="inv-trace-container">
           <div className="inv-section-card">
-            <div className="inv-section-header">
-              <div className="inv-title-group">
-                <div className="inv-title-row-inner">
-                  <span className="inv-trace-icon">🧬</span>
-                  <h2 className="inv-section-title">End-to-End Material Traceability Explorer</h2>
-                </div>
-                <p className="inv-section-subtitle">
-                  Complete forward &amp; backward batch audit from raw polymer granules to final customer dispatch.
-                </p>
-              </div>
-
-              <div className="inv-search-input-wrap" style={{ maxWidth: '300px' }}>
-                <Search size={14} className="inv-search-icon" />
-                <input
-                  type="text"
-                  placeholder="Enter Batch/JW/SO ID..."
-                  className="inv-filter-search"
-                  value={traceSearch}
-                  onChange={e => setTraceSearch(e.target.value)}
-                />
-              </div>
-            </div>
-
             {/* Fast Trace Presets */}
             {liveJobWorks.length > 0 ? (
               (() => {
@@ -2258,87 +2343,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       {/* ── TAB: Quality Control (QC) Register & 24h SLA (Change 5) ── */}
       {activeTab === 'qc' && (
         <div className="inv-section-card">
-          <div className="inv-section-header">
-            <div className="inv-title-group">
-              <div className="inv-title-row-inner">
-                <h2 className="inv-section-title">Raw Material Quality Control (QC) Register</h2>
-                <span className="inv-badge-blue">{filteredQcChecks.length} Records</span>
-                {overdueQcChecks.length > 0 && (
-                  <span style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: 700 }}>
-                    ⚠️ {overdueQcChecks.length} SLA Overdue
-                  </span>
-                )}
-              </div>
-              <p className="inv-section-subtitle">
-                Mandatory 24-hour inbound material inspection workflow: Pending evaluation → Inspector Pass/Fail → Plant Manager Approval.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button 
-                type="button" 
-                className="inv-btn-ghost"
-                onClick={() => exportToCsv('RM_Quality_Control_Register.csv', filteredQcChecks)}
-              >
-                <Download size={14} /> Export CSV
-              </button>
-            </div>
-          </div>
-
-          {/* Filter Bar */}
-          <div className="inv-filter-bar">
-            <div className="inv-search-input-wrap">
-              <Search size={14} className="inv-search-icon" />
-              <input
-                type="text"
-                placeholder="Search by GRN #, Challan #, Supplier, Material, Batch #, Inspector..."
-                className="inv-filter-search"
-                value={qcSearch}
-                onChange={e => setQcSearch(e.target.value)}
-              />
-            </div>
-
-            <button
-              type="button"
-              className={`inv-filter-toggle-btn ${showQcFilterPanel || qcStatusFilter !== 'All' ? 'active' : ''}`}
-              onClick={() => setShowQcFilterPanel(!showQcFilterPanel)}
-              title="Toggle QC Status Filters"
-            >
-              <Filter size={14} />
-              <span>Filters</span>
-              {qcStatusFilter !== 'All' && <span className="inv-filter-count-badge">1</span>}
-            </button>
-          </div>
-
-          {showQcFilterPanel && (
-            <div className="inv-expanded-filters-panel">
-              <div className="inv-filter-field">
-                <label>QC Status</label>
-                <select
-                  className="inv-filter-select"
-                  value={qcStatusFilter}
-                  onChange={e => setQcStatusFilter(e.target.value)}
-                >
-                  <option value="All">All QC Statuses ({liveQcChecks.length})</option>
-                  <option value="PENDING">Pending Evaluation ({pendingQcChecks.length})</option>
-                  <option value="SENT_FOR_APPROVAL">Sent for Approval ({sentForApprovalQc.length})</option>
-                  <option value="APPROVED">Approved ({approvedQcChecks.length})</option>
-                  <option value="OVERDUE">⚠️ SLA Overdue ({overdueQcChecks.length})</option>
-                  <option value="PASS">Result: PASS ({passedQcChecks.length})</option>
-                  <option value="FAIL">Result: FAIL ({failedQcChecks.length})</option>
-                </select>
-              </div>
-              {qcStatusFilter !== 'All' && (
-                <button
-                  type="button"
-                  className="inv-btn-reset-filters"
-                  onClick={() => setQcStatusFilter('All')}
-                >
-                  Reset Filter
-                </button>
-              )}
-            </div>
-          )}
 
           {/* Change 9: Active Filter Chips */}
           {(qcSearch || qcStatusFilter !== 'All') && (
@@ -2501,16 +2505,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       {/* ── TAB: Bags & Dual Stock (Fixed vs Loose) ── */}
       {activeTab === 'bags' && (
         <div className="inv-section-card">
-          <div className="inv-section-header">
-            <div className="inv-title-group">
-              <div className="inv-title-row-inner">
-                <h2 className="inv-section-title">Bag-Level Dual Stock Inventory</h2>
-                <span className="inv-badge-blue">{filteredBags.length} Bags Filtered</span>
-              </div>
-              <p className="inv-section-subtitle">
-                Individual bag tracking with sequential integer serials (1, 2, 3...) &amp; scale weights grouped matching the physical mill register.
-              </p>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <div className="inv-view-toggle-wrap">
@@ -2529,116 +2524,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                   <Scale size={13} /> Flat View
                 </button>
               </div>
-
-              {/* Item 15: Quick Bag / Batch / Barcode Lookup Tool */}
-              <button
-                type="button"
-                className="inv-btn-primary"
-                onClick={() => setShowQuickLookupModal(true)}
-                style={{
-                  background: '#0f172a',
-                  color: '#ffffff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  fontSize: '0.8rem',
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-                title="Fast Bag / Batch / Barcode Lookup Tool (Item 15)"
-              >
-                <Search size={14} /> Quick Bag Lookup
-              </button>
-
-              {/* Change 7: Bulk Sticker Print Button */}
-              <button 
-                type="button"
-                className="inv-btn-primary"
-                onClick={() => printMultipleBagStickers(filteredBags)}
-                style={{ background: '#2563eb', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                title="Print Barcode Stickers (100mm x 75mm) for all filtered bags"
-              >
-                <Printer size={14} /> Print Stickers ({filteredBags.length})
-              </button>
-
-              {/* Item 14: Collapsible Filter Toggle */}
-              <button
-                type="button"
-                className="inv-btn-ghost"
-                onClick={() => setShowBagFilters(prev => !prev)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: showBagFilters ? '#eff6ff' : '#ffffff',
-                  color: showBagFilters ? '#2563eb' : '#475569',
-                  borderColor: showBagFilters ? '#93c5fd' : '#cbd5e1',
-                  fontWeight: 600,
-                  fontSize: '0.8rem'
-                }}
-                title="Toggle search and filters in Bag Serials view"
-              >
-                <Filter size={13} />
-                {showBagFilters ? 'Hide Filters' : 'Show Filters'}
-                {(bagSearch || bagStockTypeFilter !== 'All' || bagLocationFilter !== 'All') && (
-                  <span style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: '50%',
-                    background: '#2563eb',
-                    display: 'inline-block'
-                  }} />
-                )}
-              </button>
-
-              <button 
-                type="button"
-                className="inv-btn-ghost"
-                onClick={() => exportToCsv('Bags_Dual_Stock_Register.csv', filteredBags)}
-              >
-                <Download size={14} /> Export CSV
-              </button>
             </div>
-          </div>
-
-          {/* Collapsible Filter Bar & Variant Summaries (Item 14) */}
-          {showBagFilters && (
-            <>
-          <div className="inv-filter-bar">
-            <div className="inv-search-input-wrap">
-              <Search size={14} className="inv-search-icon" />
-              <input
-                type="text"
-                placeholder="Search by Bag # (e.g. 1, 2), Slip #, JW #, Quality, Form, Size, Location..."
-                className="inv-filter-search"
-                value={bagSearch}
-                onChange={(e) => setBagSearch(e.target.value)}
-              />
-            </div>
-
-            <select
-              className="inv-filter-select"
-              value={bagStockTypeFilter}
-              onChange={(e) => setBagStockTypeFilter(e.target.value)}
-            >
-              <option value="All">All Types ({liveBags.length})</option>
-              <option value="FIXED">Fixed Stock (50kg std)</option>
-              <option value="LOOSE">Loose Stock (Cut / Odd)</option>
-            </select>
-
-            <select
-              className="inv-filter-select"
-              value={bagLocationFilter}
-              onChange={(e) => setBagLocationFilter(e.target.value)}
-            >
-              <option value="All">All Godowns</option>
-              {uniqueBagLocations.map(loc => (
-                <option key={loc} value={loc}>{loc}</option>
-              ))}
-            </select>
           </div>
 
           {/* Change 9: Active Filters Bar */}
@@ -2681,69 +2567,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 Clear All
               </button>
             </div>
-          )}
-
-          {/* Aggregated Variant Summary Cards */}
-          {(() => {
-            const variantMap = {};
-            filteredBags.forEach(b => {
-              const key = `${b.quality || 'Anchor'} ${b.form || 'Hank'} ${b.size || ''}`.trim() || 'General';
-              if (!variantMap[key]) {
-                variantMap[key] = {
-                  name: key,
-                  productName: b.productName || 'Twine',
-                  fixedBags: 0,
-                  fixedKg: 0,
-                  looseBags: 0,
-                  looseKg: 0,
-                  totalKg: 0
-                };
-              }
-              const wt = Number(b.actualWeightKg) || Number(b.standardWeightKg) || 0;
-              if (b.stockType === 'FIXED') {
-                variantMap[key].fixedBags += 1;
-                variantMap[key].fixedKg += wt;
-              } else {
-                variantMap[key].looseBags += 1;
-                variantMap[key].looseKg += wt;
-              }
-              variantMap[key].totalKg += wt;
-            });
-            const variants = Object.values(variantMap);
-            if (variants.length === 0) return null;
-
-            return (
-              <div style={{ margin: '2px 0 6px 0' }}>
-                <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Stock Summary by Quality, Form &amp; Size Variant
-                </div>
-                <div className="inv-bag-variant-grid">
-                  {variants.map(v => (
-                    <div key={v.name} className="inv-bag-variant-card">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.85rem' }}>{v.name}</span>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: '10px' }}>
-                          {v.fixedBags + v.looseBags} Bags
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', fontSize: '0.76rem', alignItems: 'center' }}>
-                        <span style={{ color: '#16a34a', fontWeight: 600 }}>
-                          {v.fixedBags} Fixed ({v.fixedKg.toFixed(1)} KG)
-                        </span>
-                        <span style={{ color: '#d97706', fontWeight: 600 }}>
-                          {v.looseBags} Loose ({v.looseKg.toFixed(1)} KG)
-                        </span>
-                        <span style={{ color: '#0f172a', fontWeight: 700, borderLeft: '1px solid #e2e8f0', paddingLeft: '8px' }}>
-                          {v.totalKg.toFixed(1)} KG Total
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-            </>
           )}
 
           {/* ─────────────────────────────────────────────────────────── */}

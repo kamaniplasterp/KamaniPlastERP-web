@@ -52,7 +52,10 @@ export default function SearchableSelect({
 
   // Find currently selected option
   const selectedOption = useMemo(() => {
-    const strVal = String(value ?? '');
+    const rawVal = typeof value === 'object' && value !== null
+      ? (value.value || value.target?.value || value.label || '')
+      : value;
+    const strVal = String(rawVal ?? '');
     return normalizedOptions.find(o => o.value === strVal || o.label === strVal);
   }, [value, normalizedOptions]);
 
@@ -98,8 +101,8 @@ export default function SearchableSelect({
 
   const handleSelect = (optValue) => {
     if (onChange) {
-      // Send standard event-like object as first arg, and raw value as second arg
-      onChange({ target: { value: optValue, name: name || id } }, optValue);
+      // Pass raw value as primary argument, and event-like object as second arg for full compatibility
+      onChange(optValue, { target: { value: optValue, name: name || id } });
     }
     setIsOpen(false);
   };
@@ -107,7 +110,7 @@ export default function SearchableSelect({
   const handleClear = (e) => {
     e.stopPropagation();
     if (onChange) {
-      onChange({ target: { value: '', name: name || id } }, '');
+      onChange('', { target: { value: '', name: name || id } });
     }
   };
 
@@ -141,7 +144,9 @@ export default function SearchableSelect({
 
   const displayLabel = selectedOption
     ? selectedOption.label
-    : (value ? String(value) : '');
+    : (typeof value === 'object' && value !== null 
+        ? (value.label || value.value || value.target?.value || '') 
+        : (value ? String(value) : ''));
 
   const hasExactMatch = filteredOptions.some(
     o => o.label.toLowerCase() === searchQuery.trim().toLowerCase() ||

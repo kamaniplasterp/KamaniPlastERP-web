@@ -16,16 +16,36 @@ import { addLocation } from './locations.api';
 import { logAuditEvent } from './audit.api';
 
 /**
+ * Helper to safely extract string value from potential object/event wrapper
+ */
+function sanitizeFieldString(val, fallback = '') {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'object') {
+    return val.target?.value ?? val.value ?? val.label ?? fallback;
+  }
+  return String(val);
+}
+
+/**
  * Subscribe to real-time vendors collection with optional limit
  */
 export function subscribeVendors(callback, limitCount = 100) {
   if (!db) return () => {};
   const q = query(collection(db, 'vendors'), limit(limitCount));
   return onSnapshot(q, (snapshot) => {
-    const list = snapshot.docs.map(docSnap => ({
-      id: docSnap.id,
-      ...docSnap.data()
-    }));
+    const list = snapshot.docs.map(docSnap => {
+      const data = docSnap.data() || {};
+      return {
+        id: docSnap.id,
+        ...data,
+        name: sanitizeFieldString(data.name, 'Vendor'),
+        processBadge: sanitizeFieldString(data.processBadge, 'Job Work Processor'),
+        phone: sanitizeFieldString(data.phone, '-'),
+        location: sanitizeFieldString(data.location, '-'),
+        gst: sanitizeFieldString(data.gst, ''),
+        rate: typeof data.rate === 'object' && data.rate !== null ? Number(data.rate.target?.value || 17.5) : (Number(data.rate) || 17.5)
+      };
+    });
     callback(list);
   }, (error) => {
     console.error('Error fetching vendors:', error);
@@ -56,23 +76,31 @@ export function subscribeBuyers(callback, limitCount = 100) {
  */
 export async function addVendor(vendorData) {
   if (!db) throw new Error('Firestore not initialized');
-  const ref = await addDoc(collection(db, 'vendors'), {
+  const cleanData = {
     ...vendorData,
+    name: sanitizeFieldString(vendorData.name, 'Vendor').trim(),
+    processBadge: sanitizeFieldString(vendorData.processBadge, 'Job Work Processor').trim(),
+    phone: sanitizeFieldString(vendorData.phone, '').trim(),
+    location: sanitizeFieldString(vendorData.location, '').trim(),
+    gst: sanitizeFieldString(vendorData.gst, '').trim(),
+    rate: typeof vendorData.rate === 'object' && vendorData.rate !== null ? Number(vendorData.rate.target?.value || 17.5) : (Number(vendorData.rate) || 17.5),
     createdAt: serverTimestamp()
-  });
+  };
+
+  const ref = await addDoc(collection(db, 'vendors'), cleanData);
 
   // Auto-create Godown location for this Job Worker / Vendor
   let createdLocationId = null;
   try {
-    const cleanName = (vendorData.name || 'Job Worker').trim();
+    const cleanName = cleanData.name || 'Job Worker';
     const slug = cleanName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
     createdLocationId = await addLocation({
       locationCode: `LOC-${slug || Math.floor(100 + Math.random() * 900)}`,
       name: `${cleanName} (Job Worker)`,
       type: 'JOB_WORKER',
-      address: vendorData.location || vendorData.address || 'Outside Job Worker Unit',
-      contactPerson: vendorData.contactPerson || vendorData.phone || '',
-      phone: vendorData.phone || '',
+      address: cleanData.location || cleanData.address || 'Outside Job Worker Unit',
+      contactPerson: cleanData.contactPerson || cleanData.phone || '',
+      phone: cleanData.phone || '',
       vendorId: ref.id,
       vendorName: cleanName,
       capacityKg: 50000,
@@ -85,9 +113,9 @@ export async function addVendor(vendorData) {
   logAuditEvent({
     category: 'MASTER_DATA',
     action: 'VENDOR_CREATED',
-    summary: `Registered vendor "${vendorData.name}" (${vendorData.location || 'Rajkot'}) with rate ₹${vendorData.rate || 17.5}/KG`,
-    targetId: vendorData.name || ref.id,
-    details: vendorData
+    summary: `Registered vendor "${cleanData.name}" (${cleanData.location || 'Rajkot'}) with rate ₹${cleanData.rate}/KG`,
+    targetId: cleanData.name || ref.id,
+    details: cleanData
   });
 
   return { id: ref.id, locationId: createdLocationId };
@@ -98,18 +126,26 @@ export async function addVendor(vendorData) {
  */
 export async function updateVendor(id, vendorData) {
   if (!db) throw new Error('Firestore not initialized');
-  const vendorRef = doc(db, 'vendors', id);
-  await updateDoc(vendorRef, {
+  const cleanData = {
     ...vendorData,
+    name: sanitizeFieldString(vendorData.name, 'Vendor').trim(),
+    processBadge: sanitizeFieldString(vendorData.processBadge, 'Job Work Processor').trim(),
+    phone: sanitizeFieldString(vendorData.phone, '').trim(),
+    location: sanitizeFieldString(vendorData.location, '').trim(),
+    gst: sanitizeFieldString(vendorData.gst, '').trim(),
+    rate: typeof vendorData.rate === 'object' && vendorData.rate !== null ? Number(vendorData.rate.target?.value || 17.5) : (Number(vendorData.rate) || 17.5),
     updatedAt: serverTimestamp()
-  });
+  };
+
+  const vendorRef = doc(db, 'vendors', id);
+  await updateDoc(vendorRef, cleanData);
 
   logAuditEvent({
     category: 'MASTER_DATA',
     action: 'VENDOR_UPDATED',
-    summary: `Updated vendor "${vendorData.name || id}" details`,
-    targetId: vendorData.name || id,
-    details: vendorData
+    summary: `Updated vendor "${cleanData.name || id}" details`,
+    targetId: cleanData.name || id,
+    details: cleanData
   });
 }
 

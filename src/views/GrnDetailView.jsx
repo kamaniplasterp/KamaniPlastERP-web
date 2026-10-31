@@ -19,6 +19,7 @@ import {
   Clock
 } from 'lucide-react';
 import { printGRN } from '../utils/printDocument';
+import PageHeader from '../components/PageHeader';
 import '../styles/JobWorkHub.css';
 
 export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModal }) {
@@ -26,7 +27,18 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModa
 
   const grossWeight = Number(inward.grossWeight || 0);
   const billedWeight = Number(inward.challanWeight || 0);
-  const tareWeight = Number(inward.articleWeight || 0);
+  const tareWeight = Number(
+    inward.tareVarianceKg !== undefined
+      ? inward.tareVarianceKg
+      : (inward.varianceKg !== undefined
+          ? inward.varianceKg
+          : (inward.articleWeight !== undefined
+              ? inward.articleWeight
+              : (inward.tareDeduct !== undefined
+                  ? inward.tareDeduct
+                  : (grossWeight > 0 && netWeight > 0 ? Math.max(0, grossWeight - netWeight) : 0))))
+  );
+  const tareLimitKg = Number(inward.varianceThresholdKg || 50);
   const netWeight = Number(inward.netWeight || 0);
   const bagCount = Number(inward.bagCount ?? inward.noOfArticles ?? 0);
   const bagStockKg = Number(inward.bagStockKg ?? netWeight);
@@ -34,8 +46,14 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModa
   const rate = Number(inward.rate || 0);
   const totalValuation = Math.round(netWeight * rate);
 
-  // Check if billed weight is more than gross weight
+  // Check if tare variance exceeds allowable limit or billed weight exceeds gross weight
   const isBilledExceedsGross = billedWeight > 0 && billedWeight > grossWeight;
+  const isTareVarianceExceeded = Boolean(
+    inward.isTareVarianceExceeded ||
+    (tareWeight > 0 && tareWeight > tareLimitKg) ||
+    inward.isShortDelivery ||
+    isBilledExceedsGross
+  );
   const weightDiff = (billedWeight - grossWeight).toFixed(2);
   const lamination = inward.laminationType || (inward.isLaminated ? 'Laminated' : 'Non-Laminated');
 
@@ -88,60 +106,36 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModa
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '8px 16px 40px' }}>
-      {/* ── Top Bar with Back Button & Print ── */}
-      <div 
-        style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between', 
-          marginBottom: '16px' 
-        }}
-      >
-        <button
-          type="button"
-          onClick={onBack}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '8px',
-            padding: '8px 14px',
-            fontSize: '0.82rem',
-            fontWeight: 600,
-            color: '#334155',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease'
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
-        >
-          <ArrowLeft size={16} />
-          <span>Back to Inward Register</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handlePrintReceipt}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: '#0f172a',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '8px',
-            padding: '8px 16px',
-            fontSize: '0.82rem',
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-        >
-          <Printer size={15} />
-          <span>Print GRN Receipt</span>
-        </button>
-      </div>
+      {/* ── Standard Page Header with Breadcrumbs ── */}
+      <PageHeader
+        breadcrumbs={[
+          { label: 'Inventory & Stock', route: '/inventory' },
+          { label: 'Raw Materials & GRN', route: '/inventory?tab=rm' },
+          { label: inward.grnNo || 'GRN Details' }
+        ]}
+        title={inward.grnNo || 'GRN Inward'}
+        tooltip={`Supplier: ${inward.supplierName || '—'} • Challan: #${inward.challanNo || '—'} • Date: ${inward.date || '—'}`}
+        actions={
+          <>
+            <button
+              type="button"
+              className="header-btn header-btn-secondary"
+              onClick={onBack}
+            >
+              <ArrowLeft size={14} />
+              <span>Back to Inward Register</span>
+            </button>
+            <button
+              type="button"
+              className="header-btn header-btn-primary"
+              onClick={handlePrintReceipt}
+            >
+              <Printer size={14} />
+              <span>Print GRN Receipt</span>
+            </button>
+          </>
+        }
+      />
 
       {/* ── Main Details Card ── */}
       <div 
@@ -172,8 +166,8 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModa
                 {inward.grnNo || 'GRN INWARD'}
               </h1>
 
-              {/* Batch Number badge - highlighted in RED if billed weight > gross weight */}
-              {isBilledExceedsGross ? (
+              {/* Batch Number badge - highlighted in RED if tare variance exceeds limit or billed weight > gross weight */}
+              {isTareVarianceExceeded ? (
                 <span 
                   style={{ 
                     background: '#fef2f2', 
@@ -187,7 +181,9 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModa
                     alignItems: 'center',
                     gap: '5px'
                   }}
-                  title={`Billed Weight (${billedWeight.toLocaleString()} KG) exceeds Gross Weight (${grossWeight.toLocaleString()} KG)`}
+                  title={isBilledExceedsGross 
+                    ? `Billed Weight (${billedWeight.toLocaleString()} KG) exceeds Gross Weight (${grossWeight.toLocaleString()} KG)`
+                    : `⚠️ Tare Variance Exceeded: ${tareWeight.toLocaleString()} KG exceeds allowable limit (${tareLimitKg} KG)`}
                 >
                   <AlertTriangle size={13} /> {inward.batchNumber || 'NO BATCH'}
                 </span>
@@ -378,16 +374,23 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModa
           </div>
 
           {/* Tare Deduction */}
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ 
+            background: tareWeight > tareLimitKg ? '#fff1f2' : '#ffffff', 
+            border: tareWeight > tareLimitKg ? '1px solid #fecdd3' : '1px solid #e2e8f0', 
+            borderRadius: '10px', 
+            padding: '14px' 
+          }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>TARE DEDUCTION</span>
-              <Package size={15} style={{ color: '#dc2626' }} />
+              <span style={{ fontSize: '0.7rem', color: tareWeight > tareLimitKg ? '#be123c' : '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>
+                TARE DEDUCTION {tareWeight > tareLimitKg && '(EXCEEDED)'}
+              </span>
+              <Package size={15} style={{ color: tareWeight > tareLimitKg ? '#e11d48' : '#dc2626' }} />
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#dc2626', marginTop: '6px' }}>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: tareWeight > tareLimitKg ? '#e11d48' : '#dc2626', marginTop: '6px' }}>
               -{tareWeight.toLocaleString()} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>KG</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>
-              {bagCount} {inward.articleType || 'Bags'} auto-tare
+            <div style={{ fontSize: '0.7rem', color: tareWeight > tareLimitKg ? '#be123c' : '#94a3b8', marginTop: '2px' }}>
+              {bagCount} {inward.articleType || 'Bags'} auto-tare {tareWeight > tareLimitKg && `• Max: ${tareLimitKg} KG`}
             </div>
           </div>
 

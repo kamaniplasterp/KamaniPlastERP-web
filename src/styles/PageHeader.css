@@ -1,0 +1,283 @@
+/* Standardized PageHeader CSS (Kamani Plastic ERP) */
+
+.standard-page-header {
+  margin-bottom: 14px;
+  padding: 4px 0 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* ── Breadcrumb Navigation ── */
+.header-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.77rem;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.breadcrumb-item-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breadcrumb-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: #64748b;
+  font-size: 0.77rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color 0.15s ease;
+  text-decoration: none;
+}
+
+.breadcrumb-link:hover {
+  color: #0f172a;
+}
+
+.breadcrumb-separator {
+  color: #cbd5e1;
+  font-weight: 400;
+  user-select: none;
+  font-size: 0.74rem;
+}
+
+.breadcrumb-current {
+  color: #0f172a;
+  font-weight: 600;
+  font-size: 0.77rem;
+}
+
+/* ── Single Horizontal Row: Title on Left, Actions on Right ── */
+.header-title-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.header-page-title {
+  margin: 0;
+  font-size: 1.28rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.018em;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.header-badge-pill,
+.header-badge-blue {
+  display: none !important;
+}
+
+.old-header-badge-unused {
+  display: inline-flex;
+  align-items: center;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #c2410c;
+  font-size: 0.71rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.header-badge-blue {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0284c7;
+  font-size: 0.71rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+/* ── Actions & Toolbar Group on the Right ── */
+.header-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+/* ── Integrated Header Search Bar ── */
+.header-search-bar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0 10px;
+  height: 34px;
+  min-width: 200px;
+  max-width: 320px;
+  flex: 1 1 auto;
+  transition: all 0.15s ease;
+}
+
+.header-search-bar:focus-within {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+}
+
+.header-search-icon {
+  color: #94a3b8;
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+
+.header-search-input {
+  border: none;
+  background: transparent;
+  font-size: 0.8rem;
+  color: #0f172a;
+  outline: none;
+  width: 100%;
+  padding: 0;
+}
+
+.header-search-input::placeholder {
+  color: #94a3b8;
+}
+
+.header-search-clear {
+  background: transparent;
+  border: none;
+  padding: 2px;
+  margin-left: 4px;
+  cursor: pointer;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.header-search-clear:hover {
+  color: #475569;
+}
+
+/* ── Standardized Button Classes ── */
+.header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.81rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  height: 34px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.header-btn-icon {
+  flex-shrink: 0;
+}
+
+.header-btn-label {
+  white-space: nowrap;
+}
+
+.header-btn-primary {
+  background: #2563eb;
+  border: 1px solid #2563eb;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.16);
+}
+
+.header-btn-primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.header-btn-secondary {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+.header-btn-secondary:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.header-btn-secondary.active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.header-btn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.header-children-wrap {
+  margin-top: 10px;
+}
+
+/* ── Automatic Icon-Only Collapse on Limited Horizontal Space ── */
+@media (max-width: 1240px) {
+  .header-btn .header-btn-label {
+    display: none;
+  }
+  .header-btn {
+    padding: 7px 9px;
+  }
+  .adv-filter-btn-text {
+    display: none;
+  }
+  .header-search-bar {
+    min-width: 140px;
+  }
+}
+
+@media (max-width: 900px) {
+  .header-title-actions-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .header-actions-group {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}

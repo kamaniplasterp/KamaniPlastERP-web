@@ -35,7 +35,13 @@
   letter-spacing: -0.02em;
   margin: 0;
 }
-.jw-badge-orange {
+.jw-badge-orange,
+.jw-badge-blue,
+.jw-tab-badge-orange {
+  display: none !important;
+}
+
+.old-jw-badge-orange {
   background: #fff7ed;
   border: 1px solid #fed7aa;
   color: #c2410c;
