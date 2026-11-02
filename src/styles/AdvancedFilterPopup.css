@@ -23,6 +23,33 @@
   white-space: nowrap;
 }
 
+.adv-filter-trigger.header-btn-icon-only {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.adv-filter-trigger.header-btn-icon-only .adv-filter-count-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px #ffffff;
+}
+
 .adv-filter-trigger:hover {
   background: #f8fafc;
   border-color: #cbd5e1;

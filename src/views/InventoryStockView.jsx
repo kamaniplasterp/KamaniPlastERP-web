@@ -1007,11 +1007,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       onReset: () => setFgCategoryFilter('All')
     };
   } else if (activeTab === 'bags') {
-    invSearchProps = {
-      value: bagSearch,
-      onChange: setBagSearch,
-      placeholder: 'Search Bag No, Batch, Material, Location...'
-    };
+    // Only one search action needed in Bags view: 'Scan / Find Bag' primary action button
+    invSearchProps = null;
     invFilterProps = {
       categories: bagFilterCategories,
       activeFilters: { stockType: bagStockTypeFilter, location: bagLocationFilter },

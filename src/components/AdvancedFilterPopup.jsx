@@ -181,21 +181,20 @@ export default function AdvancedFilterPopup({
 
   return (
     <div className={`adv-filter-container ${className}`} ref={containerRef}>
-      {/* ── Trigger Button ── */}
+      {/* ── Trigger Button (Icon-Only) ── */}
       <button
         type="button"
-        className={`header-btn header-btn-secondary adv-filter-trigger ${isOpen ? 'active' : ''} ${activeCount > 0 ? 'has-active' : ''}`}
+        className={`header-btn header-btn-secondary header-btn-icon-only adv-filter-trigger ${isOpen ? 'active' : ''} ${activeCount > 0 ? 'has-active' : ''}`}
         onClick={() => setIsOpen(prev => !prev)}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         title={activeCount > 0 ? `Filters (${activeCount} active)` : buttonLabel}
+        aria-label={activeCount > 0 ? `Filters (${activeCount} active)` : buttonLabel}
       >
         <Filter size={14} className="adv-filter-icon" />
-        <span className="adv-filter-btn-text">{buttonLabel}</span>
         {activeCount > 0 && (
           <span className="adv-filter-count-badge">{activeCount}</span>
         )}
-        {isOpen ? <ChevronUp size={13} className="adv-filter-chevron" /> : <ChevronDown size={13} className="adv-filter-chevron" />}
       </button>
 
       {/* ── Floating 2-Column Popup ── */}

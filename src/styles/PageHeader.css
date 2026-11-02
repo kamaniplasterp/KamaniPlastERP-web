@@ -121,37 +121,77 @@
   min-width: 0;
 }
 
-/* ── Integrated Header Search Bar ── */
-.header-search-bar {
+/* ── Integrated Header Search Button & Floating Popover ── */
+.header-search-container {
   position: relative;
   display: inline-flex;
   align-items: center;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0 10px;
-  height: 34px;
-  min-width: 200px;
-  max-width: 320px;
-  flex: 1 1 auto;
-  transition: all 0.15s ease;
 }
 
-.header-search-bar:focus-within {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+.header-search-btn {
+  flex-shrink: 0;
+}
+
+.header-search-btn.has-search-query {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.header-search-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.header-search-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 290px;
+  max-width: calc(100vw - 32px);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  gap: 8px;
+  z-index: 999;
+  animation: searchPopIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes searchPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .header-search-icon {
   color: #94a3b8;
   flex-shrink: 0;
-  margin-right: 6px;
 }
 
 .header-search-input {
   border: none;
   background: transparent;
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   color: #0f172a;
   outline: none;
   width: 100%;
@@ -162,20 +202,25 @@
   color: #94a3b8;
 }
 
-.header-search-clear {
+.header-search-clear,
+.header-search-close-btn {
   background: transparent;
   border: none;
-  padding: 2px;
-  margin-left: 4px;
+  padding: 3px;
   cursor: pointer;
   color: #94a3b8;
   display: flex;
   align-items: center;
+  justify-content: center;
   border-radius: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
-.header-search-clear:hover {
-  color: #475569;
+.header-search-clear:hover,
+.header-search-close-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
 }
 
 /* ── Standardized Button Classes ── */
@@ -194,6 +239,34 @@
   height: 34px;
   flex-shrink: 0;
   user-select: none;
+}
+
+.header-btn-icon-only {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  position: relative;
+}
+
+.header-btn-icon-only .header-btn-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px #ffffff;
 }
 
 .header-btn-icon {
@@ -255,7 +328,7 @@
 }
 
 /* ── Automatic Icon-Only Collapse on Limited Horizontal Space ── */
-@media (max-width: 1240px) {
+@media (max-width: 1360px) {
   .header-btn .header-btn-label {
     display: none;
   }
@@ -265,8 +338,13 @@
   .adv-filter-btn-text {
     display: none;
   }
-  .header-search-bar {
-    min-width: 140px;
+}
+
+@media (max-width: 600px) {
+  .header-search-popover {
+    left: auto;
+    right: 0;
+    width: 260px;
   }
 }
 

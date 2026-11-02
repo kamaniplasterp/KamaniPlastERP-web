@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
 import HeaderInfoTooltip from './HeaderInfoTooltip';
@@ -63,6 +63,44 @@ export default function PageHeader({
   className = ''
 }) {
   const navigate = useNavigate();
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchContainerRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // Automatically focus input when search popover opens
+  useEffect(() => {
+    if (isSearchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+      searchInputRef.current.select?.();
+    }
+  }, [isSearchOpen]);
+
+  // Click outside or press Escape to close search bar and revert to button
+  useEffect(() => {
+    if (!isSearchOpen) return;
+
+    function handleClickOutside(event) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setIsSearchOpen(false);
+      }
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        setIsSearchOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSearchOpen]);
 
   return (
     <header className={`standard-page-header ${className}`}>
@@ -106,29 +144,58 @@ export default function PageHeader({
 
         {/* Right Group: Search, Filter, Actions */}
         <div className="header-actions-group">
-          {/* Integrated Search Bar */}
+          {/* Integrated Search Button (Icon-Only) with Floating Search Bar Popover */}
           {searchProps && (
-            <div className="header-search-bar">
-              <Search size={14} className="header-search-icon" />
-              <input
-                type="text"
-                className="header-search-input"
-                placeholder={searchProps.placeholder || 'Search...'}
-                value={searchProps.value || ''}
-                onChange={e => searchProps.onChange(e.target.value)}
+            <div className="header-search-container" ref={searchContainerRef}>
+              <HeaderButton
+                icon={Search}
+                title={searchProps.value ? `Active search: "${searchProps.value}" (Click to edit)` : 'Search'}
+                variant="secondary"
+                active={Boolean(isSearchOpen || searchProps.value)}
+                className={`header-search-btn header-btn-icon-only ${searchProps.value ? 'has-search-query' : ''}`}
+                badge={searchProps.value ? 1 : undefined}
+                onClick={() => setIsSearchOpen(prev => !prev)}
               />
-              {searchProps.value && (
-                <button
-                  type="button"
-                  className="header-search-clear"
-                  onClick={() => {
-                    searchProps.onChange('');
-                    if (searchProps.onClear) searchProps.onClear();
-                  }}
-                  title="Clear search"
-                >
-                  <X size={12} />
-                </button>
+
+              {isSearchOpen && (
+                <div className="header-search-popover" role="dialog" aria-label="Search box">
+                  <Search size={14} className="header-search-icon" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    className="header-search-input"
+                    placeholder={searchProps.placeholder || 'Search...'}
+                    value={searchProps.value || ''}
+                    onChange={e => searchProps.onChange(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') setIsSearchOpen(false);
+                      if (e.key === 'Enter') setIsSearchOpen(false);
+                    }}
+                  />
+                  {searchProps.value && (
+                    <button
+                      type="button"
+                      className="header-search-clear"
+                      onClick={() => {
+                        searchProps.onChange('');
+                        if (searchProps.onClear) searchProps.onClear();
+                        searchInputRef.current?.focus();
+                      }}
+                      title="Clear search"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="header-search-close-btn"
+                    onClick={() => setIsSearchOpen(false)}
+                    title="Close search"
+                    aria-label="Close search"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
               )}
             </div>
           )}
