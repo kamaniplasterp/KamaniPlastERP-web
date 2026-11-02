@@ -1005,23 +1005,41 @@
   background: #1e293b;
 }
 
-/* ─── KPI Grid ─── */
+/* ─── KPI Grid - Always in One Single Horizontal Line ─── */
 .kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 22px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 16px;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.kpi-grid::-webkit-scrollbar {
+  height: 4px;
+}
+.kpi-grid::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
 }
 
 .kpi-card {
+  flex: 1 1 0;
+  min-width: 0;
   background: #ffffff;
   border: 1px solid #f1f5f9;
-  border-radius: 14px;
-  padding: 20px 22px;
+  border-radius: 12px;
+  padding: 12px 14px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
 }
 
 .kpi-card:hover {
@@ -1031,17 +1049,21 @@
 }
 
 .kpi-label {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 500;
   color: #64748b;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-value-row {
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 5px;
+  margin-bottom: 4px;
+  white-space: nowrap;
 }
 
 .kpi-value {
@@ -1929,10 +1951,6 @@
    RESPONSIVE BREAKPOINTS (Smartphones & Tablets)
    ============================================================ */
 @media (max-width: 1280px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   .lifecycle-stages {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -2029,11 +2047,6 @@
     justify-content: center;
   }
 
-  .kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-
   .lifecycle-stages {
     display: flex;
     overflow-x: auto;
@@ -2058,11 +2071,6 @@
 @media (max-width: 540px) {
   .erp-content {
     padding: 10px 12px 20px;
-  }
-
-  .kpi-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
   }
 
   .topnav-search {

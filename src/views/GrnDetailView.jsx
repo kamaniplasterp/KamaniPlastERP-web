@@ -327,81 +327,89 @@ export default function GrnDetailView({ inward, onBack, onUpdateQc, onOpenQcModa
           </div>
         )}
 
-        {/* ── 4 KPI Weight Cards Bar ── */}
+        {/* ── 4 KPI Weight Cards Bar - Always 1 Line ── */}
         <div 
           style={{ 
-            padding: '20px 24px', 
+            padding: '14px 20px', 
             background: '#fafbfc', 
             borderBottom: '1px solid #f1f5f9',
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-            gap: '12px' 
+            display: 'flex', 
+            flexDirection: 'row',
+            flexWrap: 'nowrap',
+            alignItems: 'stretch',
+            gap: '10px',
+            width: '100%',
+            overflowX: 'auto'
           }}
         >
           {/* Gross Scale Weight */}
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ flex: '1 1 0', minWidth: 0, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>SCALE GROSS WEIGHT</span>
-              <Scale size={15} style={{ color: '#2563eb' }} />
+              <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>SCALE GROSS WEIGHT</span>
+              <Scale size={14} style={{ color: '#2563eb', flexShrink: 0 }} />
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', marginTop: '6px' }}>
-              {grossWeight.toLocaleString()} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>KG</span>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0f172a', marginTop: '4px', whiteSpace: 'nowrap' }}>
+              {grossWeight.toLocaleString()} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>KG</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>Weighbridge gross</div>
+            <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '2px', whiteSpace: 'nowrap' }}>Weighbridge gross</div>
           </div>
 
           {/* Challan Billed Weight */}
           <div 
             style={{ 
+              flex: '1 1 0',
+              minWidth: 0,
               background: isBilledExceedsGross ? '#fef2f2' : '#ffffff', 
               border: isBilledExceedsGross ? '1px solid #fecaca' : '1px solid #e2e8f0', 
               borderRadius: '10px', 
-              padding: '14px' 
+              padding: '12px 14px' 
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.7rem', color: isBilledExceedsGross ? '#dc2626' : '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '0.68rem', color: isBilledExceedsGross ? '#dc2626' : '#64748b', fontWeight: 700, letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 CHALLAN BILLED WT
               </span>
-              <FileText size={15} style={{ color: isBilledExceedsGross ? '#dc2626' : '#64748b' }} />
+              <FileText size={14} style={{ color: isBilledExceedsGross ? '#dc2626' : '#64748b', flexShrink: 0 }} />
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: isBilledExceedsGross ? '#dc2626' : '#0f172a', marginTop: '6px' }}>
-              {billedWeight > 0 ? billedWeight.toLocaleString() : '—'} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isBilledExceedsGross ? '#dc2626' : '#64748b' }}>KG</span>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: isBilledExceedsGross ? '#dc2626' : '#0f172a', marginTop: '4px', whiteSpace: 'nowrap' }}>
+              {billedWeight > 0 ? billedWeight.toLocaleString() : '—'} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isBilledExceedsGross ? '#dc2626' : '#64748b' }}>KG</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: isBilledExceedsGross ? '#b91c1c' : '#94a3b8', marginTop: '2px' }}>
+            <div style={{ fontSize: '0.68rem', color: isBilledExceedsGross ? '#b91c1c' : '#94a3b8', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isBilledExceedsGross ? `+${weightDiff} KG over Gross` : 'Supplier invoice'}
             </div>
           </div>
 
           {/* Tare Deduction */}
           <div style={{ 
+            flex: '1 1 0',
+            minWidth: 0,
             background: tareWeight > tareLimitKg ? '#fff1f2' : '#ffffff', 
             border: tareWeight > tareLimitKg ? '1px solid #fecdd3' : '1px solid #e2e8f0', 
             borderRadius: '10px', 
-            padding: '14px' 
+            padding: '12px 14px' 
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.7rem', color: tareWeight > tareLimitKg ? '#be123c' : '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '0.68rem', color: tareWeight > tareLimitKg ? '#be123c' : '#64748b', fontWeight: 700, letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 TARE DEDUCTION {tareWeight > tareLimitKg && '(EXCEEDED)'}
               </span>
-              <Package size={15} style={{ color: tareWeight > tareLimitKg ? '#e11d48' : '#dc2626' }} />
+              <Package size={14} style={{ color: tareWeight > tareLimitKg ? '#e11d48' : '#dc2626', flexShrink: 0 }} />
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: tareWeight > tareLimitKg ? '#e11d48' : '#dc2626', marginTop: '6px' }}>
-              -{tareWeight.toLocaleString()} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b' }}>KG</span>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: tareWeight > tareLimitKg ? '#e11d48' : '#dc2626', marginTop: '4px', whiteSpace: 'nowrap' }}>
+              -{tareWeight.toLocaleString()} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b' }}>KG</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: tareWeight > tareLimitKg ? '#be123c' : '#94a3b8', marginTop: '2px' }}>
+            <div style={{ fontSize: '0.68rem', color: tareWeight > tareLimitKg ? '#be123c' : '#94a3b8', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {bagCount} {inward.articleType || 'Bags'} auto-tare {tareWeight > tareLimitKg && `• Max: ${tareLimitKg} KG`}
             </div>
           </div>
 
           {/* Net Scale Inward */}
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ flex: '1 1 0', minWidth: 0, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px 14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.7rem', color: '#166534', fontWeight: 700, letterSpacing: '0.04em' }}>SCALE NET INWARD</span>
-              <CheckCircle2 size={15} style={{ color: '#16a34a' }} />
+              <span style={{ fontSize: '0.68rem', color: '#166534', fontWeight: 700, letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>SCALE NET INWARD</span>
+              <CheckCircle2 size={14} style={{ color: '#16a34a', flexShrink: 0 }} />
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#15803d', marginTop: '6px' }}>
-              {netWeight.toLocaleString()} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#166534' }}>KG</span>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#15803d', marginTop: '4px', whiteSpace: 'nowrap' }}>
+              {netWeight.toLocaleString()} <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#166534' }}>KG</span>
             </div>
             <div style={{ fontSize: '0.7rem', color: '#15803d', marginTop: '2px' }}>Actual inward inventory</div>
           </div>
