@@ -4,7 +4,7 @@ import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
   Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck, MessageSquare,
   Shield, Check, X, Lock, Unlock, UserCheck, ShieldAlert, Activity, Eye, Copy, Filter, Clock,
-  Edit2, Trash2
+  Edit2, Trash2, UserPlus
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -57,6 +57,7 @@ import { exportToCsv } from '../utils/exportCsv';
 import AddVendorModal from '../modals/AddVendorModal';
 import AddCustomerModal from '../modals/AddCustomerModal';
 import JwValueMasterModal from '../modals/JwValueMasterModal';
+import CreateUserModal from '../modals/CreateUserModal';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
 import PageHeader, { HeaderButton } from '../components/PageHeader';
 import { showAlert, showConfirm } from '../context/CustomAlertContext';
@@ -133,6 +134,7 @@ export default function DirectorySettingsView() {
   const [selectedRateToEdit, setSelectedRateToEdit] = useState(null);
   const [showAddValueModal, setShowAddValueModal] = useState(false);
   const [selectedValueToEdit, setSelectedValueToEdit] = useState(null);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
   const [newRateForm, setNewRateForm] = useState({
     party: 'GALAXY.ENTERPRISE',
@@ -788,6 +790,26 @@ export default function DirectorySettingsView() {
               variant="primary"
               onClick={() => { setSelectedValueToEdit(null); setShowAddValueModal(true); }}
               title="Add Valuation Standard"
+            />
+          )}
+        </>
+      )}
+
+      {activeTab === 'rbac' && (
+        <>
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('RBAC_Users_List.csv', filteredUsers)}
+            title="Export Users List to CSV"
+          />
+          {isAdmin && (
+            <HeaderButton
+              icon={UserPlus}
+              label="Create User"
+              variant="primary"
+              onClick={() => setShowCreateUserModal(true)}
+              title="Create Employee / User Account"
             />
           )}
         </>
@@ -1613,22 +1635,6 @@ export default function DirectorySettingsView() {
       {/* ── TAB 8: Role-Based Access Control (RBAC) ── */}
       {activeTab === 'rbac' && isAdmin && (
         <>
-          <div className="ds-filter-row">
-            <div className="ds-search-wrap">
-              <Search className="ds-search-icon" size={15} />
-              <input
-                type="text"
-                placeholder="Search staff by name, email, or role..."
-                className="ds-search-input"
-                value={userSearch}
-                onChange={e => setUserSearch(e.target.value)}
-              />
-            </div>
-            <div className="ds-count-badge">
-              {filteredUsers.length} Users Registered
-            </div>
-          </div>
-
           <div className="ds-table-card">
             <div className="ds-table-wrap">
               <table className="ds-table">
@@ -2467,6 +2473,13 @@ export default function DirectorySettingsView() {
             setShowAddValueModal(false);
             setSelectedValueToEdit(null);
           }}
+        />
+      )}
+
+      {/* Create Employee / User Modal */}
+      {showCreateUserModal && (
+        <CreateUserModal
+          onClose={() => setShowCreateUserModal(false)}
         />
       )}
     </div>

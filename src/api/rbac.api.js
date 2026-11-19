@@ -2,6 +2,7 @@ import {
   collection,
   onSnapshot,
   doc,
+  getDoc,
   getDocs,
   where,
   updateDoc,
@@ -10,7 +11,9 @@ import {
   query,
   orderBy
 } from 'firebase/firestore';
-import { db } from '../firebase/firebase';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
+import { db, isFirebaseConfigured, firebaseConfig } from '../firebase/firebase';
 import { logAuditEvent } from './audit.api';
 
 /**
@@ -191,6 +194,132 @@ export async function updateUserAccess(userTarget, { role, assignedModules, stat
   });
 
   return updates;
+}
+
+/**
+ * Admin creates a new employee / user account with login credentials & permissions.
+ * Uses a temporary secondary Firebase App instance so the current Admin session is not signed out.
+ */
+export async function createEmployeeUser({
+  username,
+  email,
+  password,
+  displayName,
+  role = 'employee',
+  assignedModules = null,
+  status = 'ACTIVE'
+}) {
+  const cleanUsername = (username || '').trim().toLowerCase().replace(/^@+/, '');
+  const rawEmail = (email || '').trim().toLowerCase();
+  const cleanEmail = rawEmail || (cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@kamaniplast.com`);
+  const cleanDisplayName = (displayName || '').trim() || cleanUsername || 'Staff User';
+
+  if (!cleanUsername) {
+    throw new Error('Username is required.');
+  }
+  if (!password || password.length < 6) {
+    throw new Error('Password must be at least 6 characters long.');
+  }
+
+  // Check if username already exists in Firestore
+  if (db) {
+    try {
+      const uDocRef = doc(db, 'usernames', cleanUsername);
+      const uSnap = await getDoc(uDocRef);
+      if (uSnap.exists()) {
+        throw new Error(`Username "${cleanUsername}" is already taken. Please choose another username.`);
+      }
+    } catch (lookupErr) {
+      if (lookupErr.message?.includes('already taken')) throw lookupErr;
+      console.warn('Username uniqueness check warning:', lookupErr);
+    }
+  }
+
+  let uid = null;
+
+  if (isFirebaseConfigured && firebaseConfig?.apiKey) {
+    const secondaryAppName = `SecondaryAuth-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+      const userCred = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, password);
+      uid = userCred.user.uid;
+      if (cleanDisplayName) {
+        await updateProfile(userCred.user, { displayName: cleanDisplayName }).catch(() => {});
+      }
+      await signOut(secondaryAuth).catch(() => {});
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') {
+        throw new Error(`The email "${cleanEmail}" is already registered. Please provide another email or username.`);
+      } else if (err.code === 'auth/weak-password') {
+        throw new Error('Password should be at least 6 characters.');
+      } else if (err.code === 'auth/invalid-email') {
+        throw new Error('Please enter a valid email address.');
+      }
+      throw err;
+    } finally {
+      await deleteApp(secondaryApp).catch(() => {});
+    }
+  } else {
+    // Local / Offline fallback UID
+    uid = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  }
+
+  const validRoles = ['admin', 'accountant', 'employee'];
+  const finalRole = validRoles.includes(role) ? role : 'employee';
+  const finalModules = finalRole === 'admin'
+    ? ERP_MODULES.map(m => m.id)
+    : (Array.isArray(assignedModules) && assignedModules.length > 0
+        ? assignedModules
+        : (ROLE_DEFAULT_MODULES[finalRole] || ROLE_DEFAULT_MODULES.employee));
+
+  if (db && uid) {
+    const userRef = doc(db, 'users', uid);
+    await setDoc(userRef, {
+      uid: uid,
+      email: cleanEmail,
+      username: cleanUsername,
+      displayName: cleanDisplayName,
+      role: finalRole,
+      assignedModules: finalModules,
+      status: status || 'ACTIVE',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    if (cleanUsername) {
+      await setDoc(doc(db, 'usernames', cleanUsername), {
+        email: cleanEmail,
+        uid: uid,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+  }
+
+  await logAuditEvent({
+    category: 'SECURITY',
+    action: 'USER_ACCOUNT_CREATED',
+    summary: `Admin created new ${finalRole.toUpperCase()} account for "${cleanDisplayName}" (${cleanUsername})`,
+    targetId: cleanEmail,
+    details: {
+      username: cleanUsername,
+      email: cleanEmail,
+      displayName: cleanDisplayName,
+      role: finalRole,
+      assignedModules: finalModules,
+      uid
+    }
+  });
+
+  return {
+    uid,
+    username: cleanUsername,
+    email: cleanEmail,
+    displayName: cleanDisplayName,
+    role: finalRole,
+    assignedModules: finalModules
+  };
 }
 
 

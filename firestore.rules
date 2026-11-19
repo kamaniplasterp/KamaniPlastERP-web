@@ -9,6 +9,11 @@ service cloud.firestore {
 
     // ── 1. User & Username Registry ──
     // Allow public read for login username-to-email resolution, but only authenticated writes
+    match /usernames/{username} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
     match /usernames/{document=**} {
       allow read: if true;
       allow write: if isAuthenticated();

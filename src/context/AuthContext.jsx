@@ -142,39 +142,52 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   /**
-   * Resolves a login input (which could be either a username or an email address)
-   * into a valid registered email address.
+   * Resolves a login input (username or email address) live from the Firestore database.
    */
   const resolveEmail = async (input) => {
     const trimmed = (input || '').trim();
     if (!trimmed) return '';
-    if (trimmed.includes('@')) return trimmed.toLowerCase();
 
-    const usernameLower = trimmed.toLowerCase();
-    
-    // 1. Check Firestore `usernames/{usernameLower}` mapping collection
+    // Direct email address
+    if (trimmed.includes('@') && trimmed.includes('.')) {
+      return trimmed.toLowerCase();
+    }
+
+    const cleanUsername = trimmed.replace(/^@+/, '').toLowerCase();
+
+    // 1. Fetch live from Firestore DB `usernames/{cleanUsername}`
     if (db) {
       try {
-        const uDocRef = doc(db, 'usernames', usernameLower);
+        const uDocRef = doc(db, 'usernames', cleanUsername);
         const uSnap = await getDoc(uDocRef);
         if (uSnap.exists() && uSnap.data()?.email) {
           return uSnap.data().email.toLowerCase().trim();
         }
+      } catch (err) {
+        if (err.code === 'permission-denied') {
+          console.error('Firestore Security Rule blocks unauthenticated read of usernames collection:', err);
+          throw new Error('FIRESTORE_RULES_PERMISSION_DENIED');
+        }
+        console.warn('Error fetching username from Firestore usernames collection:', err);
+      }
 
-        // 2. Query Firestore `users` collection where `username == usernameLower`
-        const q = query(collection(db, 'users'), where('username', '==', usernameLower));
+      // 2. Query live from Firestore DB `users` collection as fallback
+      try {
+        const q = query(collection(db, 'users'), where('username', '==', cleanUsername));
         const qSnap = await getDocs(q);
         if (!qSnap.empty) {
           const userDoc = qSnap.docs[0].data();
-          if (userDoc?.email) return userDoc.email.toLowerCase().trim();
+          if (userDoc?.email) {
+            return userDoc.email.toLowerCase().trim();
+          }
         }
-      } catch (e) {
-        console.warn('Username lookup in Firestore failed, using domain fallback:', e);
+      } catch (err) {
+        console.warn('Error querying users collection in Firestore:', err);
       }
     }
 
-    // 3. Fallback: Default to standard company domain
-    return `${usernameLower}@kamaniplast.com`;
+    // Default company domain fallback
+    return `${cleanUsername}@kamaniplast.com`;
   };
 
   /**

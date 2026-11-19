@@ -38,4 +38,4 @@ try {
   console.error('KamaniPlastERP: Failed to initialize Firebase:', error);
 }
 
-export { app, auth, db, googleProvider, isFirebaseConfigured };
+export { app, auth, db, googleProvider, isFirebaseConfigured, firebaseConfig };

@@ -112,8 +112,14 @@ export default function Login() {
         navigate(destination, { replace: true });
       }
     } catch (err) {
-      const friendlyMsg = err.code ? getFriendlyErrorMessage(err.code) : null;
-      setServerError(friendlyMsg || err.message || 'Action failed. Please try again.');
+      if (err.message === 'FIRESTORE_RULES_PERMISSION_DENIED') {
+        setServerError(
+          'Live database lookup was blocked by Firebase security rules. Please allow public read on the "usernames" collection in Firebase Console, or sign in directly using your email address.'
+        );
+      } else {
+        const friendlyMsg = err.code ? getFriendlyErrorMessage(err.code) : null;
+        setServerError(friendlyMsg || err.message || 'Action failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
