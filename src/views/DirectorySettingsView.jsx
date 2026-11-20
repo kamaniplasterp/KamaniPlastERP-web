@@ -73,6 +73,32 @@ import PageHeader, { HeaderButton } from '../components/PageHeader';
 import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import '../styles/DirectorySettings.css';
 
+const formatApprovalTimestamp = (val, fallback = '') => {
+  if (!val) return fallback;
+  try {
+    let dateObj = null;
+    if (typeof val?.toDate === 'function') {
+      dateObj = val.toDate();
+    } else if (val instanceof Date) {
+      dateObj = val;
+    } else if (typeof val === 'object' && typeof val.seconds === 'number') {
+      dateObj = new Date(val.seconds * 1000 + (val.nanoseconds ? Math.floor(val.nanoseconds / 1000000) : 0));
+    } else if (typeof val === 'number') {
+      dateObj = new Date(val);
+    } else if (typeof val === 'string') {
+      const parsed = new Date(val);
+      if (!isNaN(parsed.getTime())) dateObj = parsed;
+    }
+
+    if (dateObj && !isNaN(dateObj.getTime())) {
+      return dateObj.toLocaleString();
+    }
+    return String(val);
+  } catch (err) {
+    return fallback || String(val);
+  }
+};
+
 export default function DirectorySettingsView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1070,7 +1096,7 @@ export default function DirectorySettingsView() {
             SubmitterRole: a.submittedBy?.role || '',
             ReviewedBy: a.reviewedBy?.displayName || a.reviewedBy?.email || '',
             ReviewNotes: a.reviewNotes || '',
-            Date: a.createdAt?.toLocaleString ? a.createdAt.toLocaleString() : ''
+            Date: formatApprovalTimestamp(a.createdAt)
           })))}
           title="Export Approvals to CSV"
         />
@@ -2300,8 +2326,8 @@ export default function DirectorySettingsView() {
                 const isApproved = item.status === 'APPROVED';
                 const isRejected = item.status === 'REJECTED';
                 const isExpanded = Boolean(expandedApprovalMap[item.id]);
-                const createdDateStr = item.createdAt?.toLocaleString ? item.createdAt.toLocaleString() : (item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString() : 'Recent');
-                const reviewedDateStr = item.reviewedAt?.toLocaleString ? item.reviewedAt.toLocaleString() : (item.reviewedAt?.toDate ? item.reviewedAt.toDate().toLocaleString() : '');
+                const createdDateStr = formatApprovalTimestamp(item.createdAt, 'Recent');
+                const reviewedDateStr = formatApprovalTimestamp(item.reviewedAt, '');
 
                 return (
                   <div

@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   ArrowLeft, Shield, User, Check, X, ShieldAlert, CheckCircle2, 
   RotateCcw, Save, Layers, Lock, Unlock, Eye, Plus, Edit2, 
-  Briefcase, Package, Truck, Cog, BookUser, LayoutDashboard, Copy
+  Briefcase, Package, Truck, Cog, BookUser, LayoutDashboard
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -61,7 +61,6 @@ export default function AssignPermissionsView() {
   const [permissions, setPermissions] = useState({});
   const [status, setStatus] = useState('ACTIVE');
   const [isSaving, setIsSaving] = useState(false);
-  const [copiedUid, setCopiedUid] = useState(false);
 
   // Initialize or reload form when target user changes
   useEffect(() => {
@@ -249,13 +248,6 @@ export default function AssignPermissionsView() {
     }
   };
 
-  const copyUidToClipboard = () => {
-    if (!targetUser?.uid) return;
-    navigator.clipboard?.writeText(targetUser.uid);
-    setCopiedUid(true);
-    setTimeout(() => setCopiedUid(false), 2000);
-  };
-
   if (loadingUsers) {
     return (
       <div style={{ padding: '60px 20px', textAlign: 'center', color: '#64748b' }}>
@@ -322,19 +314,6 @@ export default function AssignPermissionsView() {
             <h2>{targetUser.displayName || 'No Display Name'}</h2>
             <div className="perm-user-meta">
               <span>{targetUser.email || 'No Email Set'}</span>
-              <span>•</span>
-              <span className="perm-uid-badge" title="Firebase UID">
-                UID: {targetUser.uid ? `${targetUser.uid.slice(0, 10)}...` : 'N/A'}
-              </span>
-              <button
-                type="button"
-                onClick={copyUidToClipboard}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, color: '#64748b', display: 'flex' }}
-                title="Copy UID"
-              >
-                <Copy size={12} />
-              </button>
-              {copiedUid && <span style={{ color: '#16a34a', fontSize: '0.72rem', fontWeight: 700 }}>Copied!</span>}
               <span>•</span>
               <span className={`perm-status-pill ${status === 'ACTIVE' ? 'active' : 'disabled'}`}>
                 {status}

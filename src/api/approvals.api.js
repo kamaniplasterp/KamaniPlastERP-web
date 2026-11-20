@@ -80,6 +80,21 @@ export async function submitMasterChangeRequest({
   return { id: docRef.id, ...cleanRequest };
 }
 
+const parseFirestoreDate = (val) => {
+  if (!val) return null;
+  if (typeof val?.toDate === 'function') return val.toDate();
+  if (val instanceof Date) return val;
+  if (typeof val === 'object' && typeof val.seconds === 'number') {
+    return new Date(val.seconds * 1000 + (val.nanoseconds ? Math.floor(val.nanoseconds / 1000000) : 0));
+  }
+  if (typeof val === 'number') return new Date(val);
+  if (typeof val === 'string') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
+
 /**
  * Real-time listener for pending change requests
  */
@@ -96,11 +111,16 @@ export function subscribePendingApprovals(callback) {
   );
 
   return onSnapshot(q, (snap) => {
-    const list = snap.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-      createdAt: d.data().createdAt?.toDate ? d.data().createdAt.toDate() : (d.data().createdAt ? new Date(d.data().createdAt) : new Date())
-    })).sort((a, b) => {
+    const list = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        ...data,
+        createdAt: parseFirestoreDate(data.createdAt) || new Date(),
+        reviewedAt: parseFirestoreDate(data.reviewedAt),
+        updatedAt: parseFirestoreDate(data.updatedAt)
+      };
+    }).sort((a, b) => {
       const timeA = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
       const timeB = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
       return timeB - timeA;
@@ -127,11 +147,16 @@ export function subscribeAllApprovals(callback) {
   );
 
   return onSnapshot(q, (snap) => {
-    const list = snap.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-      createdAt: d.data().createdAt?.toDate ? d.data().createdAt.toDate() : new Date()
-    }));
+    const list = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        ...data,
+        createdAt: parseFirestoreDate(data.createdAt) || new Date(),
+        reviewedAt: parseFirestoreDate(data.reviewedAt),
+        updatedAt: parseFirestoreDate(data.updatedAt)
+      };
+    });
     callback(list);
   }, (err) => {
     console.warn('All approvals listener warning:', err);

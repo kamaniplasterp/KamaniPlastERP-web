@@ -48,6 +48,30 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    match /inventory_bags/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /material_loose_stock/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /qcChecks/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /locations/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /processes/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /processMaterials/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
     // ── 3. Operational Transaction Collections (Authenticated Only) ──
     match /jobWorks/{document=**} {
       allow read, write: if isAuthenticated();

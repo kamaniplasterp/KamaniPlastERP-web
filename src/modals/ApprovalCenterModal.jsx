@@ -12,6 +12,32 @@ import { useAuth } from '../context/AuthContext';
 import { showAlert } from '../context/CustomAlertContext';
 import '../styles/Modals.css';
 
+const formatApprovalTimestamp = (val, fallback = '') => {
+  if (!val) return fallback;
+  try {
+    let dateObj = null;
+    if (typeof val?.toDate === 'function') {
+      dateObj = val.toDate();
+    } else if (val instanceof Date) {
+      dateObj = val;
+    } else if (typeof val === 'object' && typeof val.seconds === 'number') {
+      dateObj = new Date(val.seconds * 1000 + (val.nanoseconds ? Math.floor(val.nanoseconds / 1000000) : 0));
+    } else if (typeof val === 'number') {
+      dateObj = new Date(val);
+    } else if (typeof val === 'string') {
+      const parsed = new Date(val);
+      if (!isNaN(parsed.getTime())) dateObj = parsed;
+    }
+
+    if (dateObj && !isNaN(dateObj.getTime())) {
+      return dateObj.toLocaleString();
+    }
+    return String(val);
+  } catch (err) {
+    return fallback || String(val);
+  }
+};
+
 export default function ApprovalCenterModal({ onClose }) {
   const { user, userProfile } = useAuth();
   const [approvals, setApprovals] = useState([]);
@@ -212,7 +238,7 @@ export default function ApprovalCenterModal({ onClose }) {
                     </div>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Clock size={12} />
-                      {item.createdAt?.toLocaleString ? item.createdAt.toLocaleDateString() : 'Recent'}
+                      {formatApprovalTimestamp(item.createdAt, 'Recent')}
                     </span>
                   </div>
 
@@ -366,7 +392,7 @@ export default function ApprovalCenterModal({ onClose }) {
                     </div>
                   </div>
                   <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                    {item.createdAt?.toLocaleDateString ? item.createdAt.toLocaleDateString() : ''}
+                    {formatApprovalTimestamp(item.reviewedAt || item.createdAt, '')}
                   </span>
                 </div>
               ))
