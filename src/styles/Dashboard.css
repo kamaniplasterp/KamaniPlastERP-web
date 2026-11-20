@@ -491,7 +491,8 @@
 
 /* ── Minimal Segmented Sub-module Switcher ── */
 .erp-subnav-pills {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   align-items: center;
   background: #f1f5f9;
   padding: 4px;

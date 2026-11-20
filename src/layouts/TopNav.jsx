@@ -28,6 +28,7 @@ import {
   Briefcase,
   Truck,
   CheckCircle2,
+  ShieldCheck,
   ShieldAlert,
   X
 } from 'lucide-react';
@@ -137,23 +138,8 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
   const isUserAdmin = Boolean(isAdmin || userRole === 'admin' || user?.role === 'admin');
 
-  // Master Approval requests for Admin users
-  const approvalNotifications = isUserAdmin ? pendingApprovals.map(req => {
-    const actionVerb = req.action === 'CREATE' ? 'Creation' : req.action === 'UPDATE' ? 'Update' : 'Deletion';
-    const submitter = req.submittedBy?.displayName || req.submittedBy?.email || 'Staff';
-    const notifId = `approval_${req.id}`;
-    return {
-      id: notifId,
-      originalRequestId: req.id,
-      isApproval: true,
-      category: 'APPROVAL',
-      title: `Approval Required: ${req.masterLabel} ${actionVerb}`,
-      message: `${submitter} requested to ${req.action.toLowerCase()} "${req.recordTitle || 'Record'}". Click to review & approve.`,
-      createdAt: req.createdAt,
-      createdAtDate: req.createdAt instanceof Date ? req.createdAt : (req.createdAt?.toDate ? req.createdAt.toDate() : new Date(req.createdAt || Date.now())),
-      isRead: readApprovalIds.has(notifId)
-    };
-  }) : [];
+  // Master Approval requests are now managed centrally in Directory & Admin > Approvals Queue
+  // and are kept separate from operational/system notifications.
 
   // QC Overdue alerts are strictly restricted to Admin users only
   const isQcNotification = (n) => (
@@ -171,8 +157,8 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
     return true;
   });
 
-  // Combined notifications: approvals first, followed by others sorted by date descending
-  const combinedNotifications = [...approvalNotifications, ...activeNotifications].sort((a, b) => {
+  // Operational notifications sorted by date descending (Approvals are in dedicated Directory tab)
+  const combinedNotifications = [...activeNotifications].sort((a, b) => {
     const timeA = a.createdAtDate ? a.createdAtDate.getTime() : 0;
     const timeB = b.createdAtDate ? b.createdAtDate.getTime() : 0;
     return timeB - timeA;
@@ -181,10 +167,6 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
   const unreadCount = combinedNotifications.filter(n => !n.isRead).length;
 
   const handleMarkAllRead = async () => {
-    if (approvalNotifications.length > 0) {
-      setReadApprovalIds(new Set([...readApprovalIds, ...approvalNotifications.map(a => a.id)]));
-    }
-
     if (!user?.uid || activeNotifications.length === 0) return;
     const unreadIds = activeNotifications.filter(n => !n.isRead).map(n => n.id);
     if (unreadIds.length === 0) return;
@@ -199,8 +181,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
     setShowNotifDropdown(false);
 
     if (item.isApproval) {
-      setReadApprovalIds(prev => new Set([...prev, item.id]));
-      setShowApprovalModal(true);
+      navigate('/directory?tab=approvals');
       return;
     }
 

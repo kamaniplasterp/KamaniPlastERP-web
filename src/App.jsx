@@ -10,6 +10,7 @@ import InventoryStock from './pages/InventoryStock';
 import SalesDispatch from './pages/SalesDispatch';
 import DirectorySettings from './pages/DirectorySettings';
 import ProcessMasters from './pages/ProcessMasters';
+import AssignPermissions from './pages/AssignPermissions';
 
 function DefaultRouteRedirect() {
   const { user, loading, defaultRoute } = useAuth();
@@ -80,6 +81,22 @@ function App() {
                 element={
                   <ProtectedRoute module="directory">
                     <DirectorySettings />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/assign-permissions/:userId" 
+                element={
+                  <ProtectedRoute module="directory">
+                    <AssignPermissions />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/assign-permissions" 
+                element={
+                  <ProtectedRoute module="directory">
+                    <AssignPermissions />
                   </ProtectedRoute>
                 } 
               />

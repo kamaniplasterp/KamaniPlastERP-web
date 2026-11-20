@@ -88,6 +88,7 @@ export const ERP_SUBMODULES = [
   { id: 'directory_business', moduleId: 'directory', moduleLabel: 'Directory & Admin', label: 'Business Directory', description: 'Vendor, contractor and customer profiles' },
   { id: 'directory_rates', moduleId: 'directory', moduleLabel: 'Directory & Admin', label: 'JW Rates & Valuation', description: 'Processing rate contracts and Rule 55 valuation' },
   { id: 'directory_settings', moduleId: 'directory', label: 'Plant Settings', moduleLabel: 'Directory & Admin', description: 'Tare standards, FY setup and signatories' },
+  { id: 'directory_approvals', moduleId: 'directory', label: 'Approvals Queue', moduleLabel: 'Directory & Admin', description: 'Review and approve master change requests' },
   { id: 'directory_rbac', moduleId: 'directory', label: 'User Roles & RBAC', moduleLabel: 'Directory & Admin', description: 'Staff credentials and access permissions' },
   { id: 'directory_audit', moduleId: 'directory', label: 'Security Audit Logs', moduleLabel: 'Directory & Admin', description: 'Security audit trail and operational history' }
 ];
@@ -101,7 +102,7 @@ export const ROLE_DEFAULT_PERMISSIONS = {
     return acc;
   }, {}),
   accountant: ERP_SUBMODULES.reduce((acc, sub) => {
-    const isMasterOrAdmin = sub.moduleId === 'processMasters' || sub.id === 'directory_rbac' || sub.id === 'directory_settings';
+    const isMasterOrAdmin = sub.moduleId === 'processMasters' || sub.id === 'directory_rbac' || sub.id === 'directory_settings' || sub.id === 'directory_approvals';
     acc[sub.id] = {
       read: true,
       create: !isMasterOrAdmin,
@@ -141,6 +142,31 @@ export const ROLE_DEFAULT_MODULES = {
   accountant: ['dashboard', 'jobwork', 'inventory', 'sales', 'directory'],
   employee: ['jobwork', 'inventory', 'sales']
 };
+
+/**
+ * Automatically derive assigned modules from granular sub-module permissions.
+ * A module is active if any of its sub-modules has `read: true`.
+ * Explicit standalone modules (like 'dashboard') are preserved if enabled.
+ */
+export function deriveAssignedModules(permissions = {}, explicitModules = []) {
+  const moduleSet = new Set();
+  
+  // Dashboard is a top-level standalone module without submodules
+  if (Array.isArray(explicitModules) && explicitModules.includes('dashboard')) {
+    moduleSet.add('dashboard');
+  }
+
+  // Derive modules from permitted sub-modules
+  if (permissions && typeof permissions === 'object') {
+    ERP_SUBMODULES.forEach(sub => {
+      if (permissions[sub.id]?.read) {
+        moduleSet.add(sub.moduleId);
+      }
+    });
+  }
+
+  return Array.from(moduleSet);
+}
 
 export const ROLE_LABELS = {
   admin: 'Administrator',
@@ -199,16 +225,15 @@ export function subscribeUsers(callback) {
       const validRoles = ['admin', 'accountant', 'employee'];
       const role = validRoles.includes(data.role) ? data.role : (isMasterAdmin ? 'admin' : 'employee');
 
-      const assignedModules = role === 'admin' 
-        ? ERP_MODULES.map(m => m.id)
-        : (Array.isArray(data.assignedModules) 
-            ? data.assignedModules 
-            : (ROLE_DEFAULT_MODULES[role] || ROLE_DEFAULT_MODULES.employee));
-
       const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS.employee;
       const permissions = role === 'admin'
         ? ROLE_DEFAULT_PERMISSIONS.admin
         : (data.permissions && typeof data.permissions === 'object' ? data.permissions : defaultRolePerms);
+
+      const rawAssigned = Array.isArray(data.assignedModules) ? data.assignedModules : (ROLE_DEFAULT_MODULES[role] || []);
+      const assignedModules = role === 'admin' 
+        ? ERP_MODULES.map(m => m.id)
+        : deriveAssignedModules(permissions, rawAssigned);
 
       return {
         id: docSnap.id,
@@ -243,14 +268,20 @@ export async function updateUserAccess(userTarget, { role, assignedModules, perm
 
   const finalRole = role || 'employee';
   const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[finalRole] || ROLE_DEFAULT_PERMISSIONS.employee;
+
+  const finalPermissions = finalRole === 'admin'
+    ? ROLE_DEFAULT_PERMISSIONS.admin
+    : (permissions && typeof permissions === 'object' ? permissions : defaultRolePerms);
+
+  const rawAssigned = Array.isArray(assignedModules) ? assignedModules : (ROLE_DEFAULT_MODULES[finalRole] || []);
+  const finalAssignedModules = finalRole === 'admin' 
+    ? ERP_MODULES.map(m => m.id) 
+    : deriveAssignedModules(finalPermissions, rawAssigned);
+
   const updates = {
     role: finalRole,
-    assignedModules: finalRole === 'admin' 
-      ? ERP_MODULES.map(m => m.id) 
-      : (Array.isArray(assignedModules) ? assignedModules : (ROLE_DEFAULT_MODULES[finalRole] || [])),
-    permissions: finalRole === 'admin'
-      ? ROLE_DEFAULT_PERMISSIONS.admin
-      : (permissions && typeof permissions === 'object' ? permissions : defaultRolePerms),
+    assignedModules: finalAssignedModules,
+    permissions: finalPermissions,
     status: status || 'ACTIVE',
     updatedAt: serverTimestamp()
   };
@@ -362,9 +393,7 @@ export async function createEmployeeUser({
 
   const finalModules = finalRole === 'admin'
     ? ERP_MODULES.map(m => m.id)
-    : (Array.isArray(assignedModules) && assignedModules.length > 0
-        ? assignedModules
-        : (ROLE_DEFAULT_MODULES[finalRole] || ROLE_DEFAULT_MODULES.employee));
+    : deriveAssignedModules(finalPermissions, assignedModules);
 
   if (db && uid) {
     const userRef = doc(db, 'users', uid);

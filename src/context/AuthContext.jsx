@@ -20,7 +20,15 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db, auth, googleProvider, isFirebaseConfigured } from '../firebase/firebase';
-import { ROLE_DEFAULT_MODULES, ERP_MODULES, getDefaultRouteForRole, ROLE_DEFAULT_PERMISSIONS, checkPermission } from '../api/rbac.api';
+import { 
+  ROLE_DEFAULT_MODULES, 
+  ERP_MODULES, 
+  ERP_SUBMODULES,
+  getDefaultRouteForRole, 
+  ROLE_DEFAULT_PERMISSIONS, 
+  checkPermission,
+  deriveAssignedModules 
+} from '../api/rbac.api';
 import { logAuditEvent } from '../api/audit.api';
 
 const AuthContext = createContext();
@@ -78,16 +86,18 @@ export const AuthProvider = ({ children }) => {
             const validRoles = ['admin', 'accountant', 'employee'];
             const role = validRoles.includes(data.role) ? data.role : (isMaster ? 'admin' : 'employee');
 
-            const assignedModules = role === 'admin'
-              ? ERP_MODULES.map(m => m.id)
-              : (Array.isArray(data.assignedModules) && data.assignedModules.length > 0
-                  ? data.assignedModules
-                  : (ROLE_DEFAULT_MODULES[role] || ROLE_DEFAULT_MODULES.employee));
-
             const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS.employee;
             const permissions = role === 'admin'
               ? ROLE_DEFAULT_PERMISSIONS.admin
               : (data.permissions && typeof data.permissions === 'object' ? data.permissions : defaultRolePerms);
+
+            const rawAssigned = Array.isArray(data.assignedModules) && data.assignedModules.length > 0
+              ? data.assignedModules
+              : (ROLE_DEFAULT_MODULES[role] || ROLE_DEFAULT_MODULES.employee);
+
+            const assignedModules = role === 'admin'
+              ? ERP_MODULES.map(m => m.id)
+              : deriveAssignedModules(permissions, rawAssigned);
 
             const profile = {
               uid: currentUser.uid,
@@ -358,23 +368,31 @@ export const AuthProvider = ({ children }) => {
     ? userProfile.assignedModules
     : (ROLE_DEFAULT_MODULES[userRole] || ROLE_DEFAULT_MODULES.employee);
 
+  // Granular Sub-Module Permissions check
+  const can = (subModuleId, action = 'read') => {
+    return checkPermission(userProfile, subModuleId, action);
+  };
+
   // Checks whether current user is permitted to access a given module route
   const hasAccess = (moduleKey) => {
     if (!moduleKey) return true;
     if (isAdmin) return true;
+
+    // For modules with granular sub-modules, access is granted if user has read permission on at least one sub-module
+    const moduleSubs = ERP_SUBMODULES.filter(s => s.moduleId === moduleKey);
+    if (moduleSubs.length > 0) {
+      return moduleSubs.some(s => can(s.id, 'read'));
+    }
+
+    // Top-level module without submodules (like dashboard)
     return assignedModules.includes(moduleKey);
   };
 
   const allowedModules = isAdmin 
     ? ERP_MODULES.map(m => m.id)
-    : assignedModules;
+    : ERP_MODULES.filter(m => hasAccess(m.id)).map(m => m.id);
 
-  const defaultRoute = getDefaultRouteForRole(userRole, assignedModules);
-
-  // Granular Sub-Module Permissions check
-  const can = (subModuleId, action = 'read') => {
-    return checkPermission(userProfile, subModuleId, action);
-  };
+  const defaultRoute = getDefaultRouteForRole(userRole, allowedModules);
 
   const value = {
     user,

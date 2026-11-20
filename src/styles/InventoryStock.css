@@ -878,7 +878,24 @@
     width: 100%;
   }
 
+  .inv-top-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    overflow-x: visible;
+  }
+
   .inv-flow-nodes { flex-direction: column; }
+}
+
+@media (max-width: 480px) {
+  .inv-top-kpis {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .inv-table {
+    min-width: 650px;
+  }
 }
 
 

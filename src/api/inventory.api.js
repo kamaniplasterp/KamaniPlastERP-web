@@ -956,18 +956,32 @@ export async function packLooseStockIntoBags({
   color = 'Natural',
   targetBagWeightKg = 50.0,
   bagCount = 1,
+  bagWeights = null,
   coilsPerBag = 12,
   location = 'KPI Godown',
   lotNo = '',
   user = null
 }) {
   if (!db) throw new Error('Firestore not initialized');
-  const count = parseInt(bagCount, 10);
-  const bagWeight = parseFloat(targetBagWeightKg) || 50.0;
-  if (!count || count <= 0) throw new Error('Bag count must be at least 1');
-  if (bagWeight <= 0) throw new Error('Target bag weight must be greater than 0');
 
-  const totalDeductedKg = parseFloat((count * bagWeight).toFixed(2));
+  let weights = null;
+  let count = 0;
+  let totalDeductedKg = 0;
+  const bagWeight = parseFloat(targetBagWeightKg) || 50.0;
+
+  if (Array.isArray(bagWeights) && bagWeights.length > 0) {
+    weights = bagWeights.map(w => parseFloat(w) || 0).filter(w => w > 0);
+    if (weights.length === 0) throw new Error('At least one bag weight must be greater than 0');
+    count = weights.length;
+    totalDeductedKg = parseFloat(weights.reduce((sum, w) => sum + w, 0).toFixed(2));
+  } else {
+    count = parseInt(bagCount, 10);
+    if (!count || count <= 0) throw new Error('Bag count must be at least 1');
+    if (bagWeight <= 0) throw new Error('Target bag weight must be greater than 0');
+    totalDeductedKg = parseFloat((count * bagWeight).toFixed(2));
+    weights = Array(count).fill(bagWeight);
+  }
+
   const docKey = materialKey || getMaterialStockKey(quality, form, size);
   const stockRef = doc(db, 'material_loose_stock', docKey);
 
@@ -994,6 +1008,8 @@ export async function packLooseStockIntoBags({
   const batch = writeBatch(db);
   for (let i = 1; i <= count; i++) {
     const nextBagNum = highestBagNumber + i;
+    const thisBagWeight = weights[i - 1];
+    const isVariable = Math.abs(thisBagWeight - bagWeight) > 0.05;
     const bagRef = doc(collection(db, 'inventory_bags'));
     const bagData = {
       id: bagRef.id,
@@ -1006,9 +1022,9 @@ export async function packLooseStockIntoBags({
       size,
       color,
       standardWeightKg: bagWeight,
-      actualWeightKg: bagWeight,
+      actualWeightKg: thisBagWeight,
       coilCount: Number(coilsPerBag) || 12,
-      stockType: 'FIXED',
+      stockType: isVariable ? 'VARIABLE' : 'FIXED',
       location,
       status: 'AVAILABLE',
       lotGroup: packLot,
@@ -1016,7 +1032,7 @@ export async function packLooseStockIntoBags({
       packedFromLoose: true,
       packedAt: serverTimestamp(),
       receivedAt: currentDate,
-      packedBy: user?.name || user?.email || 'Storekeeper',
+      packedBy: user?.displayName || user?.name || user?.email || 'Storekeeper',
       createdAt: serverTimestamp()
     };
     batch.set(bagRef, bagData);
@@ -1028,7 +1044,7 @@ export async function packLooseStockIntoBags({
   batch.update(stockRef, {
     looseWeightKg: remainingWeight,
     updatedAt: serverTimestamp(),
-    updatedBy: user?.name || user?.email || 'Storekeeper'
+    updatedBy: user?.displayName || user?.name || user?.email || 'Storekeeper'
   });
 
   await batch.commit();
@@ -1037,7 +1053,7 @@ export async function packLooseStockIntoBags({
   logAuditEvent({
     category: 'INVENTORY',
     action: 'LOOSE_STOCK_PACKED_INTO_BAGS',
-    summary: `Packed ${totalDeductedKg} KG of loose ${quality} ${form} ${size} into ${count} standard bags (#${highestBagNumber + 1} to #${highestBagNumber + count})`,
+    summary: `Packed ${totalDeductedKg} KG of loose ${quality} ${form} ${size} into ${count} bags (#${highestBagNumber + 1} to #${highestBagNumber + count})`,
     targetId: packLot,
     details: {
       quality,

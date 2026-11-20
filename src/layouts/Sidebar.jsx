@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useWorkflow } from '../context/WorkflowContext';
 import { ROLE_LABELS } from '../api/rbac.api';
+import { subscribePendingApprovals } from '../api/approvals.api';
 import {
   LayoutDashboard, Briefcase, Package, Truck, BookUser,
   ChevronLeft, ChevronRight, ChevronDown, Circle, X, Cog, LogOut
@@ -73,6 +74,7 @@ const navItems = [
           { id: 'directory', subModuleId: 'directory_business', label: 'Business Directory', tab: 'directory', aliases: ['vendors', 'customers'], isDefault: true },
           { id: 'ratesValuation', subModuleId: 'directory_rates', label: 'Rates & Valuation Master', tab: 'ratesValuation', aliases: ['rateMaster', 'valueMaster'] },
           { id: 'settings', subModuleId: 'directory_settings', label: 'Plant & System Settings', tab: 'settings', aliases: ['miscMaster'] },
+          { id: 'approvals', subModuleId: 'directory_approvals', label: 'Approvals Queue', tab: 'approvals', adminOnly: true },
           { id: 'rbac', subModuleId: 'directory_rbac', label: 'User Roles & RBAC', tab: 'rbac', adminOnly: true },
           { id: 'audit', subModuleId: 'directory_audit', label: 'Security Audit Logs', tab: 'audit', adminOnly: true },
         ],
@@ -88,6 +90,12 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+
+  useEffect(() => {
+    const unsub = subscribePendingApprovals(setPendingApprovals);
+    return () => unsub();
+  }, []);
 
   const username = user?.displayName || user?.email?.split('@')[0] || 'KamaniPlastERP';
   const initials = (user?.displayName || user?.email || 'KA').slice(0, 2).toUpperCase();
@@ -170,16 +178,27 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
         // Filter out admin-only submenus and submenus where user lacks read permission
         let children = item.children;
         if (children) {
-          children = children.filter(c => {
-            if (c.adminOnly && !isAdmin) return false;
-            if (c.subModuleId && can && !can(c.subModuleId, 'read')) return false;
-            return true;
-          });
+          children = children
+            .filter(c => {
+              if (c.adminOnly && !isAdmin) return false;
+              if (c.subModuleId && can && !can(c.subModuleId, 'read')) return false;
+              return true;
+            })
+            .map(c => {
+              if (c.id === 'approvals') {
+                return { ...c, badgeCount: pendingApprovals.length };
+              }
+              return c;
+            });
         }
 
         // Low stock warning badge
         if (item.id === 'inventory' && lowStockCount > 0) {
           return { ...item, children, badge: { count: lowStockCount, type: 'low', text: `${lowStockCount} Low` } };
+        }
+        // Approvals badge for Directory
+        if (item.id === 'directory' && pendingApprovals.length > 0 && isAdmin) {
+          return { ...item, children, badge: { count: pendingApprovals.length, type: 'approval', text: `${pendingApprovals.length} Req` } };
         }
         return { ...item, children, badge: null };
       })
@@ -211,13 +230,55 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
           style={{ cursor: 'pointer' }}
           title="Go to Home Module"
         >
-          <div className="sidebar-logo-mark" style={{ width: '48px', height: '48px', minWidth: '48px', background: '#fff', padding: '4px', borderRadius: '10px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <img src="/logo-icon.png" alt="Kamani Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          </div>
-          {!collapsed && (
-            <div className="sidebar-brand-text">
-              <span className="sidebar-brand-name">Kamani Plastic</span>
-              <span className="sidebar-brand-sub">INDUSTRIAL ERP</span>
+          {!collapsed ? (
+            <div
+              className="sidebar-logo-full"
+              style={{
+                background: '#ffffff',
+                padding: '6px 12px',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flex: 1,
+                minWidth: 0,
+                height: '46px',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
+              }}
+            >
+              <img
+                src="/logo.png"
+                alt="Kamani Plastic Industries"
+                style={{
+                  maxHeight: '34px',
+                  width: 'auto',
+                  maxWidth: '100%',
+                  objectFit: 'contain',
+                  display: 'block',
+                }}
+              />
+            </div>
+          ) : (
+            <div
+              className="sidebar-logo-mark"
+              style={{
+                width: '44px',
+                height: '44px',
+                minWidth: '44px',
+                background: '#fff',
+                padding: '4px',
+                borderRadius: '10px',
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <img
+                src="/logo-icon.png"
+                alt="Kamani Logo"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
             </div>
           )}
           <button
@@ -304,7 +365,21 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
                               }}
                             >
                               <span className="sidebar-submenu-dot" />
-                              <span>{child.label}</span>
+                              <span style={{ flex: 1, textAlign: 'left' }}>{child.label}</span>
+                              {Boolean(child.badgeCount && child.badgeCount > 0) && (
+                                <span style={{
+                                  background: '#ef4444',
+                                  color: '#ffffff',
+                                  fontSize: '0.66rem',
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: '10px',
+                                  marginLeft: 'auto',
+                                  lineHeight: 1.2
+                                }}>
+                                  {child.badgeCount}
+                                </span>
+                              )}
                             </button>
                           );
                         })}

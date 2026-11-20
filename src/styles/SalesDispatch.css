@@ -658,6 +658,23 @@
     -webkit-overflow-scrolling: touch;
     width: 100%;
   }
+
+  .sd-top-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    overflow-x: visible;
+  }
+}
+
+@media (max-width: 480px) {
+  .sd-top-kpis {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .sd-table {
+    min-width: 650px;
+  }
 }
 
 

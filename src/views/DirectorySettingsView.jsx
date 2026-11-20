@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
   Layers, Package, Users, DollarSign, Tag, Calculator, ShieldCheck, MessageSquare,
   Shield, Check, X, Lock, Unlock, UserCheck, ShieldAlert, Activity, Eye, Copy, Filter, Clock,
-  Edit2, Trash2, UserPlus
+  Edit2, Trash2, UserPlus, XCircle, User, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -18,7 +18,10 @@ import {
   ROLE_COLORS 
 } from '../api/rbac.api';
 import {
+  subscribeAllApprovals,
   subscribePendingApprovals,
+  approveMasterChange,
+  rejectMasterChange,
   submitMasterChangeRequest
 } from '../api/approvals.api';
 import ApprovalCenterModal from '../modals/ApprovalCenterModal';
@@ -72,6 +75,7 @@ import '../styles/DirectorySettings.css';
 
 export default function DirectorySettingsView() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { isAdmin, user, userProfile, can } = useAuth();
   const [directorySubView, setDirectorySubView] = useState('vendors'); // 'vendors' | 'customers'
   const [pricingSubView, setPricingSubView] = useState('rates'); // 'rates' | 'value'
@@ -92,6 +96,8 @@ export default function DirectorySettingsView() {
       case 'settings':
       case 'miscMaster':
         return can('directory_settings', 'read');
+      case 'approvals':
+        return isAdmin || can('directory_approvals', 'read');
       case 'rbac':
         return isAdmin || can('directory_rbac', 'read');
       case 'audit':
@@ -105,6 +111,7 @@ export default function DirectorySettingsView() {
     if (canAccessTab('directory')) return 'directory';
     if (canAccessTab('ratesValuation')) return 'ratesValuation';
     if (canAccessTab('settings')) return 'settings';
+    if (canAccessTab('approvals')) return 'approvals';
     if (canAccessTab('rbac')) return 'rbac';
     if (canAccessTab('audit')) return 'audit';
     return 'directory';
@@ -121,6 +128,7 @@ export default function DirectorySettingsView() {
     else if (tabParam === 'ratesValuation') resolved = 'ratesValuation';
     else if (tabParam === 'miscMaster') { setSettingsSubView('tare'); resolved = 'settings'; }
     else if (tabParam === 'settings') { setSettingsSubView('erp'); resolved = 'settings'; }
+    else if (tabParam === 'approvals') resolved = 'approvals';
     else if (tabParam === 'rbac') resolved = 'rbac';
     else if (tabParam === 'audit') resolved = 'audit';
 
@@ -157,20 +165,102 @@ export default function DirectorySettingsView() {
   // RBAC User Permissions State
   const [liveUsers, setLiveUsers] = useState([]);
   const [userSearch, setUserSearch] = useState('');
-  const [selectedUserForRbac, setSelectedUserForRbac] = useState(null);
-  const [editRole, setEditRole] = useState('employee');
-  const [editAssignedModules, setEditAssignedModules] = useState([]);
-  const [editPermissions, setEditPermissions] = useState({});
-  const [isSavingRbac, setIsSavingRbac] = useState(false);
 
-  // Master Changes Approval Workflow State
-  const [pendingApprovals, setPendingApprovals] = useState([]);
+  // Master Changes Approval Workflow State (Approvals Tab)
+  const [allApprovals, setAllApprovals] = useState([]);
+  const [approvalSubView, setApprovalSubView] = useState('pending'); // 'pending' | 'history'
+  const [approvalSearch, setApprovalSearch] = useState('');
+  const [approvalTypeFilter, setApprovalTypeFilter] = useState('ALL');
+  const [approvalStatusFilter, setApprovalStatusFilter] = useState('ALL');
+  const [processingApprovalId, setProcessingApprovalId] = useState(null);
+  const [rejectReasonMap, setRejectReasonMap] = useState({});
+  const [showRejectInputMap, setShowRejectInputMap] = useState({});
+  const [expandedApprovalMap, setExpandedApprovalMap] = useState({});
+  const [selectedApprovalDetail, setSelectedApprovalDetail] = useState(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
 
+  const toggleExpandApproval = (id) => {
+    setExpandedApprovalMap(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
   useEffect(() => {
-    const unsub = subscribePendingApprovals(setPendingApprovals);
+    const unsub = subscribeAllApprovals(setAllApprovals);
     return () => unsub();
   }, []);
+
+  const pendingApprovalsList = useMemo(() => {
+    return allApprovals.filter(a => a.status === 'PENDING');
+  }, [allApprovals]);
+
+  const historyApprovalsList = useMemo(() => {
+    return allApprovals.filter(a => a.status !== 'PENDING');
+  }, [allApprovals]);
+
+  const currentApprovalsList = approvalSubView === 'pending' ? pendingApprovalsList : historyApprovalsList;
+
+  const filteredApprovals = useMemo(() => {
+    const q = approvalSearch.trim().toLowerCase();
+    return currentApprovalsList.filter(item => {
+      if (approvalTypeFilter !== 'ALL' && item.masterType !== approvalTypeFilter) {
+        return false;
+      }
+      if (approvalSubView === 'history' && approvalStatusFilter !== 'ALL' && item.status !== approvalStatusFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const matchTitle = (item.recordTitle || '').toLowerCase().includes(q);
+      const matchLabel = (item.masterLabel || '').toLowerCase().includes(q);
+      const matchSubmitter = (item.submittedBy?.displayName || item.submittedBy?.email || '').toLowerCase().includes(q);
+      const matchAction = (item.action || '').toLowerCase().includes(q);
+      const matchNotes = (item.reviewNotes || '').toLowerCase().includes(q);
+      return matchTitle || matchLabel || matchSubmitter || matchAction || matchNotes;
+    });
+  }, [currentApprovalsList, approvalSearch, approvalTypeFilter, approvalStatusFilter, approvalSubView]);
+
+  const handleApproveRequest = async (request) => {
+    try {
+      setProcessingApprovalId(request.id);
+      await approveMasterChange(request, {
+        uid: user?.uid,
+        email: user?.email,
+        displayName: userProfile?.displayName || user?.displayName || user?.email
+      });
+      await showAlert(`Approved change for "${request.recordTitle}". Master record updated.`, {
+        type: 'success',
+        title: 'Request Approved'
+      });
+    } catch (err) {
+      console.error('Error approving change:', err);
+      await showAlert(`Approval failed: ${err.message}`, { type: 'error', title: 'Error' });
+    } finally {
+      setProcessingApprovalId(null);
+    }
+  };
+
+  const handleRejectRequest = async (request) => {
+    const reason = rejectReasonMap[request.id] || '';
+    try {
+      setProcessingApprovalId(request.id);
+      await rejectMasterChange(request.id, reason, {
+        uid: user?.uid,
+        email: user?.email,
+        displayName: userProfile?.displayName || user?.displayName || user?.email
+      });
+      await showAlert(`Request for "${request.recordTitle}" has been rejected.`, {
+        type: 'info',
+        title: 'Request Rejected'
+      });
+      setShowRejectInputMap(prev => ({ ...prev, [request.id]: false }));
+    } catch (err) {
+      console.error('Error rejecting change:', err);
+      await showAlert(`Rejection failed: ${err.message}`, { type: 'error', title: 'Error' });
+    } finally {
+      setProcessingApprovalId(null);
+    }
+  };
 
   // Audit Trail State (Admin Only)
   const [liveAuditLogs, setLiveAuditLogs] = useState([]);
@@ -237,118 +327,6 @@ export default function DirectorySettingsView() {
       unsubAudit();
     };
   }, []);
-
-  const handleOpenRbacModal = (u) => {
-    setSelectedUserForRbac(u);
-    setEditRole(u.role || 'employee');
-    setEditAssignedModules(
-      Array.isArray(u.assignedModules)
-        ? [...u.assignedModules]
-        : [...(ROLE_DEFAULT_MODULES[u.role || 'employee'] || [])]
-    );
-    const defaultPerms = ROLE_DEFAULT_PERMISSIONS[u.role || 'employee'] || ROLE_DEFAULT_PERMISSIONS.employee;
-    setEditPermissions(
-      u.permissions && typeof u.permissions === 'object'
-        ? JSON.parse(JSON.stringify(u.permissions))
-        : JSON.parse(JSON.stringify(defaultPerms))
-    );
-  };
-
-  const handleRoleChange = (newRole) => {
-    setEditRole(newRole);
-    if (newRole === 'admin') {
-      setEditAssignedModules(ERP_MODULES.map(m => m.id));
-      setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS.admin)));
-    } else {
-      setEditAssignedModules([...(ROLE_DEFAULT_MODULES[newRole] || [])]);
-      setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS.employee)));
-    }
-  };
-
-  const handleToggleSubPermission = (subModuleId, action) => {
-    if (editRole === 'admin') return;
-    setEditPermissions(prev => {
-      const current = prev[subModuleId] || { read: false, create: false, update: false };
-      return {
-        ...prev,
-        [subModuleId]: {
-          ...current,
-          [action]: !current[action]
-        }
-      };
-    });
-  };
-
-  const handleToggleColumnAll = (action) => {
-    if (editRole === 'admin') return;
-    setEditPermissions(prev => {
-      const allCurrentTrue = ERP_SUBMODULES.every(sub => prev[sub.id]?.[action]);
-      const nextVal = !allCurrentTrue;
-      const updated = { ...prev };
-      ERP_SUBMODULES.forEach(sub => {
-        updated[sub.id] = {
-          ...(updated[sub.id] || { read: false, create: false, update: false }),
-          [action]: nextVal
-        };
-      });
-      return updated;
-    });
-  };
-
-  const handlePresetAll = () => {
-    setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS.admin)));
-    setEditAssignedModules(ERP_MODULES.map(m => m.id));
-  };
-
-  const handlePresetReadOnly = () => {
-    const ro = {};
-    ERP_SUBMODULES.forEach(sub => {
-      ro[sub.id] = { read: true, create: false, update: false };
-    });
-    setEditPermissions(ro);
-  };
-
-  const handleResetRoleDefaults = () => {
-    setEditAssignedModules([...(ROLE_DEFAULT_MODULES[editRole] || [])]);
-    setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS[editRole] || ROLE_DEFAULT_PERMISSIONS.employee)));
-  };
-
-  const handleSaveRbac = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    if (!selectedUserForRbac) return;
-    setIsSavingRbac(true);
-    try {
-      await updateUserAccess(selectedUserForRbac, {
-        role: editRole,
-        assignedModules: editRole === 'admin' ? ERP_MODULES.map(m => m.id) : editAssignedModules,
-        permissions: editRole === 'admin' ? ROLE_DEFAULT_PERMISSIONS.admin : editPermissions,
-        status: selectedUserForRbac.status || 'ACTIVE'
-      });
-
-      logAuditEvent({
-        category: 'SECURITY',
-        action: 'RBAC_PERMISSIONS_UPDATED',
-        summary: `Updated role to "${editRole.toUpperCase()}" with granular sub-module permissions for ${selectedUserForRbac.displayName || selectedUserForRbac.email}`,
-        targetId: selectedUserForRbac.displayName || selectedUserForRbac.email,
-        details: {
-          userUid: selectedUserForRbac.uid || selectedUserForRbac.id,
-          role: editRole,
-          assignedModules: editAssignedModules
-        }
-      });
-
-      await showAlert(`Permissions updated successfully for ${selectedUserForRbac.displayName || selectedUserForRbac.email}!`, {
-        type: 'success',
-        title: 'Permissions Saved'
-      });
-      setSelectedUserForRbac(null);
-    } catch (err) {
-      console.error('Failed to update user RBAC:', err);
-      await showAlert('Failed to update permissions: ' + err.message, { type: 'error' });
-    } finally {
-      setIsSavingRbac(false);
-    }
-  };
 
   const handleSaveVendor = async (data, existingId) => {
     const targetId = existingId || selectedVendorToEdit?.id;
@@ -852,6 +830,14 @@ export default function DirectorySettingsView() {
       { label: 'Directory & Admin', route: '/directory' },
       { label: 'User Roles & RBAC' }
     ];
+  } else if (activeTab === 'approvals') {
+    dirTitle = 'Master Data Approvals';
+    dirTooltip = 'Review, approve, or reject master records, rates, and settings change requests submitted by staff members.';
+    dirBadge = `${pendingApprovalsList.length} Pending`;
+    dirCrumbs = [
+      { label: 'Directory & Admin', route: '/directory' },
+      { label: 'Approvals Queue' }
+    ];
   } else if (activeTab === 'audit') {
     dirTitle = 'Security Audit Logs';
     dirTooltip = 'Perpetual immutable audit log of administrative actions, user logins, and data modifications.';
@@ -861,6 +847,38 @@ export default function DirectorySettingsView() {
       { label: 'Security Audit Logs' }
     ];
   }
+
+  // Dynamic filter categories for Approvals
+  const approvalFilterCategories = useMemo(() => [
+    {
+      id: 'type',
+      label: 'Master Category',
+      icon: Layers,
+      allLabel: 'All Master Records',
+      options: [
+        { value: 'ALL', label: 'All Master Records' },
+        { value: 'vendors', label: 'Suppliers & Contractors' },
+        { value: 'customers', label: 'Customers & Buyers' },
+        { value: 'jobWorkRates', label: 'JW Rate Master' },
+        { value: 'valueMasters', label: 'JW Value Master' },
+        { value: 'processes', label: 'Machine Processes' },
+        { value: 'locations', label: 'Godowns & Locations' },
+        { value: 'tareStandards', label: 'Tare Standards' },
+        { value: 'signatories', label: 'Plant Signatories' }
+      ]
+    },
+    ...(approvalSubView === 'history' ? [{
+      id: 'status',
+      label: 'Resolution Status',
+      icon: ShieldCheck,
+      allLabel: 'All Statuses',
+      options: [
+        { value: 'ALL', label: 'All Statuses' },
+        { value: 'APPROVED', label: 'Approved Only' },
+        { value: 'REJECTED', label: 'Rejected Only' }
+      ]
+    }] : [])
+  ], [approvalSubView]);
 
   // Dynamic filter categories for Rates Master
   const rateFilterCategories = useMemo(() => [
@@ -924,6 +942,27 @@ export default function DirectorySettingsView() {
       value: userSearch,
       onChange: setUserSearch,
       placeholder: 'Search user by name, email, role...'
+    };
+  } else if (activeTab === 'approvals') {
+    dirSearchProps = {
+      value: approvalSearch,
+      onChange: setApprovalSearch,
+      placeholder: 'Search approvals by record title, type, submitter...'
+    };
+    dirFilterProps = {
+      categories: approvalFilterCategories,
+      activeFilters: {
+        type: approvalTypeFilter,
+        ...(approvalSubView === 'history' ? { status: approvalStatusFilter } : {})
+      },
+      onApply: (f) => {
+        if (f.type !== undefined) setApprovalTypeFilter(f.type);
+        if (f.status !== undefined) setApprovalStatusFilter(f.status);
+      },
+      onReset: () => {
+        setApprovalTypeFilter('ALL');
+        setApprovalStatusFilter('ALL');
+      }
     };
   } else if (activeTab === 'audit') {
     dirSearchProps = {
@@ -1015,6 +1054,26 @@ export default function DirectorySettingsView() {
             />
           )}
         </>
+      )}
+
+      {activeTab === 'approvals' && (
+        <HeaderButton
+          icon={Download}
+          label="Export Approvals"
+          onClick={() => exportToCsv('Master_Approvals_Queue.csv', filteredApprovals.map(a => ({
+            ID: a.id,
+            RecordTitle: a.recordTitle,
+            MasterType: a.masterLabel || a.masterType,
+            Action: a.action,
+            Status: a.status,
+            SubmittedBy: a.submittedBy?.displayName || a.submittedBy?.email || '',
+            SubmitterRole: a.submittedBy?.role || '',
+            ReviewedBy: a.reviewedBy?.displayName || a.reviewedBy?.email || '',
+            ReviewNotes: a.reviewNotes || '',
+            Date: a.createdAt?.toLocaleString ? a.createdAt.toLocaleString() : ''
+          })))}
+          title="Export Approvals to CSV"
+        />
       )}
 
       {activeTab === 'audit' && (
@@ -1967,26 +2026,27 @@ export default function DirectorySettingsView() {
                           <td style={{ textAlign: 'right' }}>
                             <button
                               type="button"
-                              onClick={() => handleOpenRbacModal(u)}
+                              onClick={() => navigate(`/assign-permissions/${u.uid || u.id}`)}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '5px',
-                                padding: '6px 12px',
-                                background: '#f8fafc',
-                                border: '1px solid #cbd5e1',
+                                gap: '6px',
+                                padding: '6px 14px',
+                                background: '#eff6ff',
+                                border: '1px solid #bfdbfe',
                                 borderRadius: '6px',
                                 fontSize: '0.8125rem',
-                                fontWeight: 600,
-                                color: '#1e293b',
+                                fontWeight: 700,
+                                color: '#1d4ed8',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s'
                               }}
-                              onMouseOver={e => { e.currentTarget.style.background = '#e2e8f0'; }}
-                              onMouseOut={e => { e.currentTarget.style.background = '#f8fafc'; }}
+                              onMouseOver={e => { e.currentTarget.style.background = '#dbeafe'; }}
+                              onMouseOut={e => { e.currentTarget.style.background = '#eff6ff'; }}
+                              title="Configure Granular Permissions & Module Access"
                             >
-                              <Shield size={13} style={{ color: '#0284c7' }} />
-                              Assign Modules
+                              <Shield size={13} style={{ color: '#2563eb' }} />
+                              Assign Permissions
                             </button>
                           </td>
                         </tr>
@@ -2177,6 +2237,333 @@ export default function DirectorySettingsView() {
         </>
       )}
 
+      {/* ── TAB 10: Master Data Approvals Center ── */}
+      {activeTab === 'approvals' && canAccessTab('approvals') && (
+        <>
+          {/* Sub-view Switcher Pills */}
+          <div className="erp-subnav-pills" style={{ marginBottom: 18 }}>
+            <button
+              className={`erp-subnav-pill ${approvalSubView === 'pending' ? 'active' : ''}`}
+              onClick={() => setApprovalSubView('pending')}
+            >
+              <Clock size={13} />
+              <span>Pending Requests ({pendingApprovalsList.length})</span>
+            </button>
+            <button
+              className={`erp-subnav-pill ${approvalSubView === 'history' ? 'active' : ''}`}
+              onClick={() => setApprovalSubView('history')}
+            >
+              <CheckCircle2 size={13} />
+              <span>Resolved History ({historyApprovalsList.length})</span>
+            </button>
+          </div>
+
+          {/* Active Filter Pills if applied */}
+          {(approvalTypeFilter !== 'ALL' || (approvalSubView === 'history' && approvalStatusFilter !== 'ALL')) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+              {approvalTypeFilter !== 'ALL' && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '4px 10px', fontSize: '0.78rem', color: '#1d4ed8', fontWeight: 600 }}>
+                  <span>Category: <strong>{approvalTypeFilter}</strong></span>
+                  <button type="button" onClick={() => setApprovalTypeFilter('ALL')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#1d4ed8', padding: 0, display: 'flex' }}>
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+              {approvalSubView === 'history' && approvalStatusFilter !== 'ALL' && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '6px', padding: '4px 10px', fontSize: '0.78rem', color: '#b45309', fontWeight: 600 }}>
+                  <span>Status: <strong>{approvalStatusFilter}</strong></span>
+                  <button type="button" onClick={() => setApprovalStatusFilter('ALL')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#b45309', padding: 0, display: 'flex' }}>
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Requests Content */}
+          {filteredApprovals.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '50px 20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#64748b' }}>
+              <CheckCircle2 size={44} style={{ color: '#22c55e', margin: '0 auto 14px', display: 'block' }} />
+              <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#0f172a' }}>
+                {approvalSubView === 'pending' ? 'All Clear! No Pending Requests' : 'No Resolved Approval Records Found'}
+              </div>
+              <div style={{ fontSize: '0.82rem', marginTop: '6px', color: '#64748b' }}>
+                {approvalSubView === 'pending'
+                  ? 'All staff master change submissions have been reviewed and committed.'
+                  : 'Change requests that have been approved or rejected will be archived here.'}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {filteredApprovals.map(item => {
+                const isPending = item.status === 'PENDING';
+                const isApproved = item.status === 'APPROVED';
+                const isRejected = item.status === 'REJECTED';
+                const isExpanded = Boolean(expandedApprovalMap[item.id]);
+                const createdDateStr = item.createdAt?.toLocaleString ? item.createdAt.toLocaleString() : (item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString() : 'Recent');
+                const reviewedDateStr = item.reviewedAt?.toLocaleString ? item.reviewedAt.toLocaleString() : (item.reviewedAt?.toDate ? item.reviewedAt.toDate().toLocaleString() : '');
+
+                return (
+                  <div
+                    key={item.id}
+                    className="ds-approval-card"
+                    style={{
+                      border: isPending ? '1px solid #cbd5e1' : '1px solid #e2e8f0',
+                      boxShadow: isPending ? '0 2px 6px rgba(15, 23, 42, 0.06)' : 'none'
+                    }}
+                  >
+                    {/* Header Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        {item.action === 'CREATE' && (
+                          <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', padding: '3px 9px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800 }}>
+                            + CREATE NEW
+                          </span>
+                        )}
+                        {item.action === 'UPDATE' && (
+                          <span style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '3px 9px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800 }}>
+                            ✎ EDIT / UPDATE
+                          </span>
+                        )}
+                        {item.action === 'DELETE' && (
+                          <span style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', padding: '3px 9px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800 }}>
+                            ✕ DELETE
+                          </span>
+                        )}
+
+                        <span style={{ background: '#f1f5f9', color: '#475569', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700 }}>
+                          {item.masterLabel || item.masterType}
+                        </span>
+
+                        <span style={{ fontWeight: 800, color: '#0f172a', fontSize: '1rem', letterSpacing: '-0.01em' }}>
+                          {item.recordTitle}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          padding: '3px 10px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          background: isPending ? '#fef3c7' : isApproved ? '#dcfce7' : '#fee2e2',
+                          color: isPending ? '#b45309' : isApproved ? '#15803d' : '#b91c1c',
+                          border: `1px solid ${isPending ? '#fde68a' : isApproved ? '#bbf7d0' : '#fecaca'}`
+                        }}>
+                          {item.status}
+                        </span>
+
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} />
+                          {createdDateStr}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Submitter & Reviewer Meta Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', fontSize: '0.78rem', color: '#64748b' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <User size={13} style={{ color: '#64748b' }} />
+                        <span>Submitted by: <strong style={{ color: '#0f172a' }}>{item.submittedBy?.displayName || item.submittedBy?.email || 'Staff'}</strong> ({item.submittedBy?.role || 'staff'})</span>
+                      </div>
+
+                      {!isPending && (
+                        <div style={{ fontSize: '0.76rem', color: '#475569' }}>
+                          Reviewed by: <strong style={{ color: '#0f172a' }}>{item.reviewedBy?.displayName || item.reviewedBy?.email || 'Admin'}</strong>
+                          {reviewedDateStr && <span> on {reviewedDateStr}</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Data Details View / Diff - Only shown when expanded */}
+                    {isExpanded && (
+                      <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {item.action === 'UPDATE' && item.previousData ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+                            <div style={{ background: '#ffffff', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#dc2626', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                Previous Master Values
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {Object.keys(item.previousData || {})
+                                  .filter(k => !['createdAt', 'updatedAt', 'id'].includes(k))
+                                  .map(k => (
+                                    <span key={k} style={{ background: '#fef2f2', border: '1px solid #fee2e2', padding: '2px 8px', borderRadius: '4px', fontSize: '0.74rem', color: '#7f1d1d' }}>
+                                      <strong>{k}:</strong> {String(item.previousData[k] ?? '—')}
+                                    </span>
+                                  ))}
+                              </div>
+                            </div>
+
+                            <div style={{ background: '#ffffff', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#16a34a', textTransform: 'uppercase', marginBottom: '6px' }}>
+                                Proposed New Values
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                {Object.keys(item.proposedData || {})
+                                  .filter(k => !['createdAt', 'updatedAt', 'id'].includes(k))
+                                  .map(k => (
+                                    <span key={k} style={{ background: '#f0fdf4', border: '1px solid #dcfce7', padding: '2px 8px', borderRadius: '4px', fontSize: '0.74rem', color: '#14532d' }}>
+                                      <strong>{k}:</strong> {String(item.proposedData[k] ?? '—')}
+                                    </span>
+                                  ))}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>
+                              {item.action === 'DELETE' ? 'Target Record For Removal' : 'Submitted Record Data'}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {Object.keys(item.proposedData || {})
+                                .filter(k => !['createdAt', 'updatedAt', 'id'].includes(k))
+                                .map(k => (
+                                  <span key={k} style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '3px 8px', borderRadius: '4px', fontSize: '0.74rem', color: '#334155' }}>
+                                    <strong style={{ color: '#64748b' }}>{k}:</strong> {String(item.proposedData[k] ?? '—')}
+                                  </span>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {item.reviewNotes && (
+                          <div style={{ marginTop: '4px', paddingTop: '6px', borderTop: '1px dashed #cbd5e1', fontSize: '0.75rem', color: isRejected ? '#991b1b' : '#166534' }}>
+                            <strong>Reviewer Notes / Reason:</strong> {item.reviewNotes}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Action Bar */}
+                    <div className="ds-approval-actions-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingTop: '6px', borderTop: '1px solid #f1f5f9' }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleExpandApproval(item.id)}
+                        style={{
+                          background: isExpanded ? '#eff6ff' : '#ffffff',
+                          color: isExpanded ? '#1d4ed8' : '#475569',
+                          border: isExpanded ? '1px solid #bfdbfe' : '1px solid #cbd5e1',
+                          padding: '6px 14px',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        <span>{isExpanded ? 'Hide Changes' : 'View Changes'}</span>
+                      </button>
+
+                      {isPending && (
+                        showRejectInputMap[item.id] ? (
+                          <div className="ds-approval-reject-box" style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1, justifyContent: 'flex-end', minWidth: '280px' }}>
+                            <input
+                              type="text"
+                              placeholder="Reason for rejection (e.g. invalid GSTIN, price mismatch)..."
+                              value={rejectReasonMap[item.id] || ''}
+                              onChange={e => setRejectReasonMap({ ...rejectReasonMap, [item.id]: e.target.value })}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: '6px',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '0.8rem',
+                                flex: 1,
+                                maxWidth: '380px'
+                              }}
+                            />
+                            <div className="ds-approval-reject-btns" style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                type="button"
+                                disabled={processingApprovalId === item.id}
+                                onClick={() => handleRejectRequest(item)}
+                                style={{
+                                  background: '#dc2626',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  padding: '6px 14px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Confirm Reject
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowRejectInputMap({ ...showRejectInputMap, [item.id]: false })}
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#64748b',
+                                  fontSize: '0.78rem',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="ds-approval-btn-group" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <button
+                              type="button"
+                              disabled={processingApprovalId === item.id}
+                              onClick={() => setShowRejectInputMap({ ...showRejectInputMap, [item.id]: true })}
+                              style={{
+                                background: '#ffffff',
+                                color: '#b91c1c',
+                                border: '1px solid #fecaca',
+                                padding: '6px 16px',
+                                borderRadius: '6px',
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              ✕ Reject Request
+                            </button>
+                            <button
+                              type="button"
+                              disabled={processingApprovalId === item.id}
+                              onClick={() => handleApproveRequest(item)}
+                              style={{
+                                background: '#16a34a',
+                                color: '#ffffff',
+                                border: 'none',
+                                padding: '6px 18px',
+                                borderRadius: '6px',
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                boxShadow: '0 1px 3px rgba(22, 163, 74, 0.25)',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              <Check size={14} />
+                              {processingApprovalId === item.id ? 'Approving...' : '✓ Approve & Commit'}
+                            </button>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
       {/* ── Audit Event Detail Drawer / Modal ── */}
       {selectedAuditDetail && (
         <div
@@ -2336,351 +2723,7 @@ export default function DirectorySettingsView() {
         </div>
       )}
 
-      {/* ── RBAC Module Assignment Modal ── */}
-      {selectedUserForRbac && (
-        <div 
-          className="modal-overlay" 
-          onClick={e => e.target === e.currentTarget && setSelectedUserForRbac(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px'
-          }}
-        >
-          <div 
-            className="modal-dialog modal-md"
-            style={{
-              background: '#ffffff',
-              borderRadius: '12px',
-              maxWidth: '680px',
-              maxHeight: '90vh',
-              width: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-              overflow: 'hidden'
-            }}
-          >
-            <div 
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '16px 20px',
-                borderBottom: '1px solid #e2e8f0',
-                background: '#f8fafc',
-                flexShrink: 0
-              }}
-            >
-              <div>
-                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-                  Assign User Role &amp; Module Access
-                </h2>
-                <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 0' }}>
-                  Configure role and module permissions for {selectedUserForRbac.displayName || selectedUserForRbac.email}
-                </p>
-              </div>
-              <button 
-                className="modal-close-btn" 
-                onClick={() => setSelectedUserForRbac(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '18px',
-                  cursor: 'pointer',
-                  color: '#64748b'
-                }}
-              >
-                ✕
-              </button>
-            </div>
 
-            <form 
-              onSubmit={handleSaveRbac} 
-              style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                flex: 1, 
-                minHeight: 0, 
-                overflow: 'hidden' 
-              }}
-            >
-              <div 
-                style={{ 
-                  padding: '20px', 
-                  overflowY: 'auto', 
-                  flex: 1, 
-                  minHeight: 0 
-                }}
-              >
-                {/* User details snippet */}
-                <div style={{
-                  background: '#f1f5f9',
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  marginBottom: '16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div>
-                    <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
-                      {selectedUserForRbac.displayName || 'No Name Set'}
-                    </div>
-                    <div style={{ color: '#64748b', fontSize: '0.75rem' }}>
-                      {selectedUserForRbac.email}
-                    </div>
-                  </div>
-                  <span style={{
-                    padding: '3px 8px',
-                    background: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '9999px',
-                    fontSize: '0.7rem',
-                    fontWeight: 600,
-                    color: '#475569'
-                  }}>
-                    {selectedUserForRbac.uid?.slice(0, 10)}...
-                  </span>
-                </div>
-
-                {/* 1. Select Role */}
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '8px' }}>
-                    1. Select Primary Role
-                  </label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                    {[
-                      { id: 'admin', label: 'Admin', desc: 'Full System Access' },
-                      { id: 'accountant', label: 'Accountant', desc: 'Finance & Operations' },
-                      { id: 'employee', label: 'Employee', desc: 'Floor & Job Work' }
-                    ].map(r => {
-                      const isSelected = editRole === r.id;
-                      return (
-                        <button
-                          key={r.id}
-                          type="button"
-                          onClick={() => handleRoleChange(r.id)}
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'flex-start',
-                            padding: '10px',
-                            borderRadius: '8px',
-                            border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                            background: isSelected ? '#eff6ff' : '#ffffff',
-                            cursor: 'pointer',
-                            textAlign: 'left'
-                          }}
-                        >
-                          <span style={{ fontWeight: 700, fontSize: '0.85rem', color: isSelected ? '#1d4ed8' : '#1e293b' }}>
-                            {r.label}
-                          </span>
-                          <span style={{ fontSize: '0.7rem', color: isSelected ? '#3b82f6' : '#64748b', marginTop: '2px' }}>
-                            {r.desc}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {editRole === 'admin' && (
-                    <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <ShieldAlert size={13} />
-                      Admins automatically have access to all modules and configurations.
-                    </p>
-                  )}
-                </div>
-
-                {/* 2. Granular Permission Matrix Table */}
-                <div style={{ marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>
-                      2. Granular Permissions Matrix (Sub-Modules &amp; Actions)
-                    </label>
-                    {editRole !== 'admin' && (
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={handlePresetAll}
-                          style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
-                        >
-                          Grant All
-                        </button>
-                        <span style={{ color: '#cbd5e1' }}>|</span>
-                        <button
-                          type="button"
-                          onClick={handlePresetReadOnly}
-                          style={{ background: 'none', border: 'none', color: '#475569', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
-                        >
-                          Read-Only
-                        </button>
-                        <span style={{ color: '#cbd5e1' }}>|</span>
-                        <button
-                          type="button"
-                          onClick={handleResetRoleDefaults}
-                          style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
-                        >
-                          Role Defaults
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', maxHeight: '260px', overflowY: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.78rem' }}>
-                      <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #e2e8f0' }}>
-                        <tr>
-                          <th style={{ padding: '8px 12px', fontWeight: 700, color: '#475569' }}>SUB-MODULE</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'center', width: '80px', fontWeight: 700, color: '#475569' }}>
-                            <button
-                              type="button"
-                              disabled={editRole === 'admin'}
-                              onClick={() => handleToggleColumnAll('read')}
-                              style={{ background: 'none', border: 'none', cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', fontWeight: 700, color: '#2563eb', fontSize: '0.74rem' }}
-                              title="Toggle Read for all"
-                            >
-                              READ
-                            </button>
-                          </th>
-                          <th style={{ padding: '8px 12px', textAlign: 'center', width: '80px', fontWeight: 700, color: '#475569' }}>
-                            <button
-                              type="button"
-                              disabled={editRole === 'admin'}
-                              onClick={() => handleToggleColumnAll('create')}
-                              style={{ background: 'none', border: 'none', cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', fontWeight: 700, color: '#2563eb', fontSize: '0.74rem' }}
-                              title="Toggle Create for all"
-                            >
-                              CREATE
-                            </button>
-                          </th>
-                          <th style={{ padding: '8px 12px', textAlign: 'center', width: '80px', fontWeight: 700, color: '#475569' }}>
-                            <button
-                              type="button"
-                              disabled={editRole === 'admin'}
-                              onClick={() => handleToggleColumnAll('update')}
-                              style={{ background: 'none', border: 'none', cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', fontWeight: 700, color: '#2563eb', fontSize: '0.74rem' }}
-                              title="Toggle Update for all"
-                            >
-                              UPDATE
-                            </button>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ERP_MODULES.map(mod => {
-                          const subList = ERP_SUBMODULES.filter(s => s.moduleId === mod.id);
-                          if (subList.length === 0) return null;
-                          return (
-                            <Fragment key={mod.id}>
-                              <tr style={{ background: '#f1f5f9', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
-                                <td colSpan="4" style={{ padding: '6px 12px', fontWeight: 800, fontSize: '0.72rem', color: '#1e293b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                                  {mod.label}
-                                </td>
-                              </tr>
-                              {subList.map(sub => {
-                                const subPerms = editRole === 'admin'
-                                  ? { read: true, create: true, update: true }
-                                  : (editPermissions[sub.id] || { read: false, create: false, update: false });
-                                return (
-                                  <tr key={sub.id} style={{ borderBottom: '1px solid #f1f5f9', background: '#ffffff' }}>
-                                    <td style={{ padding: '8px 12px' }}>
-                                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{sub.label}</div>
-                                      <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{sub.description}</div>
-                                    </td>
-                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                      <input
-                                        type="checkbox"
-                                        disabled={editRole === 'admin'}
-                                        checked={Boolean(subPerms.read)}
-                                        onChange={() => handleToggleSubPermission(sub.id, 'read')}
-                                        style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', width: '15px', height: '15px' }}
-                                      />
-                                    </td>
-                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                      <input
-                                        type="checkbox"
-                                        disabled={editRole === 'admin'}
-                                        checked={Boolean(subPerms.create)}
-                                        onChange={() => handleToggleSubPermission(sub.id, 'create')}
-                                        style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', width: '15px', height: '15px' }}
-                                      />
-                                    </td>
-                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                      <input
-                                        type="checkbox"
-                                        disabled={editRole === 'admin'}
-                                        checked={Boolean(subPerms.update)}
-                                        onChange={() => handleToggleSubPermission(sub.id, 'update')}
-                                        style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', width: '15px', height: '15px' }}
-                                      />
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* Fixed Footer pinned to bottom */}
-              <div 
-                style={{ 
-                  display: 'flex', 
-                  justifyContent: 'flex-end', 
-                  gap: '10px', 
-                  padding: '14px 20px', 
-                  borderTop: '1px solid #e2e8f0', 
-                  background: '#f8fafc',
-                  flexShrink: 0
-                }}
-              >
-                <button
-                  type="button"
-                  className="mfooter-btn cancel"
-                  onClick={() => setSelectedUserForRbac(null)}
-                  disabled={isSavingRbac}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    background: '#ffffff',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.8125rem'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingRbac}
-                  style={{
-                    padding: '8px 18px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: '#2563eb',
-                    color: '#ffffff',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.8125rem'
-                  }}
-                >
-                  {isSavingRbac ? 'Saving Changes...' : 'Save Permissions'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Local Modals */}
       {showAddVendorModal && (

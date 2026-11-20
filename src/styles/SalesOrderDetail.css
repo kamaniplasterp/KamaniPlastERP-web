@@ -257,9 +257,13 @@
   color: #0f172a;
 }
 
-.so-table-wrap { overflow-x: auto; }
+.so-table-wrap { 
+  overflow-x: auto; 
+  -webkit-overflow-scrolling: touch;
+}
 .so-table {
   width: 100%;
+  min-width: 580px;
   border-collapse: collapse;
   font-size: 0.8125rem;
 }
@@ -301,4 +305,53 @@
   text-align: center;
   font-size: 0.78rem;
   color: #64748b;
+}
+
+@media (max-width: 900px) {
+  .so-kpi-cards-grid {
+    flex-direction: column;
+  }
+  .so-alloc-boxes {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .so-detail-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 14px 16px;
+  }
+  .so-header-left {
+    width: 100%;
+    align-items: flex-start;
+  }
+  .so-title-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .so-header-right {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+  }
+  .so-btn-create-dispatch,
+  .so-btn-print {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 12px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .so-header-right {
+    flex-direction: column;
+    width: 100%;
+  }
+  .so-btn-create-dispatch,
+  .so-btn-print {
+    width: 100%;
+  }
 }

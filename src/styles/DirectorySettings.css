@@ -644,3 +644,54 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Master Data Approvals Mobile Responsive */
+.ds-approval-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+@media (max-width: 640px) {
+  .ds-approval-card {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .ds-approval-actions-bar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+  .ds-approval-btn-group {
+    width: 100% !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+  .ds-approval-btn-group button {
+    flex: 1 !important;
+    justify-content: center !important;
+  }
+  .ds-approval-reject-box {
+    min-width: unset !important;
+    width: 100% !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .ds-approval-reject-box input {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+  .ds-approval-reject-btns {
+    width: 100% !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+  .ds-approval-reject-btns button {
+    flex: 1 !important;
+    justify-content: center !important;
+  }
+}

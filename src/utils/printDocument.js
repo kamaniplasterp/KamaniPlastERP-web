@@ -683,7 +683,7 @@ export function printDeliveryChallan(data = {}) {
     <!-- Header -->
     <div class="doc-header" style="border-bottom: 2px solid #0f172a; padding-bottom: 12px; display: flex; align-items: flex-start; justify-content: space-between;">
       <div style="display: flex; align-items: center; gap: 14px;">
-        <img src="/logo.png" alt="Kamani Logo" style="height: 48px; width: auto; object-fit: contain;" />
+        <img src="/logo-icon.png" alt="Kamani Logo" style="height: 48px; width: auto; object-fit: contain;" />
         <div>
           <div class="company-title" style="font-size: 18px; font-weight: 800;">${COMPANY_INFO.name}</div>
           <div class="company-sub">${COMPANY_INFO.tagline}</div>
@@ -879,7 +879,7 @@ export function printJobWorkChallan(data = {}) {
     <!-- Header -->
     <div class="doc-header" style="border-bottom: 2px solid #0f172a; padding-bottom: 12px; display: flex; align-items: flex-start; justify-content: space-between;">
       <div style="display: flex; align-items: center; gap: 14px;">
-        <img src="/logo.png" alt="Kamani Logo" style="height: 48px; width: auto; object-fit: contain;" />
+        <img src="/logo-icon.png" alt="Kamani Logo" style="height: 48px; width: auto; object-fit: contain;" />
         <div>
           <div class="company-title" style="font-size: 18px; font-weight: 800;">${COMPANY_INFO.name}</div>
           <div class="company-sub">${COMPANY_INFO.tagline}</div>

@@ -517,6 +517,8 @@
 /* Table Container & Minimalist Light Header */
 .jw-table-container {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
   border-radius: 12px;
   border: 1px solid #f1f5f9;
   background: #ffffff;
@@ -524,6 +526,7 @@
 }
 .jw-ledger-table {
   width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
   font-size: 0.8125rem;
   background: #ffffff;
@@ -986,12 +989,17 @@
 }
 
 /* Stepper Bar */
-.jwd-stepper-card { padding: 20px; }
+.jwd-stepper-card {
+  padding: 18px 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .jwd-pipeline-steps {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: 10px;
+  min-width: 480px;
 }
 .pipeline-step {
   display: flex;
@@ -1001,6 +1009,7 @@
   text-align: center;
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
 }
 .step-circle {
   width: 28px;
@@ -1015,14 +1024,15 @@
 .step-done .step-circle { background: #f97316; color: #ffffff; }
 .step-pending .step-circle { background: #e2e8f0; color: #64748b; }
 
-.step-label { font-size: 0.74rem; font-weight: 700; color: #0f172a; }
-.step-sub { font-size: 0.64rem; color: #94a3b8; }
+.step-label { font-size: 0.74rem; font-weight: 700; color: #0f172a; white-space: nowrap; }
+.step-sub { font-size: 0.64rem; color: #94a3b8; white-space: nowrap; }
 
 .pipeline-line {
   flex: 1;
   height: 3px;
   margin: 0 10px;
   margin-top: -24px;
+  min-width: 24px;
 }
 .line-done { background: #f97316; }
 .line-pending { background: #e2e8f0; }
@@ -1032,6 +1042,35 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
+}
+
+@media (max-width: 1024px) {
+  .jwd-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .jwd-stepper-card {
+    padding: 14px 12px;
+  }
+  .jwd-card {
+    padding: 14px;
+  }
+  .jwd-item-title {
+    font-size: 0.9rem;
+    word-break: break-word;
+  }
+  .jwd-boxes-2x2 {
+    gap: 6px;
+  }
+  .jwd-kpi-box {
+    padding: 6px 8px;
+  }
+  .box-val {
+    font-size: 0.85rem;
+  }
 }
 .jwd-card-header-line {
   display: flex;
@@ -1485,6 +1524,11 @@ th.th-right {
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
   margin-top: 14px;
+}
+@media (max-width: 900px) {
+  .jw-stmt-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .jw-stmt-box {
   background: #ffffff;

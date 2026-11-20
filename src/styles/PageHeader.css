@@ -365,6 +365,19 @@
   .header-page-title {
     font-size: 1.15rem;
   }
+  .header-actions-group {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+  .header-actions-group::-webkit-scrollbar {
+    display: none;
+  }
+  .header-btn {
+    flex-shrink: 0;
+  }
   .header-search-popover {
     left: auto;
     right: 0;

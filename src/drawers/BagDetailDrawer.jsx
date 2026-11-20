@@ -44,7 +44,7 @@ export default function BagDetailDrawer({ bag, isOpen, onClose, onUpdateBagWeigh
 
   return (
     <div className="mdrawer-overlay" onClick={onClose}>
-      <div className="mdrawer-content" onClick={e => e.stopPropagation()} style={{ width: '560px' }}>
+      <div className="mdrawer-content bag-drawer-content" onClick={e => e.stopPropagation()}>
         {/* Dark Header */}
         <div className="mdrawer-header" style={{ background: '#0f172a', padding: '20px 24px' }}>
           <div className="mdrawer-header-top">
@@ -134,7 +134,7 @@ export default function BagDetailDrawer({ bag, isOpen, onClose, onUpdateBagWeigh
         <div className="mdrawer-body" style={{ padding: '20px 24px', overflowY: 'auto' }}>
           
           {/* 4 Metric Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
+          <div className="bag-metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px' }}>
             {/* Scale Actual Weight */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -252,7 +252,7 @@ export default function BagDetailDrawer({ bag, isOpen, onClose, onUpdateBagWeigh
               PRODUCT SPECIFICATIONS
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '0.82rem' }}>
+            <div className="bag-specs-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '0.82rem' }}>
               <div>
                 <span style={{ color: '#64748b', fontSize: '0.75rem', display: 'block' }}>Quality / Brand</span>
                 <strong style={{ color: '#0f172a' }}>{bag.quality || 'Anchor'}</strong>
@@ -279,7 +279,7 @@ export default function BagDetailDrawer({ bag, isOpen, onClose, onUpdateBagWeigh
               MANUFACTURING &amp; INWARD TRACEABILITY
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '0.82rem' }}>
+            <div className="bag-specs-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', fontSize: '0.82rem' }}>
               <div>
                 <span style={{ color: '#64748b', fontSize: '0.75rem', display: 'block' }}>Inward Slip #</span>
                 <span style={{ fontWeight: 700, color: '#2563eb' }}>{bag.inwardSlipNo || 'SLIP-3001'}</span>
