@@ -32,8 +32,71 @@ import { addProcess, updateProcess, deleteProcess } from './process.api';
 import { addLocation, updateLocation, deleteLocation } from './locations.api';
 
 /**
+ * Commit a master data change directly against the underlying collection.
+ */
+export async function executeMasterChange({
+  masterType,
+  action,
+  recordId,
+  proposedData,
+  recordTitle
+}) {
+  switch (masterType) {
+    case 'vendors':
+      if (action === 'CREATE') await addVendor(proposedData);
+      else if (action === 'UPDATE') await updateVendor(recordId, proposedData);
+      else if (action === 'DELETE') await deleteVendor(recordId, recordTitle);
+      break;
+
+    case 'customers':
+      if (action === 'CREATE') await addBuyer(proposedData);
+      else if (action === 'UPDATE') await updateBuyer(recordId, proposedData);
+      else if (action === 'DELETE') await deleteBuyer(recordId, recordTitle);
+      break;
+
+    case 'jobWorkRates':
+      if (action === 'CREATE') await addJobWorkRate(proposedData);
+      else if (action === 'UPDATE') await updateJobWorkRate(recordId, proposedData);
+      else if (action === 'DELETE') await deleteJobWorkRate(recordId, recordTitle);
+      break;
+
+    case 'valueMasters':
+      if (action === 'CREATE') await addJwValueMaster(proposedData);
+      else if (action === 'UPDATE') await updateJwValueMaster(recordId, proposedData);
+      else if (action === 'DELETE') await deleteJwValueMaster(recordId);
+      break;
+
+    case 'processes':
+      if (action === 'CREATE') await addProcess(proposedData);
+      else if (action === 'UPDATE') await updateProcess(recordId, proposedData);
+      else if (action === 'DELETE') await deleteProcess(recordId, recordTitle);
+      break;
+
+    case 'locations':
+      if (action === 'CREATE') await addLocation(proposedData);
+      else if (action === 'UPDATE') await updateLocation(recordId, proposedData);
+      else if (action === 'DELETE') await deleteLocation(recordId, recordTitle);
+      break;
+
+    case 'tareStandards':
+      if (action === 'UPDATE') await updateTareStandards(proposedData);
+      break;
+
+    case 'signatories':
+      if (action === 'CREATE') await addPersonnel(proposedData?.name || recordTitle);
+      else if (action === 'DELETE') await deletePersonnel(recordTitle);
+      break;
+
+    default:
+      console.warn('Unknown master type for direct commit:', masterType);
+      break;
+  }
+}
+
+/**
  * Submit a Master Data Change Request for Administrator approval.
- * Used when a non-admin (accountant, employee) creates, updates, or deletes master records.
+ * Non-admin roles (accountant, employee, staff) create pending requests.
+ * Users with the 'admin' role bypass approval and commit changes immediately!
  */
 export async function submitMasterChangeRequest({
   masterType,
@@ -66,6 +129,33 @@ export async function submitMasterChangeRequest({
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
+
+  // Admin role does NOT need approval - commit change immediately!
+  const isUserAdmin = Boolean(
+    submittedBy?.isAdmin === true ||
+    submittedBy?.role === 'admin' ||
+    submittedBy?.userRole === 'admin'
+  );
+
+  if (isUserAdmin) {
+    await executeMasterChange({
+      masterType,
+      action,
+      recordId,
+      proposedData,
+      recordTitle
+    });
+
+    await logAuditEvent({
+      category: 'MASTER_DATA',
+      action: `MASTER_${action}_DIRECT`,
+      summary: `Administrator (${submittedBy.displayName || submittedBy.email || 'Admin'}) directly executed ${action} for ${cleanRequest.masterLabel}: "${cleanRequest.recordTitle}"`,
+      targetId: cleanRequest.recordTitle || recordId || 'direct',
+      details: cleanRequest
+    });
+
+    return { appliedDirectly: true, status: 'DIRECT_COMMITTED', ...cleanRequest };
+  }
 
   const docRef = await addDoc(collection(db, 'masterChangeRequests'), cleanRequest);
 
@@ -175,56 +265,13 @@ export async function approveMasterChange(request, adminUser = {}) {
   const { masterType, action, recordId, proposedData, recordTitle, masterLabel } = request;
 
   // 1. Commit the actual change to the target master collection
-  switch (masterType) {
-    case 'vendors':
-      if (action === 'CREATE') await addVendor(proposedData);
-      else if (action === 'UPDATE') await updateVendor(recordId, proposedData);
-      else if (action === 'DELETE') await deleteVendor(recordId, recordTitle);
-      break;
-
-    case 'customers':
-      if (action === 'CREATE') await addBuyer(proposedData);
-      else if (action === 'UPDATE') await updateBuyer(recordId, proposedData);
-      else if (action === 'DELETE') await deleteBuyer(recordId, recordTitle);
-      break;
-
-    case 'jobWorkRates':
-      if (action === 'CREATE') await addJobWorkRate(proposedData);
-      else if (action === 'UPDATE') await updateJobWorkRate(recordId, proposedData);
-      else if (action === 'DELETE') await deleteJobWorkRate(recordId, recordTitle);
-      break;
-
-    case 'valueMasters':
-      if (action === 'CREATE') await addJwValueMaster(proposedData);
-      else if (action === 'UPDATE') await updateJwValueMaster(recordId, proposedData);
-      else if (action === 'DELETE') await deleteJwValueMaster(recordId);
-      break;
-
-    case 'processes':
-      if (action === 'CREATE') await addProcess(proposedData);
-      else if (action === 'UPDATE') await updateProcess(recordId, proposedData);
-      else if (action === 'DELETE') await deleteProcess(recordId, recordTitle);
-      break;
-
-    case 'locations':
-      if (action === 'CREATE') await addLocation(proposedData);
-      else if (action === 'UPDATE') await updateLocation(recordId, proposedData);
-      else if (action === 'DELETE') await deleteLocation(recordId, recordTitle);
-      break;
-
-    case 'tareStandards':
-      if (action === 'UPDATE') await updateTareStandards(proposedData);
-      break;
-
-    case 'signatories':
-      if (action === 'CREATE') await addPersonnel(proposedData?.name || recordTitle);
-      else if (action === 'DELETE') await deletePersonnel(recordTitle);
-      break;
-
-    default:
-      console.warn('Unknown master type for auto-commit:', masterType);
-      break;
-  }
+  await executeMasterChange({
+    masterType,
+    action,
+    recordId,
+    proposedData,
+    recordTitle
+  });
 
   // 2. Mark the request as APPROVED
   const reqRef = doc(db, 'masterChangeRequests', request.id);

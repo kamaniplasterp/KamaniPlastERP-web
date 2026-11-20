@@ -102,7 +102,7 @@ const formatApprovalTimestamp = (val, fallback = '') => {
 export default function DirectorySettingsView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { isAdmin, user, userProfile, can } = useAuth();
+  const { isAdmin, user, userProfile, userRole, can } = useAuth();
   const [directorySubView, setDirectorySubView] = useState('vendors'); // 'vendors' | 'customers'
   const [pricingSubView, setPricingSubView] = useState('rates'); // 'rates' | 'value'
   const [settingsSubView, setSettingsSubView] = useState('tare'); // 'tare' | 'erp'
@@ -373,23 +373,25 @@ export default function DirectorySettingsView() {
         rate: cleanRate
       };
 
-      await submitMasterChangeRequest({
-        masterType: 'vendors',
-        masterLabel: 'Vendor / Supplier',
-        action: targetId ? 'UPDATE' : 'CREATE',
-        recordId: targetId,
-        recordTitle: cleanName,
-        proposedData: vendorPayload,
-        previousData: selectedVendorToEdit,
-        submittedBy: userProfile || user || { role: userRole || 'staff' }
-      });
-      await showAlert(`Change submitted! Administrator approval required before vendor "${cleanName}" takes effect.`, {
-        type: 'info',
-        title: 'Submitted for Approval'
-      });
-      setSelectedVendorToEdit(null);
-      setShowAddVendorModal(false);
-      return;
+      if (!isAdmin) {
+        await submitMasterChangeRequest({
+          masterType: 'vendors',
+          masterLabel: 'Vendor / Supplier',
+          action: targetId ? 'UPDATE' : 'CREATE',
+          recordId: targetId,
+          recordTitle: cleanName,
+          proposedData: vendorPayload,
+          previousData: selectedVendorToEdit,
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userRole || 'staff', isAdmin }
+        });
+        await showAlert(`Change submitted! Administrator approval required before vendor "${cleanName}" takes effect.`, {
+          type: 'info',
+          title: 'Submitted for Approval'
+        });
+        setSelectedVendorToEdit(null);
+        setShowAddVendorModal(false);
+        return;
+      }
 
       if (targetId) {
         await updateVendor(targetId, vendorPayload);
@@ -434,6 +436,11 @@ export default function DirectorySettingsView() {
     }
 
     try {
+      if (isAdmin) {
+        await deleteVendor(v.id, v.name);
+        await showAlert(`Vendor "${v.name}" deleted successfully!`, { type: 'success', title: 'Vendor Deleted' });
+        return;
+      }
       await submitMasterChangeRequest({
         masterType: 'vendors',
         masterLabel: 'Vendor / Supplier',
@@ -441,14 +448,14 @@ export default function DirectorySettingsView() {
         recordId: v.id,
         recordTitle: v.name,
         previousData: v,
-        submittedBy: userProfile || user || { role: userRole || 'staff' }
+        submittedBy: { ...(userProfile || {}), ...(user || {}), role: userRole || 'staff', isAdmin }
       });
       await showAlert(`Deletion request submitted! Administrator approval required to remove vendor "${v.name}".`, {
         type: 'info',
         title: 'Submitted for Approval'
       });
     } catch (err) {
-      await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
+      await showAlert('Failed to delete vendor: ' + err.message, { type: 'error' });
     }
   };
 
@@ -471,23 +478,25 @@ export default function DirectorySettingsView() {
         paymentTerms: data.paymentTerms
       };
 
-      await submitMasterChangeRequest({
-        masterType: 'customers',
-        masterLabel: 'Customer / Buyer',
-        action: targetId ? 'UPDATE' : 'CREATE',
-        recordId: targetId,
-        recordTitle: data.name,
-        proposedData: payload,
-        previousData: selectedCustomerToEdit,
-        submittedBy: userProfile || user || { role: userRole || 'staff' }
-      });
-      await showAlert(`Change submitted! Administrator approval required before customer "${data.name}" takes effect.`, {
-        type: 'info',
-        title: 'Submitted for Approval'
-      });
-      setSelectedCustomerToEdit(null);
-      setShowAddCustomerModal(false);
-      return;
+      if (!isAdmin) {
+        await submitMasterChangeRequest({
+          masterType: 'customers',
+          masterLabel: 'Customer / Buyer',
+          action: targetId ? 'UPDATE' : 'CREATE',
+          recordId: targetId,
+          recordTitle: data.name,
+          proposedData: payload,
+          previousData: selectedCustomerToEdit,
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userRole || 'staff', isAdmin }
+        });
+        await showAlert(`Change submitted! Administrator approval required before customer "${data.name}" takes effect.`, {
+          type: 'info',
+          title: 'Submitted for Approval'
+        });
+        setSelectedCustomerToEdit(null);
+        setShowAddCustomerModal(false);
+        return;
+      }
 
       if (targetId) {
         await updateBuyer(targetId, payload);
@@ -533,6 +542,11 @@ export default function DirectorySettingsView() {
     }
 
     try {
+      if (isAdmin) {
+        await deleteBuyer(c.id, c.name);
+        await showAlert(`Customer "${c.name}" deleted successfully!`, { type: 'success', title: 'Customer Deleted' });
+        return;
+      }
       await submitMasterChangeRequest({
         masterType: 'customers',
         masterLabel: 'Customer / Buyer',
@@ -540,37 +554,39 @@ export default function DirectorySettingsView() {
         recordId: c.id,
         recordTitle: c.name,
         previousData: c,
-        submittedBy: userProfile || user || { role: userRole || 'staff' }
+        submittedBy: { ...(userProfile || {}), ...(user || {}), role: userRole || 'staff', isAdmin }
       });
       await showAlert(`Deletion request submitted! Administrator approval required to remove customer "${c.name}".`, {
         type: 'info',
         title: 'Submitted for Approval'
       });
     } catch (err) {
-      await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
+      await showAlert('Failed to delete customer: ' + err.message, { type: 'error' });
     }
   };
 
   const handleSaveNewRate = async (e) => {
     e.preventDefault();
     try {
-      await submitMasterChangeRequest({
-        masterType: 'jobWorkRates',
-        masterLabel: 'Job Work Rate Contract',
-        action: selectedRateToEdit?.id ? 'UPDATE' : 'CREATE',
-        recordId: selectedRateToEdit?.id,
-        recordTitle: `${newRateForm.party} (${newRateForm.process})`,
-        proposedData: newRateForm,
-        previousData: selectedRateToEdit,
-        submittedBy: userProfile || user || { role: userRole || 'staff' }
-      });
-      await showAlert(`Rate contract submitted for Administrator approval!`, {
-        type: 'info',
-        title: 'Submitted for Approval'
-      });
-      setShowAddRateModal(false);
-      setSelectedRateToEdit(null);
-      return;
+      if (!isAdmin) {
+        await submitMasterChangeRequest({
+          masterType: 'jobWorkRates',
+          masterLabel: 'Job Work Rate Contract',
+          action: selectedRateToEdit?.id ? 'UPDATE' : 'CREATE',
+          recordId: selectedRateToEdit?.id,
+          recordTitle: `${newRateForm.party} (${newRateForm.process})`,
+          proposedData: newRateForm,
+          previousData: selectedRateToEdit,
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userRole || 'staff', isAdmin }
+        });
+        await showAlert(`Rate contract submitted for Administrator approval!`, {
+          type: 'info',
+          title: 'Submitted for Approval'
+        });
+        setShowAddRateModal(false);
+        setSelectedRateToEdit(null);
+        return;
+      }
 
       if (selectedRateToEdit?.id) {
         await updateJobWorkRate(selectedRateToEdit.id, newRateForm);
@@ -596,6 +612,11 @@ export default function DirectorySettingsView() {
     });
     if (confirmed) {
       try {
+        if (isAdmin) {
+          await deleteJobWorkRate(r.id, `${r.party} (${r.process})`);
+          await showAlert(`Rate contract for "${r.party}" deleted successfully!`, { type: 'success', title: 'Rate Contract Deleted' });
+          return;
+        }
         await submitMasterChangeRequest({
           masterType: 'jobWorkRates',
           masterLabel: 'Job Work Rate Contract',
@@ -603,14 +624,14 @@ export default function DirectorySettingsView() {
           recordId: r.id,
           recordTitle: `${r.party} (${r.process})`,
           previousData: r,
-          submittedBy: userProfile || user || { role: userRole || 'staff' }
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userRole || 'staff', isAdmin }
         });
         await showAlert(`Deletion request submitted for Administrator approval.`, {
           type: 'info',
           title: 'Submitted for Approval'
         });
       } catch (err) {
-        await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
+        await showAlert('Failed to delete rate contract: ' + err.message, { type: 'error' });
       }
     }
   };
@@ -624,6 +645,11 @@ export default function DirectorySettingsView() {
     });
     if (confirmed) {
       try {
+        if (isAdmin) {
+          await deleteJwValueMaster(v.id);
+          await showAlert(`Valuation standard "${v.code}" deleted successfully!`, { type: 'success', title: 'Valuation Deleted' });
+          return;
+        }
         await submitMasterChangeRequest({
           masterType: 'valueMasters',
           masterLabel: 'JW Valuation Standard',
@@ -631,14 +657,14 @@ export default function DirectorySettingsView() {
           recordId: v.id,
           recordTitle: v.code,
           previousData: v,
-          submittedBy: userProfile || user || { role: userRole || 'staff' }
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userRole || 'staff', isAdmin }
         });
         await showAlert(`Deletion request submitted for Administrator approval.`, {
           type: 'info',
           title: 'Submitted for Approval'
         });
       } catch (err) {
-        await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
+        await showAlert('Failed to delete valuation standard: ' + err.message, { type: 'error' });
       }
     }
   };

@@ -167,17 +167,22 @@ export default function ProcessMastersView() {
     });
     if (confirmed) {
       try {
+        if (isAdmin) {
+          await deleteProcess(id, name);
+          await showAlert(`Process "${name}" deleted successfully!`, { type: 'success', title: 'Process Deleted' });
+          return;
+        }
         await submitMasterChangeRequest({
           masterType: 'processes',
           masterLabel: 'Process Master',
           action: 'DELETE',
           recordId: id,
           recordTitle: name,
-          submittedBy: userProfile || user || { role: user?.role || 'staff' }
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userProfile?.role || user?.role || 'staff', isAdmin }
         });
         await showAlert(`Deletion request submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
       } catch (e) {
-        await showAlert('Error submitting request: ' + e.message, { type: 'error' });
+        await showAlert('Error deleting process: ' + e.message, { type: 'error' });
       }
     }
   };
@@ -190,17 +195,22 @@ export default function ProcessMastersView() {
     });
     if (confirmed) {
       try {
+        if (isAdmin) {
+          await deleteLocation(id, name);
+          await showAlert(`Location "${name}" deleted successfully!`, { type: 'success', title: 'Location Deleted' });
+          return;
+        }
         await submitMasterChangeRequest({
           masterType: 'locations',
           masterLabel: 'Godown / Location',
           action: 'DELETE',
           recordId: id,
           recordTitle: name,
-          submittedBy: userProfile || user || { role: user?.role || 'staff' }
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userProfile?.role || user?.role || 'staff', isAdmin }
         });
         await showAlert(`Deletion request submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
       } catch (e) {
-        await showAlert('Error submitting request: ' + e.message, { type: 'error' });
+        await showAlert('Error deleting location: ' + e.message, { type: 'error' });
       }
     }
   };

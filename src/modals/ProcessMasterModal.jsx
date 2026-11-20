@@ -79,22 +79,24 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
       };
 
       const targetId = isEditing ? (targetProcess.id || targetProcess.processCode) : null;
-      await submitMasterChangeRequest({
-        masterType: 'processes',
-        masterLabel: 'Process Master',
-        action: isEditing ? 'UPDATE' : 'CREATE',
-        recordId: targetId,
-        recordTitle: formData.processName,
-        proposedData: payload,
-        previousData: targetProcess,
-        submittedBy: userProfile || user || { role: user?.role || 'staff' }
-      });
-      await showAlert(`Process details submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
-      onClose();
-      return;
+
+      if (!isAdmin) {
+        await submitMasterChangeRequest({
+          masterType: 'processes',
+          masterLabel: 'Process Master',
+          action: isEditing ? 'UPDATE' : 'CREATE',
+          recordId: targetId,
+          recordTitle: formData.processName,
+          proposedData: payload,
+          previousData: targetProcess,
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userProfile?.role || user?.role || 'staff', isAdmin }
+        });
+        await showAlert(`Process details submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
+        onClose();
+        return;
+      }
 
       if (isEditing) {
-        const targetId = targetProcess.id || targetProcess.processCode;
         await updateProcess(targetId, payload);
         await showAlert(`Process "${formData.processName}" updated successfully!`, { type: 'success', title: 'Process Updated' });
       } else {

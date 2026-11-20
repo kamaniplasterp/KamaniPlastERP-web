@@ -59,22 +59,24 @@ export default function LocationMasterModal({ locationToEdit, location, onClose,
       };
 
       const targetId = isEditing ? (targetLoc.id || targetLoc.locationCode) : null;
-      await submitMasterChangeRequest({
-        masterType: 'locations',
-        masterLabel: 'Godown / Plant Location',
-        action: isEditing ? 'UPDATE' : 'CREATE',
-        recordId: targetId,
-        recordTitle: formData.name,
-        proposedData: payload,
-        previousData: targetLoc,
-        submittedBy: userProfile || user || { role: user?.role || 'staff' }
-      });
-      await showAlert(`Location details submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
-      onClose();
-      return;
+
+      if (!isAdmin) {
+        await submitMasterChangeRequest({
+          masterType: 'locations',
+          masterLabel: 'Godown / Plant Location',
+          action: isEditing ? 'UPDATE' : 'CREATE',
+          recordId: targetId,
+          recordTitle: formData.name,
+          proposedData: payload,
+          previousData: targetLoc,
+          submittedBy: { ...(userProfile || {}), ...(user || {}), role: userProfile?.role || user?.role || 'staff', isAdmin }
+        });
+        await showAlert(`Location details submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
+        onClose();
+        return;
+      }
 
       if (isEditing) {
-        const targetId = targetLoc.id || targetLoc.locationCode;
         await updateLocation(targetId, payload);
         await showAlert(`Location "${formData.name}" updated successfully!`, { type: 'success', title: 'Location Updated' });
       } else {
