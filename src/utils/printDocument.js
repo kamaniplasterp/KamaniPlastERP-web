@@ -62,15 +62,15 @@ export function escapeHtml(str) {
 export let COMPANY_INFO = {
   name: 'KAMANI PLASTIC INDUSTRIES',
   tagline: 'Manufacturers & Exporters of PP Danline Ropes, HDPE Twines & Quality Plastic Products',
-  address: 'Plot No. 12/A, Phase-II, GIDC Industrial Estate, Veraval - 362269, Gujarat (INDIA)',
-  gstin: '24AAACK1234F1Z8',
+  address: 'Plot No. 192, Near Madhu Silica, Chitra GIDC, Bhavnagar - 364 006, Gujarat (India)',
+  gstin: '24ADWPK7002K1ZA',
   pan: 'AAACK1234F',
   state: 'Gujarat',
   stateCode: '24',
   phone: '+91 (02876) 245890 / +91 98250 12345',
   email: 'sales@kamaniplast.com / accounts@kamaniplast.com',
   bankName: 'State Bank of India',
-  bankBranch: 'GIDC Industrial Estate, Veraval',
+  bankBranch: 'Chitra GIDC, Bhavnagar',
   bankAcNo: '398200140082910',
   bankIfsc: 'SBIN0003412',
   bankType: 'Current Account'
@@ -372,10 +372,19 @@ const BASE_STYLES = `
       border: none !important;
       padding: 0 !important;
       max-width: 100% !important;
+      margin: 0 !important;
+    }
+    .challan-copy-page {
+      page-break-after: always !important;
+      break-after: page !important;
+    }
+    .challan-copy-page:last-child {
+      page-break-after: auto !important;
+      break-after: auto !important;
     }
     @page {
       size: A4 portrait;
-      margin: 12mm 10mm 12mm 10mm;
+      margin: 10mm 10mm 10mm 10mm;
     }
   }
 `;
@@ -388,6 +397,7 @@ function openPrintWindow(title, htmlBody) {
   }
 
   const safeTitle = escapeHtml(title);
+  const isMultiPage = htmlBody.includes('print-page');
 
   const fullHtml = `
     <!DOCTYPE html>
@@ -401,21 +411,19 @@ function openPrintWindow(title, htmlBody) {
       <div class="action-bar no-print">
         <div class="action-bar-title">
           <span>📄</span>
-          <span>${safeTitle} Preview</span>
+          <span>${safeTitle} Preview (3 Copies)</span>
         </div>
         <div>
-          <button class="action-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+          <button class="action-btn" onclick="window.print()">🖨️ Print All 3 Copies / PDF</button>
           <button class="action-btn btn-close" onclick="window.close()">✕ Close</button>
         </div>
       </div>
-      <div class="print-page">
-        ${htmlBody}
-      </div>
+      ${isMultiPage ? htmlBody : `<div class="print-page">${htmlBody}</div>`}
       <script>
         window.addEventListener('load', () => {
           setTimeout(() => {
             window.print();
-          }, 300);
+          }, 350);
         });
       </script>
     </body>
@@ -650,8 +658,14 @@ export function printTaxInvoice(data = {}) {
   openPrintWindow(`Tax_Invoice_${invoiceNo}`, html);
 }
 
+export const STATUTORY_COPIES = [
+  { copyTitle: 'ORIGINAL — CUSTOMER COPY', badgeBg: '#0f172a', sheetName: 'White' },
+  { copyTitle: 'DUPLICATE — SUPPLIER COPY', badgeBg: '#be185d', sheetName: 'Pink' },
+  { copyTitle: 'TRIPLICATE — STOCK COPY', badgeBg: '#b45309', sheetName: 'Yellow' }
+];
+
 /**
- * 2. Print Delivery / Dispatch Challan
+ * 2. Print Delivery / Dispatch Challan (Generates 3 Copies: Customer, Supplier, Stock)
  */
 export function printDeliveryChallan(data = {}) {
   const challanNo = data.challanNo || `DC-2026-${Math.floor(100 + Math.random() * 900)}`;
@@ -665,25 +679,35 @@ export function printDeliveryChallan(data = {}) {
   const ewayBill = data.ewayBill || '-';
   const qty = data.dispatchedQty || data.dispatchedQtyCoils || '300 Coils';
 
-  const html = `
+  const renderCopy = (copy) => `
     <!-- Header -->
-    <div class="doc-header">
-      <div>
-        <div class="company-title">${COMPANY_INFO.name}</div>
-        <div class="company-sub">${COMPANY_INFO.tagline}</div>
-        <div class="company-contact">
-          ${COMPANY_INFO.address}<br/>
-          <strong>GSTIN:</strong> ${COMPANY_INFO.gstin} | <strong>State:</strong> Gujarat (Code: 24) | <strong>Phone:</strong> ${COMPANY_INFO.phone}
+    <div class="doc-header" style="border-bottom: 2px solid #0f172a; padding-bottom: 12px; display: flex; align-items: flex-start; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <img src="/logo.png" alt="Kamani Logo" style="height: 48px; width: auto; object-fit: contain;" />
+        <div>
+          <div class="company-title" style="font-size: 18px; font-weight: 800;">${COMPANY_INFO.name}</div>
+          <div class="company-sub">${COMPANY_INFO.tagline}</div>
+          <div class="company-contact" style="font-size: 11px;">
+            ${COMPANY_INFO.address}<br/>
+            <strong>GSTIN:</strong> ${COMPANY_INFO.gstin} | <strong>State:</strong> Gujarat (Code: 24) | <strong>Phone:</strong> ${COMPANY_INFO.phone}
+          </div>
         </div>
       </div>
-      <div class="doc-badge-col">
-        <div class="doc-badge-main" style="background: #047857;">DELIVERY CHALLAN</div>
-        <div class="doc-badge-copy">OUTWARD GATE PASS • RULE 55</div>
+      <div class="doc-badge-col" style="text-align: right;">
+        <div class="doc-badge-main" style="background: ${copy.badgeBg}; color: #fff; font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 4px; display: inline-block;">
+          ${copy.copyTitle}
+        </div>
+        <div style="font-size: 9.5px; font-weight: bold; margin-top: 4px; color: #475569;">
+          GST DELIVERY CHALLAN
+        </div>
+        <div style="font-size: 9px; color: #64748b; margin-top: 2px;">
+          OUTWARD GATE PASS • RULE 55
+        </div>
       </div>
     </div>
 
     <!-- Metadata Grid -->
-    <div class="meta-grid">
+    <div class="meta-grid" style="margin-top: 12px;">
       <div class="meta-card">
         <div class="meta-card-title">DISPATCH &amp; LOGISTICS DATA</div>
         <div class="meta-row">
@@ -783,28 +807,43 @@ export function printDeliveryChallan(data = {}) {
       </div>
     </div>
 
-    <!-- Signatures -->
-    <div class="signatures-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+    <!-- Statutory Copies Legend & Signatures -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px;">
+      <div style="font-size: 9px; font-weight: 600; color: #475569; line-height: 1.4; border: 1px dashed #cbd5e1; padding: 4px 8px; border-radius: 4px;">
+        <span style="${copy.sheetName === 'White' ? 'color: #0f172a; font-weight: bold;' : ''}">White : Customer Copy</span> &nbsp;|&nbsp;
+        <span style="${copy.sheetName === 'Pink' ? 'color: #be185d; font-weight: bold;' : ''}">Pink : Supplier Copy</span> &nbsp;|&nbsp;
+        <span style="${copy.sheetName === 'Yellow' ? 'color: #b45309; font-weight: bold;' : ''}">Yellow : Stock Copy</span>
+      </div>
+      <div style="font-size: 9px; color: #94a3b8;">E. &amp; O.E.</div>
+    </div>
+
+    <div class="signatures-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top: 12px;">
       <div class="sig-box">
-        <div style="height: 40px;"></div>
+        <div style="height: 38px;"></div>
         <div class="sig-designation">Transporter / Driver Sign</div>
       </div>
       <div class="sig-box">
-        <div style="height: 40px;"></div>
+        <div style="height: 38px;"></div>
         <div class="sig-designation">Consignee Receiver Sign &amp; Stamp</div>
       </div>
       <div class="sig-box right">
         <div class="sig-for">For ${COMPANY_INFO.name}</div>
-        <div class="sig-designation">Dispatch Executive</div>
+        <div class="sig-designation">Authorized Signatory / Dispatch Head</div>
       </div>
     </div>
   `;
+
+  const html = STATUTORY_COPIES.map(copy => `
+    <div class="print-page challan-copy-page">
+      ${renderCopy(copy)}
+    </div>
+  `).join('\n');
 
   openPrintWindow(`Delivery_Challan_${challanNo}`, html);
 }
 
 /**
- * 3. Print Job Work Challan (Rule 55 CGST Format matching Excel Delivery Challan & Outward Slip)
+ * 3. Print Job Work Challan (Rule 55 CGST Format - Generates 3 Copies: Customer, Supplier, Stock)
  */
 export function printJobWorkChallan(data = {}) {
   const jwNo = data.id || data.jwNo || 'JW-2026-3316';
@@ -836,24 +875,26 @@ export function printJobWorkChallan(data = {}) {
   const samplePcs = parseVal(data.samplePcs !== undefined ? data.samplePcs : 0);
   const sampleWeight = parseVal(data.sampleWeight !== undefined ? data.sampleWeight : 0);
 
-
-  const html = `
+  const renderCopy = (copy) => `
     <!-- Header -->
-    <div class="doc-header" style="border-bottom: 2px solid #0f172a; padding-bottom: 12px;">
-      <div>
-        <div class="company-title" style="font-size: 18px; font-weight: 800;">${COMPANY_INFO.name}</div>
-        <div class="company-sub">${COMPANY_INFO.tagline}</div>
-        <div class="company-contact" style="font-size: 11px;">
-          ${COMPANY_INFO.address}<br/>
-          <strong>GSTIN:</strong> ${COMPANY_INFO.gstin} | <strong>State:</strong> Gujarat (Code: 24)
+    <div class="doc-header" style="border-bottom: 2px solid #0f172a; padding-bottom: 12px; display: flex; align-items: flex-start; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <img src="/logo.png" alt="Kamani Logo" style="height: 48px; width: auto; object-fit: contain;" />
+        <div>
+          <div class="company-title" style="font-size: 18px; font-weight: 800;">${COMPANY_INFO.name}</div>
+          <div class="company-sub">${COMPANY_INFO.tagline}</div>
+          <div class="company-contact" style="font-size: 11px;">
+            ${COMPANY_INFO.address}<br/>
+            <strong>GSTIN:</strong> ${COMPANY_INFO.gstin} | <strong>State:</strong> Gujarat (Code: 24)
+          </div>
         </div>
       </div>
       <div class="doc-badge-col" style="text-align: right;">
-        <div class="doc-badge-main" style="background: #0f172a; color: #fff; font-size: 13px; font-weight: bold; padding: 4px 10px; border-radius: 4px;">
-          DELIVERY CHALLAN
+        <div class="doc-badge-main" style="background: ${copy.badgeBg}; color: #fff; font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 4px; display: inline-block;">
+          ${copy.copyTitle}
         </div>
-        <div style="font-size: 9px; font-weight: bold; margin-top: 4px; color: #475569;">
-          [ ] ORIGINAL &nbsp; [ ] DUPLICATE &nbsp; [ ] TRIPLICATE
+        <div style="font-size: 9.5px; font-weight: bold; margin-top: 4px; color: #475569;">
+          GST DELIVERY CHALLAN
         </div>
         <div style="font-size: 9px; color: #64748b; margin-top: 2px;">
           Rule 55 CGST Rules, 2017
@@ -976,7 +1017,7 @@ export function printJobWorkChallan(data = {}) {
           <td class="text-center">YARN HANK</td>
           <td class="text-right" style="color: #64748b;">[ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]</td>
           <td class="text-right" style="color: #64748b;">[ &nbsp; &nbsp; &nbsp; &nbsp; ]</td>
-          <td class="text-center" style="color: #64748b;">____ / ____ / 2025</td>
+          <td class="text-center" style="color: #64748b;">____ / ____ / 2026</td>
           <td class="text-center"></td>
         </tr>
       </tbody>
@@ -987,8 +1028,18 @@ export function printJobWorkChallan(data = {}) {
       <strong>Statutory Job Work Declaration:</strong> The goods described above are delivered solely for job work processing in accordance with Rule 55 and Section 143 of CGST Act, 2017. These materials remain the absolute property of ${COMPANY_INFO.name} and must be returned within the prescribed statutory period. Not meant for resale.
     </div>
 
+    <!-- Statutory Copies Legend & Signatures -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px;">
+      <div style="font-size: 9px; font-weight: 600; color: #475569; line-height: 1.4; border: 1px dashed #cbd5e1; padding: 4px 8px; border-radius: 4px;">
+        <span style="${copy.sheetName === 'White' ? 'color: #0f172a; font-weight: bold;' : ''}">White : Customer Copy</span> &nbsp;|&nbsp;
+        <span style="${copy.sheetName === 'Pink' ? 'color: #be185d; font-weight: bold;' : ''}">Pink : Supplier Copy</span> &nbsp;|&nbsp;
+        <span style="${copy.sheetName === 'Yellow' ? 'color: #b45309; font-weight: bold;' : ''}">Yellow : Stock Copy</span>
+      </div>
+      <div style="font-size: 9px; color: #94a3b8;">E. &amp; O.E.</div>
+    </div>
+
     <!-- Signatures -->
-    <div class="signatures-grid" style="margin-top: 16px;">
+    <div class="signatures-grid" style="margin-top: 12px;">
       <div class="sig-box">
         <div style="height: 38px;"></div>
         <div class="sig-designation">Job Worker Acceptance Signature &amp; Stamp</div>
@@ -999,6 +1050,12 @@ export function printJobWorkChallan(data = {}) {
       </div>
     </div>
   `;
+
+  const html = STATUTORY_COPIES.map(copy => `
+    <div class="print-page challan-copy-page">
+      ${renderCopy(copy)}
+    </div>
+  `).join('\n');
 
   openPrintWindow(`Rule55_JobWork_Challan_${challanNo}`, html);
 }

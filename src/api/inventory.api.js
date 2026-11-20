@@ -849,4 +849,317 @@ export async function dispatchInventoryBags({ bagIds = [], requiredCoils = 0, di
   }
 }
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * MATERIAL LOOSE STOCK & PACKING ENGINE
+ * Plastic loose stock is tracked strictly by weight (KG) per material spec.
+ * Discrete serialized bags are only created when packing loose stock into bags.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/**
+ * Helper to build sanitized material key
+ */
+export function getMaterialStockKey(quality = 'VIP', form = 'Hank', size = 'Standard') {
+  return `${quality || 'VIP'}_${form || 'Hank'}_${size || 'Standard'}`
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+/**
+ * Subscribe to real-time Material Loose Stock balances
+ */
+export function subscribeMaterialLooseStock(callback) {
+  if (!db) {
+    callback([]);
+    return () => {};
+  }
+  const q = collection(db, 'material_loose_stock');
+  return onSnapshot(q, (snapshot) => {
+    if (snapshot.empty) {
+      callback([]);
+    } else {
+      const list = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+      callback(list);
+    }
+  }, (error) => {
+    console.error('Error fetching material loose stock:', error);
+    callback([]);
+  });
+}
+
+/**
+ * Update material loose stock balance by delta (in KG)
+ */
+export async function updateMaterialLooseStock(materialData, deltaKg = 0, user = null) {
+  if (!db || !deltaKg) return;
+  const quality = materialData.quality || 'VIP';
+  const form = materialData.form || 'Hank';
+  const size = materialData.size || 'Standard';
+  const color = materialData.color || 'Natural';
+  const location = materialData.location || 'KPI Godown';
+
+  const docKey = materialData.id || getMaterialStockKey(quality, form, size);
+  const stockRef = doc(db, 'material_loose_stock', docKey);
+
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(stockRef);
+    const existing = snap.exists() ? snap.data() : {
+      materialKey: docKey,
+      quality,
+      form,
+      size,
+      color,
+      location,
+      looseWeightKg: 0
+    };
+
+    const currentWeight = Number(existing.looseWeightKg || 0);
+    const newWeight = Math.max(0, parseFloat((currentWeight + deltaKg).toFixed(2)));
+
+    transaction.set(stockRef, {
+      ...existing,
+      materialKey: docKey,
+      quality: existing.quality || quality,
+      form: existing.form || form,
+      size: existing.size || size,
+      color: existing.color || color,
+      location: location || existing.location || 'KPI Godown',
+      looseWeightKg: newWeight,
+      updatedAt: serverTimestamp(),
+      updatedBy: user?.name || user?.email || 'System'
+    }, { merge: true });
+  });
+
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: deltaKg > 0 ? 'LOOSE_STOCK_CREDITED' : 'LOOSE_STOCK_DEBITED',
+    summary: `${deltaKg > 0 ? 'Credited' : 'Debited'} ${Math.abs(deltaKg).toFixed(1)} KG loose stock for ${quality} ${form} ${size}`,
+    targetId: docKey,
+    details: { quality, form, size, deltaKg, location }
+  });
+}
+
+/**
+ * Pack Loose Stock into discrete Standard Bags
+ * Creates sequential serialized bags in inventory_bags and deducts weight from loose stock.
+ */
+export async function packLooseStockIntoBags({
+  materialKey,
+  quality = 'VIP',
+  form = 'Hank',
+  size = 'Standard',
+  color = 'Natural',
+  targetBagWeightKg = 50.0,
+  bagCount = 1,
+  coilsPerBag = 12,
+  location = 'KPI Godown',
+  lotNo = '',
+  user = null
+}) {
+  if (!db) throw new Error('Firestore not initialized');
+  const count = parseInt(bagCount, 10);
+  const bagWeight = parseFloat(targetBagWeightKg) || 50.0;
+  if (!count || count <= 0) throw new Error('Bag count must be at least 1');
+  if (bagWeight <= 0) throw new Error('Target bag weight must be greater than 0');
+
+  const totalDeductedKg = parseFloat((count * bagWeight).toFixed(2));
+  const docKey = materialKey || getMaterialStockKey(quality, form, size);
+  const stockRef = doc(db, 'material_loose_stock', docKey);
+
+  // 1. Verify available loose stock
+  const stockSnap = await getDoc(stockRef);
+  const existingStock = stockSnap.exists() ? (Number(stockSnap.data().looseWeightKg) || 0) : 0;
+  if (existingStock < totalDeductedKg) {
+    throw new Error(`Insufficient loose stock: available ${existingStock.toFixed(1)} KG, requested ${totalDeductedKg.toFixed(1)} KG for ${count} bags`);
+  }
+
+  // 2. Find highest existing bag number in inventory_bags
+  const bagQuery = query(collection(db, 'inventory_bags'), orderBy('bagNumber', 'desc'), limit(1));
+  const maxSnap = await getDocs(bagQuery);
+  let highestBagNumber = 0;
+  if (!maxSnap.empty) {
+    highestBagNumber = Number(maxSnap.docs[0].data().bagNumber) || 0;
+  }
+
+  const generatedBags = [];
+  const currentDate = new Date().toISOString().slice(0, 10);
+  const packLot = lotNo || `PACK-${currentDate.replace(/-/g, '')}-${quality.toUpperCase().slice(0, 3)}`;
+
+  // 3. Create bags in batch
+  const batch = writeBatch(db);
+  for (let i = 1; i <= count; i++) {
+    const nextBagNum = highestBagNumber + i;
+    const bagRef = doc(collection(db, 'inventory_bags'));
+    const bagData = {
+      id: bagRef.id,
+      bagNumber: nextBagNum,
+      inwardSlipNo: packLot,
+      jobWorkNo: '',
+      productName: `${quality} ${form} ${size}`,
+      quality,
+      form,
+      size,
+      color,
+      standardWeightKg: bagWeight,
+      actualWeightKg: bagWeight,
+      coilCount: Number(coilsPerBag) || 12,
+      stockType: 'FIXED',
+      location,
+      status: 'AVAILABLE',
+      lotGroup: packLot,
+      lotTitle: `${count} Bags Packed from Loose Stock (${quality} ${form} ${size})`,
+      packedFromLoose: true,
+      packedAt: serverTimestamp(),
+      receivedAt: currentDate,
+      packedBy: user?.name || user?.email || 'Storekeeper',
+      createdAt: serverTimestamp()
+    };
+    batch.set(bagRef, bagData);
+    generatedBags.push(bagData);
+  }
+
+  // 4. Deduct weight from material_loose_stock
+  const remainingWeight = Math.max(0, parseFloat((existingStock - totalDeductedKg).toFixed(2)));
+  batch.update(stockRef, {
+    looseWeightKg: remainingWeight,
+    updatedAt: serverTimestamp(),
+    updatedBy: user?.name || user?.email || 'Storekeeper'
+  });
+
+  await batch.commit();
+
+  // 5. Log audit event
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'LOOSE_STOCK_PACKED_INTO_BAGS',
+    summary: `Packed ${totalDeductedKg} KG of loose ${quality} ${form} ${size} into ${count} standard bags (#${highestBagNumber + 1} to #${highestBagNumber + count})`,
+    targetId: packLot,
+    details: {
+      quality,
+      form,
+      size,
+      bagCount: count,
+      targetBagWeightKg: bagWeight,
+      totalWeightKg: totalDeductedKg,
+      startBagNumber: highestBagNumber + 1,
+      endBagNumber: highestBagNumber + count,
+      remainingLooseKg: remainingWeight
+    }
+  });
+
+  return generatedBags;
+}
+
+/**
+ * Consolidate Legacy Loose Bags from inventory_bags into Material Loose Stock
+ * Converts any legacy 'LOOSE' bag records (e.g. Bag 68-75) into loose material weight in KG,
+ * and removes them from the discrete bag register so bags are only standard fixed bags.
+ */
+export async function consolidateLegacyLooseBags(user = null) {
+  if (!db) throw new Error('Firestore not initialized');
+
+  // Fetch all bags with stockType === 'LOOSE'
+  const snap = await getDocs(collection(db, 'inventory_bags'));
+  const looseBagDocs = snap.docs.filter(d => {
+    const data = d.data();
+    return String(data.stockType || '').toUpperCase() === 'LOOSE';
+  });
+
+  if (looseBagDocs.length === 0) {
+    return { consolidatedCount: 0, totalWeightKg: 0, materials: [] };
+  }
+
+  // Group by material specification
+  const groups = new Map();
+  let totalConsolidatedKg = 0;
+
+  for (const docSnap of looseBagDocs) {
+    const data = docSnap.data();
+    const quality = data.quality || 'VIP';
+    const form = data.form || 'Hank';
+    const size = data.size || 'Standard';
+    const color = data.color || 'Natural';
+    const location = data.location || 'KPI Godown';
+    const weight = Number(data.actualWeightKg) || Number(data.standardWeightKg) || 0;
+
+    const key = getMaterialStockKey(quality, form, size);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        quality,
+        form,
+        size,
+        color,
+        location,
+        totalWeightKg: 0,
+        bagIds: []
+      });
+    }
+
+    const grp = groups.get(key);
+    grp.totalWeightKg = parseFloat((grp.totalWeightKg + weight).toFixed(2));
+    grp.bagIds.push(docSnap.id);
+    totalConsolidatedKg = parseFloat((totalConsolidatedKg + weight).toFixed(2));
+  }
+
+  // Execute updates & deletes in batched writes
+  const materialsSummary = [];
+  const batch = writeBatch(db);
+
+  for (const [key, grp] of groups.entries()) {
+    const stockRef = doc(db, 'material_loose_stock', key);
+    const existingSnap = await getDoc(stockRef);
+    const existingWeight = existingSnap.exists() ? (Number(existingSnap.data().looseWeightKg) || 0) : 0;
+    const newWeight = parseFloat((existingWeight + grp.totalWeightKg).toFixed(2));
+
+    batch.set(stockRef, {
+      materialKey: key,
+      quality: grp.quality,
+      form: grp.form,
+      size: grp.size,
+      color: grp.color,
+      location: grp.location,
+      looseWeightKg: newWeight,
+      updatedAt: serverTimestamp(),
+      updatedBy: user?.name || user?.email || 'Admin Consolidation'
+    }, { merge: true });
+
+    // Delete legacy loose bags from inventory_bags
+    for (const bagId of grp.bagIds) {
+      batch.delete(doc(db, 'inventory_bags', bagId));
+    }
+
+    materialsSummary.push({
+      material: `${grp.quality} ${grp.form} ${grp.size}`,
+      weightKg: grp.totalWeightKg,
+      bagsRemoved: grp.bagIds.length
+    });
+  }
+
+  await batch.commit();
+
+  logAuditEvent({
+    category: 'INVENTORY',
+    action: 'LEGACY_LOOSE_BAGS_CONSOLIDATED',
+    summary: `Consolidated ${looseBagDocs.length} legacy loose bags (${totalConsolidatedKg.toFixed(1)} KG) into material loose stock`,
+    targetId: 'MIGRATION-LOOSE-STOCK',
+    details: {
+      bagsRemoved: looseBagDocs.length,
+      totalWeightKg: totalConsolidatedKg,
+      materials: materialsSummary
+    }
+  });
+
+  return {
+    consolidatedCount: looseBagDocs.length,
+    totalWeightKg: totalConsolidatedKg,
+    materials: materialsSummary
+  };
+}
+
 

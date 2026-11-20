@@ -25,10 +25,10 @@ const navItems = [
         icon: Briefcase,
         route: '/job-work',
         children: [
-          { id: 'orders', label: 'Outward & Inward Orders', tab: 'orders', isDefault: true },
-          { id: 'challanReport', label: 'Challan Register & Trace', tab: 'challanReport' },
-          { id: 'processorLedger', label: 'Processor Stock & Wastage', tab: 'processorLedger', aliases: ['statement', 'material', 'wastage'] },
-          { id: 'scrapSettlement', label: 'Scrap Settlement & Deductions', tab: 'scrapSettlement', aliases: ['monthlySettlement', 'extraCutting'] },
+          { id: 'orders', subModuleId: 'jobwork_outward', label: 'Outward & Inward Orders', tab: 'orders', isDefault: true },
+          { id: 'challanReport', subModuleId: 'jobwork_trace', label: 'Challan Register & Trace', tab: 'challanReport' },
+          { id: 'processorLedger', subModuleId: 'jobwork_contractor', label: 'Processor Stock & Wastage', tab: 'processorLedger', aliases: ['statement', 'material', 'wastage'] },
+          { id: 'scrapSettlement', subModuleId: 'jobwork_scrap', label: 'Scrap Settlement & Deductions', tab: 'scrapSettlement', aliases: ['monthlySettlement', 'extraCutting'] },
         ],
       },
       {
@@ -37,10 +37,10 @@ const navItems = [
         icon: Package,
         route: '/inventory',
         children: [
-          { id: 'rm', label: 'Raw Materials & GRN', tab: 'rm', isDefault: true },
-          { id: 'fg', label: 'Finished Goods (FG)', tab: 'fg' },
-          { id: 'bags', label: 'Bags & Dual Stock', tab: 'bags' },
-          { id: 'movements', label: 'Stock Movements & Trace', tab: 'movements', aliases: ['traceability'] },
+          { id: 'rm', subModuleId: 'inventory_rm', label: 'Raw Materials & GRN', tab: 'rm', isDefault: true },
+          { id: 'fg', subModuleId: 'inventory_fg', label: 'Finished Goods (FG)', tab: 'fg' },
+          { id: 'bags', subModuleId: 'inventory_bags', label: 'Bags & Dual Stock', tab: 'bags' },
+          { id: 'movements', subModuleId: 'inventory_movements', label: 'Stock Movements & Trace', tab: 'movements', aliases: ['traceability'] },
         ],
       },
       {
@@ -49,8 +49,8 @@ const navItems = [
         icon: Truck,
         route: '/sales',
         children: [
-          { id: 'orders', label: 'Sales Orders & Allocation', tab: 'orders', isDefault: true },
-          { id: 'dispatches', label: 'Dispatch Delivery Challans', tab: 'dispatches', aliases: ['dispatch'] },
+          { id: 'orders', subModuleId: 'sales_orders', label: 'Sales Orders & Allocation', tab: 'orders', isDefault: true },
+          { id: 'dispatches', subModuleId: 'sales_challans', label: 'Dispatch Delivery Challans', tab: 'dispatches', aliases: ['dispatch'] },
         ],
       },
       {
@@ -59,9 +59,9 @@ const navItems = [
         icon: Cog,
         route: '/process-masters',
         children: [
-          { id: 'processMaster', label: 'Operations & Wastage', tab: 'processMaster', isDefault: true },
-          { id: 'locations', label: 'Godowns & Locations', tab: 'locations' },
-          { id: 'productMatrix', label: 'Product Matrix & SKUs', tab: 'productMatrix' },
+          { id: 'processMaster', subModuleId: 'masters_operations', label: 'Operations & Wastage', tab: 'processMaster', isDefault: true },
+          { id: 'locations', subModuleId: 'masters_godowns', label: 'Godowns & Locations', tab: 'locations' },
+          { id: 'productMatrix', subModuleId: 'masters_products', label: 'Product Matrix & SKUs', tab: 'productMatrix' },
         ],
       },
       {
@@ -70,11 +70,11 @@ const navItems = [
         icon: BookUser,
         route: '/directory',
         children: [
-          { id: 'directory', label: 'Business Directory', tab: 'directory', aliases: ['vendors', 'customers'], isDefault: true },
-          { id: 'ratesValuation', label: 'Rates & Valuation Master', tab: 'ratesValuation', aliases: ['rateMaster', 'valueMaster'] },
-          { id: 'settings', label: 'Plant & System Settings', tab: 'settings', aliases: ['miscMaster'] },
-          { id: 'rbac', label: 'User Roles & RBAC', tab: 'rbac', adminOnly: true },
-          { id: 'audit', label: 'Security Audit Trail', tab: 'audit', adminOnly: true },
+          { id: 'directory', subModuleId: 'directory_business', label: 'Business Directory', tab: 'directory', aliases: ['vendors', 'customers'], isDefault: true },
+          { id: 'ratesValuation', subModuleId: 'directory_rates', label: 'Rates & Valuation Master', tab: 'ratesValuation', aliases: ['rateMaster', 'valueMaster'] },
+          { id: 'settings', subModuleId: 'directory_settings', label: 'Plant & System Settings', tab: 'settings', aliases: ['miscMaster'] },
+          { id: 'rbac', subModuleId: 'directory_rbac', label: 'User Roles & RBAC', tab: 'rbac', adminOnly: true },
+          { id: 'audit', subModuleId: 'directory_audit', label: 'Security Audit Logs', tab: 'audit', adminOnly: true },
         ],
       },
     ],
@@ -82,7 +82,7 @@ const navItems = [
 ];
 
 export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
-  const { user, logout, hasAccess, userRole, defaultRoute, isAdmin } = useAuth();
+  const { user, logout, hasAccess, can, userRole, defaultRoute, isAdmin } = useAuth();
   const { lowStockCount, mobileMenuOpen, setMobileMenuOpen } = useWorkflow();
   const navigate = useNavigate();
   const location = useLocation();
@@ -167,10 +167,14 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
     items: sec.items
       .filter(item => hasAccess ? hasAccess(item.id) : true)
       .map(item => {
-        // Filter out admin-only submenus if not admin
+        // Filter out admin-only submenus and submenus where user lacks read permission
         let children = item.children;
         if (children) {
-          children = children.filter(c => !c.adminOnly || isAdmin);
+          children = children.filter(c => {
+            if (c.adminOnly && !isAdmin) return false;
+            if (c.subModuleId && can && !can(c.subModuleId, 'read')) return false;
+            return true;
+          });
         }
 
         // Low stock warning badge
@@ -179,6 +183,7 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
         }
         return { ...item, children, badge: null };
       })
+      .filter(item => !item.children || item.children.length > 0)
   }));
 
   return (
@@ -206,8 +211,8 @@ export default function Sidebar({ activeNav, setActiveNav, onOpenSimulator }) {
           style={{ cursor: 'pointer' }}
           title="Go to Home Module"
         >
-          <div className="sidebar-logo-mark">
-            <span>K</span>
+          <div className="sidebar-logo-mark" style={{ width: '48px', height: '48px', minWidth: '48px', background: '#fff', padding: '4px', borderRadius: '10px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src="/logo-icon.png" alt="Kamani Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
           {!collapsed && (
             <div className="sidebar-brand-text">

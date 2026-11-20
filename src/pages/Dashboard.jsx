@@ -657,7 +657,7 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
       </div>
 
       {/* ── Row 1: Operations Overview (Job Work + Recent Dispatches) ── */}
-      <div className="ops-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(320px, 1fr)', gap: '16px', alignItems: 'stretch' }}>
+      <div className="ops-row">
         {/* Left: Job Work Table */}
         <div className="section-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <div className="section-header">
@@ -754,7 +754,7 @@ function DashboardOverview({ openJobWork, openDispatch, openSimulator }) {
       </div>
 
       {/* ── Row 2: Analytics & Traceability (3 Uniform Baseline Columns) ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '16px', marginTop: '16px', alignItems: 'stretch' }}>
+      <div className="dashboard-bottom-grid">
         {/* Card 1: Inventory Distribution */}
         <div className="section-card chart-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div className="section-header">

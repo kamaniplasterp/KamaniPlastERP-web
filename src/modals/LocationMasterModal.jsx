@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import { X, MapPin, Building, Warehouse, User, Phone, CheckCircle2 } from 'lucide-react';
 import { addLocation, updateLocation } from '../api/locations.api';
 import { showAlert } from '../context/CustomAlertContext';
+import { useAuth } from '../context/AuthContext';
+import { submitMasterChangeRequest } from '../api/approvals.api';
 import '../styles/Modals.css';
 
 export default function LocationMasterModal({ locationToEdit, location, onClose, onSaved }) {
+  const { isAdmin, user, userProfile } = useAuth();
   const targetLoc = locationToEdit || location;
   const isEditing = Boolean(targetLoc && (targetLoc.id || targetLoc.locationCode));
 
@@ -54,6 +57,21 @@ export default function LocationMasterModal({ locationToEdit, location, onClose,
         capacityKg: Number(formData.capacityKg || 0),
         isDefault: Boolean(formData.isDefault)
       };
+
+      const targetId = isEditing ? (targetLoc.id || targetLoc.locationCode) : null;
+      await submitMasterChangeRequest({
+        masterType: 'locations',
+        masterLabel: 'Godown / Plant Location',
+        action: isEditing ? 'UPDATE' : 'CREATE',
+        recordId: targetId,
+        recordTitle: formData.name,
+        proposedData: payload,
+        previousData: targetLoc,
+        submittedBy: userProfile || user || { role: user?.role || 'staff' }
+      });
+      await showAlert(`Location details submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
+      onClose();
+      return;
 
       if (isEditing) {
         const targetId = targetLoc.id || targetLoc.locationCode;

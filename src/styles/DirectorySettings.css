@@ -630,3 +630,17 @@
   border-color: #fca5a5;
   color: #dc2626;
 }
+
+
+/* Mobile Responsive Grid for Tare & Signatories */
+.ds-two-col-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .ds-two-col-grid {
+    grid-template-columns: 1fr;
+  }
+}

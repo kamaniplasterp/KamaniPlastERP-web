@@ -3,8 +3,11 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Search, Plus, Download, Layers, Cog, Warehouse, Edit2, Trash2, Scale,
   MapPin, Users, Sparkles, Check, CheckCircle2, X, SlidersHorizontal,
-  ChevronDown, ChevronUp, RefreshCw, Eye
+  ChevronDown, ChevronUp, RefreshCw, Eye, ShieldCheck
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { subscribePendingApprovals, submitMasterChangeRequest } from '../api/approvals.api';
+import ApprovalCenterModal from '../modals/ApprovalCenterModal';
 import { subscribeProcesses, deleteProcess } from '../api/process.api';
 import { subscribeLocations, deleteLocation } from '../api/locations.api';
 import { subscribeFinishedGoods } from '../api/inventory.api';
@@ -27,15 +30,47 @@ import '../styles/JobWorkHub.css';
 
 export default function ProcessMastersView() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'processMaster');
+  const { isAdmin, user, userProfile, can } = useAuth();
+
+  const canAccessTab = (tabName) => {
+    if (isAdmin) return true;
+    if (!can) return true;
+    switch (tabName) {
+      case 'processMaster':
+        return can('masters_operations', 'read');
+      case 'locations':
+      case 'godowns':
+        return can('masters_godowns', 'read');
+      case 'productMatrix':
+        return can('masters_products', 'read');
+      default:
+        return true;
+    }
+  };
+
+  const getFirstPermittedTab = () => {
+    if (canAccessTab('processMaster')) return 'processMaster';
+    if (canAccessTab('locations')) return 'locations';
+    if (canAccessTab('productMatrix')) return 'productMatrix';
+    return 'processMaster';
+  };
+
+  const resolveTab = (tabFromUrl) => {
+    const raw = tabFromUrl || 'processMaster';
+    return canAccessTab(raw) ? raw : getFirstPermittedTab();
+  };
+
+  const [activeTab, setActiveTab] = useState(() => resolveTab(searchParams.get('tab')));
   const [processSearch, setProcessSearch] = useState('');
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
-    if (tabFromUrl && tabFromUrl !== activeTab) {
+    if (!canAccessTab(activeTab)) {
+      setActiveTab(resolveTab(tabFromUrl));
+    } else if (tabFromUrl && tabFromUrl !== activeTab && canAccessTab(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
-  }, [searchParams]);
+  }, [searchParams, can]);
   const [locationSearch, setLocationSearch] = useState('');
   const [matrixSearch, setMatrixSearch] = useState('');
 
@@ -47,6 +82,15 @@ export default function ProcessMastersView() {
   const [selectedProcessToEdit, setSelectedProcessToEdit] = useState(null);
   const [showAddLocationModal, setShowAddLocationModal] = useState(false);
   const [selectedLocationToEdit, setSelectedLocationToEdit] = useState(null);
+
+  // Master Approvals
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+
+  useEffect(() => {
+    const unsubApp = subscribePendingApprovals(setPendingApprovals);
+    return () => unsubApp();
+  }, []);
 
   // Product Matrix state
   const [matrixBaseRate, setMatrixBaseRate] = useState(220);
@@ -123,9 +167,17 @@ export default function ProcessMastersView() {
     });
     if (confirmed) {
       try {
-        await deleteProcess(id);
+        await submitMasterChangeRequest({
+          masterType: 'processes',
+          masterLabel: 'Process Master',
+          action: 'DELETE',
+          recordId: id,
+          recordTitle: name,
+          submittedBy: userProfile || user || { role: user?.role || 'staff' }
+        });
+        await showAlert(`Deletion request submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
       } catch (e) {
-        await showAlert('Error deleting process: ' + e.message, { type: 'error' });
+        await showAlert('Error submitting request: ' + e.message, { type: 'error' });
       }
     }
   };
@@ -138,9 +190,17 @@ export default function ProcessMastersView() {
     });
     if (confirmed) {
       try {
-        await deleteLocation(id);
+        await submitMasterChangeRequest({
+          masterType: 'locations',
+          masterLabel: 'Godown / Location',
+          action: 'DELETE',
+          recordId: id,
+          recordTitle: name,
+          submittedBy: userProfile || user || { role: user?.role || 'staff' }
+        });
+        await showAlert(`Deletion request submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
       } catch (e) {
-        await showAlert('Error deleting location: ' + e.message, { type: 'error' });
+        await showAlert('Error submitting request: ' + e.message, { type: 'error' });
       }
     }
   };
@@ -526,10 +586,19 @@ export default function ProcessMastersView() {
         actions={renderPmActions()}
       />
 
-
+      {/* ── Access Denied Banner if Tab Not Permitted ── */}
+      {!canAccessTab(activeTab) && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '20px 0' }}>
+          <ShieldCheck size={48} style={{ color: '#ef4444', margin: '0 auto 16px', display: 'block' }} />
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px' }}>Access Restricted</h2>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>
+            You do not have permission to view this section. Please contact your system administrator to request access.
+          </p>
+        </div>
+      )}
 
       {/* ── TAB 1: Process Master ── */}
-      {activeTab === 'processMaster' && (
+      {activeTab === 'processMaster' && canAccessTab('processMaster') && (
         <>
           <div className="ds-cards-grid">
             {filteredProcesses.map(proc => (
@@ -615,7 +684,7 @@ export default function ProcessMastersView() {
       )}
 
       {/* ── TAB 2: Godowns & Locations ── */}
-      {activeTab === 'locations' && (
+      {(activeTab === 'locations' || activeTab === 'godowns') && canAccessTab('locations') && (
         <>
           <div className="ds-cards-grid">
             {filteredLocations.map(loc => (
@@ -701,7 +770,7 @@ export default function ProcessMastersView() {
       )}
 
       {/* ── TAB 3: Custom Product Combination Builder ── */}
-      {activeTab === 'productMatrix' && (
+      {activeTab === 'productMatrix' && canAccessTab('productMatrix') && (
         <>
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: showBuilderCard ? '18px' : 0 }}>
@@ -1554,6 +1623,13 @@ export default function ProcessMastersView() {
           location={selectedLocationToEdit}
           locationToEdit={selectedLocationToEdit}
           onClose={() => { setShowAddLocationModal(false); setSelectedLocationToEdit(null); }}
+        />
+      )}
+
+      {/* Admin Master Approval Center Modal */}
+      {showApprovalModal && (
+        <ApprovalCenterModal
+          onClose={() => setShowApprovalModal(false)}
         />
       )}
     </div>

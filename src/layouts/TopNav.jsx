@@ -12,6 +12,8 @@ import {
   markAllNotificationsAsRead,
   syncSystemWatchdogAlerts
 } from '../api/notifications.api';
+import { subscribePendingApprovals } from '../api/approvals.api';
+import ApprovalCenterModal from '../modals/ApprovalCenterModal';
 import {
   Search,
   RotateCcw,
@@ -26,6 +28,7 @@ import {
   Briefcase,
   Truck,
   CheckCircle2,
+  ShieldAlert,
   X
 } from 'lucide-react';
 
@@ -50,6 +53,9 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
   const [qcChecks, setQcChecks] = useState([]);
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
   const [persistentNotifications, setPersistentNotifications] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [readApprovalIds, setReadApprovalIds] = useState(new Set());
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
   useEffect(() => {
@@ -59,12 +65,14 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
     const unsubNotifs = subscribeUserNotifications({ ...user, role: userRole }, (list) => {
       setPersistentNotifications(list);
     });
+    const unsubApprovals = subscribePendingApprovals(setPendingApprovals);
 
     return () => {
       unsubInw();
       unsubQc();
       unsubTare();
       unsubNotifs();
+      unsubApprovals();
     };
   }, [user, userRole]);
 
@@ -129,6 +137,24 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
   const isUserAdmin = Boolean(isAdmin || userRole === 'admin' || user?.role === 'admin');
 
+  // Master Approval requests for Admin users
+  const approvalNotifications = isUserAdmin ? pendingApprovals.map(req => {
+    const actionVerb = req.action === 'CREATE' ? 'Creation' : req.action === 'UPDATE' ? 'Update' : 'Deletion';
+    const submitter = req.submittedBy?.displayName || req.submittedBy?.email || 'Staff';
+    const notifId = `approval_${req.id}`;
+    return {
+      id: notifId,
+      originalRequestId: req.id,
+      isApproval: true,
+      category: 'APPROVAL',
+      title: `Approval Required: ${req.masterLabel} ${actionVerb}`,
+      message: `${submitter} requested to ${req.action.toLowerCase()} "${req.recordTitle || 'Record'}". Click to review & approve.`,
+      createdAt: req.createdAt,
+      createdAtDate: req.createdAt instanceof Date ? req.createdAt : (req.createdAt?.toDate ? req.createdAt.toDate() : new Date(req.createdAt || Date.now())),
+      isRead: readApprovalIds.has(notifId)
+    };
+  }) : [];
+
   // QC Overdue alerts are strictly restricted to Admin users only
   const isQcNotification = (n) => (
     n?.category === 'QC' ||
@@ -145,9 +171,20 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
     return true;
   });
 
-  const unreadCount = activeNotifications.filter(n => !n.isRead).length;
+  // Combined notifications: approvals first, followed by others sorted by date descending
+  const combinedNotifications = [...approvalNotifications, ...activeNotifications].sort((a, b) => {
+    const timeA = a.createdAtDate ? a.createdAtDate.getTime() : 0;
+    const timeB = b.createdAtDate ? b.createdAtDate.getTime() : 0;
+    return timeB - timeA;
+  });
+
+  const unreadCount = combinedNotifications.filter(n => !n.isRead).length;
 
   const handleMarkAllRead = async () => {
+    if (approvalNotifications.length > 0) {
+      setReadApprovalIds(new Set([...readApprovalIds, ...approvalNotifications.map(a => a.id)]));
+    }
+
     if (!user?.uid || activeNotifications.length === 0) return;
     const unreadIds = activeNotifications.filter(n => !n.isRead).map(n => n.id);
     if (unreadIds.length === 0) return;
@@ -160,6 +197,12 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
   const handleItemClick = (item) => {
     setShowNotifDropdown(false);
+
+    if (item.isApproval) {
+      setReadApprovalIds(prev => new Set([...prev, item.id]));
+      setShowApprovalModal(true);
+      return;
+    }
 
     if (user?.uid && !item.isRead) {
       setPersistentNotifications(prev => prev.map(n => n.id === item.id ? { ...n, isRead: true } : n));
@@ -197,6 +240,12 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
   const getNotificationIcon = (category) => {
     switch (category) {
+      case 'APPROVAL':
+        return {
+          icon: <ShieldAlert size={15} />,
+          bg: '#fff7ed',
+          color: '#ea580c'
+        };
       case 'WEIGHT':
         return {
           icon: <AlertTriangle size={15} />,
@@ -382,7 +431,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
               {/* Notification List */}
               <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
-                {activeNotifications.length === 0 ? (
+                {combinedNotifications.length === 0 ? (
                   <div style={{ padding: '36px 20px', textAlign: 'center', color: '#94a3b8' }}>
                     <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', color: '#16a34a' }}>
                       <CheckCircle2 size={20} />
@@ -391,7 +440,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                     <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '3px' }}>No notifications to display.</div>
                   </div>
                 ) : (
-                  activeNotifications.map(item => {
+                  combinedNotifications.map(item => {
                     const iconConfig = getNotificationIcon(item.category);
                     const timeLabel = formatNotificationTime(item);
 
@@ -407,10 +456,10 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                           alignItems: 'center',
                           gap: '14px',
                           transition: 'background 0.15s ease',
-                          background: '#ffffff'
+                          background: item.isApproval ? '#fffdf7' : '#ffffff'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                        onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
+                        onMouseEnter={e => e.currentTarget.style.background = item.isApproval ? '#fff7ed' : '#f8fafc'}
+                        onMouseLeave={e => e.currentTarget.style.background = item.isApproval ? '#fffdf7' : '#ffffff'}
                       >
                         {/* Circular Icon */}
                         <div 
@@ -431,7 +480,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
 
                         {/* Title & Message & Time */}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '0.83rem', fontWeight: item.isRead ? 400 : 500, color: '#1e293b', lineHeight: 1.38 }}>
+                          <div style={{ fontSize: '0.83rem', fontWeight: item.isRead ? 400 : 600, color: '#1e293b', lineHeight: 1.38 }}>
                             {item.title}
                           </div>
                           {item.message && (
@@ -452,7 +501,7 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
                                 width: '7px',
                                 height: '7px',
                                 borderRadius: '50%',
-                                background: '#0284c7'
+                                background: item.isApproval ? '#ea580c' : '#0284c7'
                               }}
                             />
                           )}
@@ -466,6 +515,11 @@ export default function TopNav({ onNewJobWork, onSalesOrder, onOpenSimulator }) 
           )}
         </div>
       </div>
+
+      {/* Admin Master Approval Center Modal */}
+      {showApprovalModal && (
+        <ApprovalCenterModal onClose={() => setShowApprovalModal(false)} />
+      )}
     </header>
   );
 }

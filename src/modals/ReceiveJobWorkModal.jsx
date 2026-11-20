@@ -111,36 +111,40 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
     standardBagWeightKg: String(stdBagWeight)
   });
 
-  // Variant Inward Line Items Breakdown (Matching Physical Register Image 2 / 28 MAR)
-  const defaultInitBags = Math.max(1, Math.round(pendingMax / (stdBagWeight || 50)));
+  // Variant Inward Line Items Breakdown (Standard Bags vs Loose Weight Stock)
+  const defaultInitBags = Math.max(1, Math.round(pendingMax / 50));
   const [variantRows, setVariantRows] = useState([
     {
       id: 1,
-      quality: row?.grade || 'ANCHOR',
+      stockType: 'FIXED',
+      quality: row?.grade || 'VIP',
       size: '3x3',
       form: 'Hanks',
       length: 'Standard',
       tracerLine: 'No Tracer Line',
       bagCount: String(defaultInitBags),
-      bagWeightKg: String(stdBagWeight || 50),
-      totalKg: defaultInitBags * (stdBagWeight || 50)
+      bagWeightKg: '50.0',
+      looseWeightKg: '',
+      totalKg: defaultInitBags * 50
     }
   ]);
 
-  const handleAddVariantRow = () => {
+  const handleAddVariantRow = (type = 'FIXED') => {
     const last = variantRows[variantRows.length - 1];
     setVariantRows(prev => [
       ...prev,
       {
         id: Date.now(),
-        quality: last?.quality || row?.grade || 'ANCHOR',
-        size: '4x3',
+        stockType: type,
+        quality: last?.quality || row?.grade || 'VIP',
+        size: last?.size || '3x3',
         form: last?.form || 'Hanks',
         length: 'Standard',
         tracerLine: 'No Tracer Line',
-        bagCount: '10',
-        bagWeightKg: String(stdBagWeight || 50),
-        totalKg: 10 * (stdBagWeight || 50)
+        bagCount: type === 'FIXED' ? '10' : '0',
+        bagWeightKg: '50.0',
+        looseWeightKg: type === 'LOOSE' ? '25.0' : '',
+        totalKg: type === 'FIXED' ? 500 : 25
       }
     ]);
   };
@@ -154,15 +158,32 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
     setVariantRows(prev => {
       const updated = [...prev];
       const target = { ...updated[idx], [field]: val };
-      const cnt = parseFloat(field === 'bagCount' ? val : target.bagCount) || 0;
-      const wt = parseFloat(field === 'bagWeightKg' ? val : target.bagWeightKg) || stdBagWeight;
-      target.totalKg = cnt * wt;
+      if (field === 'stockType') {
+        if (val === 'LOOSE') {
+          target.bagCount = '0';
+          target.looseWeightKg = target.looseWeightKg || '25.0';
+          target.totalKg = parseFloat(target.looseWeightKg) || 0;
+        } else {
+          target.bagCount = target.bagCount && target.bagCount !== '0' ? target.bagCount : '10';
+          target.bagWeightKg = '50.0';
+          target.totalKg = (parseFloat(target.bagCount) || 0) * 50;
+        }
+      } else if (target.stockType === 'LOOSE') {
+        const wt = parseFloat(field === 'looseWeightKg' ? val : target.looseWeightKg) || 0;
+        target.totalKg = wt;
+        target.bagCount = '0';
+      } else {
+        const cnt = parseFloat(field === 'bagCount' ? val : target.bagCount) || 0;
+        const wt = parseFloat(field === 'bagWeightKg' ? val : (target.bagWeightKg || 50)) || 50;
+        target.totalKg = cnt * wt;
+      }
       updated[idx] = target;
       return updated;
     });
   };
 
-  const totalVariantBags = variantRows.reduce((sum, r) => sum + (parseFloat(r.bagCount) || 0), 0);
+  const totalVariantBags = variantRows.filter(r => r.stockType !== 'LOOSE').reduce((sum, r) => sum + (parseFloat(r.bagCount) || 0), 0);
+  const totalLooseKg = variantRows.filter(r => r.stockType === 'LOOSE').reduce((sum, r) => sum + (parseFloat(r.looseWeightKg || r.totalKg) || 0), 0);
   const totalVariantKg = variantRows.reduce((sum, r) => sum + (parseFloat(r.totalKg) || 0), 0);
 
   // Multi-article rows (up to 4 rows from Excel JW-Inward)
@@ -292,41 +313,66 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
       let bagsList = [];
       if (totalVariantKg > 0 || calculatedNetKg > 0) {
         let serialCounter = 1;
-        const rowsToProcess = (variantRows && variantRows.length > 0 && totalVariantBags > 0)
+        const rowsToProcess = (variantRows && variantRows.length > 0)
           ? variantRows
           : [{
+              stockType: 'FIXED',
               quality: form.quality || row?.grade || 'VIP',
               size: form.size || '3x3',
               form: 'Hanks',
               length: 'Standard',
               tracerLine: 'No Tracer Line',
-              bagCount: String(Math.max(1, Math.round(calculatedNetKg / (stdBagWeight || 50)))),
-              bagWeightKg: String(stdBagWeight || 50)
+              bagCount: String(Math.max(1, Math.round(calculatedNetKg / 50))),
+              bagWeightKg: '50.0',
+              looseWeightKg: '',
+              totalKg: calculatedNetKg
             }];
 
         rowsToProcess.forEach((vr) => {
-          const cnt = parseInt(vr.bagCount, 10) || 0;
-          const wt = parseFloat(vr.bagWeightKg) || stdBagWeight;
+          const isLoose = vr.stockType === 'LOOSE';
           const coils = Number(form.coilCountPerBag || 12);
-          for (let b = 1; b <= cnt; b++) {
-            bagsList.push({
-              bagNumber: serialCounter++,
-              actualWeightKg: wt,
-              standardWeightKg: stdBagWeight,
-              coilCount: coils,
-              stockType: Math.abs(wt - stdBagWeight) <= 0.5 ? 'FIXED' : 'LOOSE',
-              quality: vr.quality || form.quality || row?.grade || 'VIP',
-              size: vr.size || '3x3',
-              form: vr.form || 'Hanks',
-              length: vr.length || 'Standard',
-              tracerLine: vr.tracerLine || 'No Tracer Line',
-              grade: vr.quality || form.quality || row?.grade || 'VIP',
-              lotNo: row?.batch || form.inwardSlipNo,
-              batch: row?.batch || form.inwardSlipNo,
-              sourceChallan: chNo,
-              vendor: party,
-              location: form.targetGodown
-            });
+
+          if (!isLoose) {
+            // Standard Fixed Bags (only takes bags input, 50kg standard)
+            const cnt = parseInt(vr.bagCount, 10) || 0;
+            const wt = parseFloat(vr.bagWeightKg) || 50;
+            for (let b = 1; b <= cnt; b++) {
+              bagsList.push({
+                bagNumber: serialCounter++,
+                actualWeightKg: wt,
+                standardWeightKg: 50,
+                coilCount: coils,
+                stockType: 'FIXED',
+                quality: vr.quality || form.quality || row?.grade || 'VIP',
+                size: vr.size || '3x3',
+                form: vr.form || 'Hanks',
+                length: vr.length || 'Standard',
+                tracerLine: vr.tracerLine || 'No Tracer Line',
+                grade: vr.quality || form.quality || row?.grade || 'VIP',
+                lotNo: row?.batch || form.inwardSlipNo,
+                batch: row?.batch || form.inwardSlipNo,
+                sourceChallan: chNo,
+                vendor: party,
+                location: form.targetGodown
+              });
+            }
+          } else {
+            // Loose Stock (strictly takes weight in KG)
+            const looseKg = parseFloat(vr.looseWeightKg || vr.totalKg) || 0;
+            if (looseKg > 0) {
+              bagsList.push({
+                stockType: 'LOOSE',
+                actualWeightKg: looseKg,
+                standardWeightKg: 50,
+                quality: vr.quality || form.quality || row?.grade || 'VIP',
+                size: vr.size || '3x3',
+                form: vr.form || 'Hanks',
+                length: vr.length || 'Standard',
+                tracerLine: vr.tracerLine || 'No Tracer Line',
+                grade: vr.quality || form.quality || row?.grade || 'VIP',
+                location: form.targetGodown
+              });
+            }
           }
         });
       }
@@ -405,37 +451,22 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
 
         {/* Form Body */}
         <form className="modal-body" onSubmit={handleSubmit}>
-          {/* Slip Header Row: 5 Columns with Department, Party Name, Challan No, Sub Challan No. + Date, Date */}
-          <div className="mform-row mform-col-3">
+          {/* Slip Header Row: Party Name, Inward Date, Challan No, Sub Challan No. */}
+          <div className="mform-row mform-col-2">
             <div className="mform-field">
-              <label className="mform-label">
-                <Building size={12} style={{ display: 'inline', marginRight: 4 }} />
-                Department <span className="req">*</span>
-              </label>
-              <SearchableSelect
-                value={form.department}
-                onChange={val => set('department', val)}
-                options={liveProcesses.map(proc => proc.processName || proc.name || proc)}
-                placeholder="-- Select Department / Process --"
-                searchPlaceholder="Search processes..."
-                required
-              />
-            </div>
-
-            <div className="mform-field">
-              <label className="mform-label">Party Name</label>
+              <label className="mform-label">Job Worker / Party Name</label>
               <input type="text" className="mform-input" value={party} readOnly style={{ background: '#f1f5f9', fontWeight: 'bold' }} />
             </div>
 
             <div className="mform-field">
-              <label className="mform-label">Date <span className="req">*</span></label>
+              <label className="mform-label">Inward Date <span className="req">*</span></label>
               <input type="date" className="mform-input" value={form.inwardDate} onChange={e => set('inwardDate', e.target.value)} required />
             </div>
           </div>
 
           <div className="mform-row mform-col-2" style={{ marginTop: '8px' }}>
             <div className="mform-field">
-              <label className="mform-label">Challan No. <span className="req">*</span></label>
+              <label className="mform-label">Inward Challan No. <span className="req">*</span></label>
               <input type="text" className="mform-input" value={form.inwardSlipNo} onChange={e => set('inwardSlipNo', e.target.value)} required />
             </div>
 
@@ -801,129 +832,216 @@ export default function ReceiveJobWorkModal({ row, onClose, onSave }) {
 
               <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
                 <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e40af', background: '#dbeafe', padding: '4px 8px', borderRadius: '4px' }}>
-                  Total: {totalVariantBags} Bags • {totalVariantKg.toFixed(1)} KG
+                  Total: {totalVariantBags} Bags {totalLooseKg > 0 ? `+ ${totalLooseKg.toFixed(1)} KG Loose ` : ''}= {totalVariantKg.toFixed(1)} KG Net
                 </span>
               </div>
             </div>
 
             {/* Line Items Table */}
             <div style={{ background: '#ffffff', borderRadius: '6px', border: '1px solid #cbd5e1', overflowX: 'auto', marginBottom: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+              <table style={{ width: '100%', minWidth: '860px', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1', color: '#475569', textAlign: 'left' }}>
-                    <th style={{ padding: '6px 8px' }}>Quality</th>
-                    <th style={{ padding: '6px 8px' }}>Size</th>
-                    <th style={{ padding: '6px 8px' }}>Form</th>
-                    <th style={{ padding: '6px 8px' }}>Length</th>
-                    <th style={{ padding: '6px 8px' }}>Tracer Line</th>
-                    <th style={{ padding: '6px 8px', width: '70px' }}>Bags</th>
-                    <th style={{ padding: '6px 8px', width: '85px' }}>Bag Wt (KG)</th>
-                    <th style={{ padding: '6px 8px', width: '85px', textAlign: 'right' }}>Total KG</th>
+                    <th style={{ padding: '6px 8px', width: '130px' }}>Stock Classification</th>
+                    <th style={{ padding: '6px 8px', width: '90px' }}>Quality</th>
+                    <th style={{ padding: '6px 8px', width: '80px' }}>Size</th>
+                    <th style={{ padding: '6px 8px', width: '85px' }}>Form</th>
+                    <th style={{ padding: '6px 8px', width: '85px' }}>Length</th>
+                    <th style={{ padding: '6px 8px', width: '110px' }}>Tracer Line</th>
+                    <th style={{ padding: '6px 8px', width: '75px', textAlign: 'center' }}>Bags</th>
+                    <th style={{ padding: '6px 8px', width: '115px', textAlign: 'center' }}>Weight (KG)</th>
+                    <th style={{ padding: '6px 8px', width: '90px', textAlign: 'right' }}>Total KG</th>
                     <th style={{ padding: '6px 8px', width: '35px', textAlign: 'center' }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {variantRows.map((vr, idx) => (
-                    <tr key={vr.id || idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '4px 6px' }}>
-                        <select
-                          value={vr.quality}
-                          onChange={e => handleVariantChange(idx, 'quality', e.target.value)}
-                          style={{ width: '100%', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
-                        >
-                          {(productAttrs.qualities || ['ANCHOR', 'VIP', 'EVEREST']).map(q => (
-                            <option key={q} value={q}>{q}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <select
-                          value={vr.size}
-                          onChange={e => handleVariantChange(idx, 'size', e.target.value)}
-                          style={{ width: '85px', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}
-                        >
-                          {(productAttrs.sizes || ['3x3', '4x3', '1.5', '2', '4', '6', '7.5']).map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <select
-                          value={vr.form}
-                          onChange={e => handleVariantChange(idx, 'form', e.target.value)}
-                          style={{ width: '90px', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
-                        >
-                          {(productAttrs.forms || ['Hanks', 'Packet', 'Cone']).map(f => (
-                            <option key={f} value={f}>{f}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <select
-                          value={vr.length}
-                          onChange={e => handleVariantChange(idx, 'length', e.target.value)}
-                          style={{ width: '85px', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
-                        >
-                          {(productAttrs.lengths || ['Standard', '100 Mtr', '200 Mtr']).map(l => (
-                            <option key={l} value={l}>{l}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <select
-                          value={vr.tracerLine}
-                          onChange={e => handleVariantChange(idx, 'tracerLine', e.target.value)}
-                          style={{ width: '110px', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
-                        >
-                          {(productAttrs.tracerLines || ['No Tracer Line', 'Single Red Line']).map(t => (
-                            <option key={t} value={t}>{t}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input
-                          type="number" min="1"
-                          value={vr.bagCount}
-                          onChange={e => handleVariantChange(idx, 'bagCount', e.target.value)}
-                          style={{ width: '60px', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700, textAlign: 'center' }}
-                        />
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input
-                          type="number" step="0.5"
-                          value={vr.bagWeightKg}
-                          onChange={e => handleVariantChange(idx, 'bagWeightKg', e.target.value)}
-                          style={{ width: '70px', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem', textAlign: 'right' }}
-                        />
-                      </td>
-                      <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
-                        {Number(vr.totalKg || 0).toFixed(1)} KG
-                      </td>
-                      <td style={{ padding: '4px 6px', textAlign: 'center' }}>
-                        {variantRows.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveVariantRow(idx)}
-                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 2 }}
-                            title="Remove row"
+                  {variantRows.map((vr, idx) => {
+                    const isLoose = vr.stockType === 'LOOSE';
+                    return (
+                      <tr key={vr.id || idx} style={{ borderBottom: '1px solid #f1f5f9', background: isLoose ? '#fffbf5' : '#ffffff' }}>
+                        {/* 1. Stock Classification dropdown */}
+                        <td style={{ padding: '4px 6px' }}>
+                          <select
+                            value={vr.stockType || 'FIXED'}
+                            onChange={e => handleVariantChange(idx, 'stockType', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '4px 6px',
+                              border: '1px solid',
+                              borderColor: isLoose ? '#fed7aa' : '#86efac',
+                              background: isLoose ? '#fff7ed' : '#f0fdf4',
+                              color: isLoose ? '#c2410c' : '#15803d',
+                              borderRadius: '4px',
+                              fontSize: '0.74rem',
+                              fontWeight: 700
+                            }}
                           >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            <option value="FIXED">Standard Bags</option>
+                            <option value="LOOSE">Loose Stock</option>
+                          </select>
+                        </td>
+
+                        {/* Quality */}
+                        <td style={{ padding: '4px 6px' }}>
+                          <select
+                            value={vr.quality}
+                            onChange={e => handleVariantChange(idx, 'quality', e.target.value)}
+                            style={{ width: '100%', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
+                          >
+                            {(productAttrs.qualities || ['ANCHOR', 'VIP', 'EVEREST']).map(q => (
+                              <option key={q} value={q}>{q}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Size */}
+                        <td style={{ padding: '4px 6px' }}>
+                          <select
+                            value={vr.size}
+                            onChange={e => handleVariantChange(idx, 'size', e.target.value)}
+                            style={{ width: '100%', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}
+                          >
+                            {(productAttrs.sizes || ['3x3', '4x3', '1.5', '2', '4', '6', '7.5']).map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Form */}
+                        <td style={{ padding: '4px 6px' }}>
+                          <select
+                            value={vr.form}
+                            onChange={e => handleVariantChange(idx, 'form', e.target.value)}
+                            style={{ width: '100%', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
+                          >
+                            {(productAttrs.forms || ['Hanks', 'Packet', 'Cone']).map(f => (
+                              <option key={f} value={f}>{f}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Length */}
+                        <td style={{ padding: '4px 6px' }}>
+                          <select
+                            value={vr.length}
+                            onChange={e => handleVariantChange(idx, 'length', e.target.value)}
+                            style={{ width: '100%', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
+                          >
+                            {(productAttrs.lengths || ['Standard', '100 Mtr', '200 Mtr']).map(l => (
+                              <option key={l} value={l}>{l}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Tracer Line */}
+                        <td style={{ padding: '4px 6px' }}>
+                          <select
+                            value={vr.tracerLine}
+                            onChange={e => handleVariantChange(idx, 'tracerLine', e.target.value)}
+                            style={{ width: '100%', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.75rem' }}
+                          >
+                            {(productAttrs.tracerLines || ['No Tracer Line', 'Single Red Line']).map(t => (
+                              <option key={t} value={t}>{t}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Bags input: ONLY for FIXED, - for LOOSE */}
+                        <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                          {!isLoose ? (
+                            <input
+                              type="number"
+                              min="1"
+                              value={vr.bagCount}
+                              onChange={e => handleVariantChange(idx, 'bagCount', e.target.value)}
+                              placeholder="Bags"
+                              style={{ width: '100%', maxWidth: '65px', padding: '4px', border: '1px solid #86efac', background: '#f0fdf4', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 700, textAlign: 'center' }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                              -
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Weight input: editable input for both Standard Bags and Loose Stock */}
+                        <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                          {!isLoose ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'center' }}>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="1"
+                                value={vr.bagWeightKg}
+                                onChange={e => handleVariantChange(idx, 'bagWeightKg', e.target.value)}
+                                placeholder="50.0"
+                                style={{ width: '65px', padding: '4px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600, textAlign: 'right' }}
+                              />
+                              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>KG</span>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'center' }}>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0.1"
+                                value={vr.looseWeightKg || ''}
+                                onChange={e => handleVariantChange(idx, 'looseWeightKg', e.target.value)}
+                                placeholder="KG"
+                                style={{ width: '70px', padding: '4px', border: '1px solid #fed7aa', background: '#fff7ed', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 700, color: '#c2410c', textAlign: 'right' }}
+                              />
+                              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#9a3412' }}>KG</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Total KG */}
+                        <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 700, color: isLoose ? '#ea580c' : '#0f172a' }}>
+                          {Number(vr.totalKg || 0).toFixed(1)} KG
+                        </td>
+
+                        {/* Delete row */}
+                        <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                          {variantRows.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveVariantRow(idx)}
+                              style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 2 }}
+                              title="Remove row"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            <button
-              type="button"
-              onClick={handleAddVariantRow}
-              style={{ background: '#f8fafc', border: '1px dashed #3b82f6', color: '#2563eb', borderRadius: '4px', padding: '4px 10px', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-            >
-              <Plus size={13} /> Add Product Variant Row (Anchor 4x3, 6x3T, etc.)
-            </button>
+            {/* Row Add Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleAddVariantRow('FIXED')}
+                  style={{ background: '#f0fdf4', border: '1px solid #86efac', color: '#15803d', borderRadius: '5px', padding: '5px 12px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <Plus size={13} /> Add Standard Bags
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddVariantRow('LOOSE')}
+                  style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#c2410c', borderRadius: '5px', padding: '5px 12px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <Plus size={13} /> Add Loose Stock
+                </button>
+              </div>
+              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                Standard Bags take bag count and bag weight &bull; Loose Stock takes direct weight in KG
+              </span>
+            </div>
           </div>
 
           {/* Section 4: Rates, Net Payable & Signatories */}

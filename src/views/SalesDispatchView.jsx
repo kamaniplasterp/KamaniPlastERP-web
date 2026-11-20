@@ -3,8 +3,9 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   ShoppingCart, Truck, Download, Search, Plus, ArrowUpRight,
   FileText, ChevronRight, CheckCircle2, AlertTriangle, ArrowUpDown, Filter,
-  BarChart3, ChevronDown, ChevronUp, Users, Package, SlidersHorizontal
+  BarChart3, ChevronDown, ChevronUp, Users, Package, SlidersHorizontal, ShieldAlert
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import SalesOrderModal from '../modals/SalesOrderModal';
 import DispatchChallanModal from '../modals/DispatchChallanModal';
 import SalesOrderDetailView from '../drawers/SalesOrderDetailView';
@@ -22,11 +23,38 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { openOrdersCount, globalSearch } = useWorkflow();
+  const { isAdmin, can } = useAuth();
+
+  const canAccessTab = (tabName) => {
+    if (isAdmin) return true;
+    if (!can) return true;
+    switch (tabName) {
+      case 'orders':
+        return can('sales_orders', 'read');
+      case 'dispatches':
+      case 'dispatch':
+        return can('sales_challans', 'read');
+      default:
+        return true;
+    }
+  };
+
+  const getFirstPermittedTab = () => {
+    if (canAccessTab('orders')) return 'orders';
+    if (canAccessTab('dispatches')) return 'dispatches';
+    return 'orders';
+  };
 
   const resolveTab = (t) => {
-    if (!t) return 'orders';
-    if (t === 'dispatch' || t === 'dispatches') return 'dispatches';
-    return 'orders';
+    let resolved = 'orders';
+    if (!t) resolved = 'orders';
+    else if (t === 'dispatch' || t === 'dispatches') resolved = 'dispatches';
+    else resolved = 'orders';
+
+    if (!canAccessTab(resolved)) {
+      return getFirstPermittedTab();
+    }
+    return resolved;
   };
 
   const [activeTab, setActiveTab] = useState(() => resolveTab(searchParams.get('tab') || location.state?.tab));
@@ -38,13 +66,15 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab') || location.state?.tab;
-    if (tabFromUrl) {
+    if (!canAccessTab(activeTab)) {
+      setActiveTab(resolveTab(tabFromUrl));
+    } else if (tabFromUrl && tabFromUrl !== activeTab && canAccessTab(tabFromUrl)) {
       setActiveTab(resolveTab(tabFromUrl));
     }
     if (location.state?.selectedOrderId) {
       setSelectedOrderId(location.state.selectedOrderId);
     }
-  }, [searchParams, location.state]);
+  }, [searchParams, location.state, can]);
 
   useEffect(() => {
     const unsubSo = subscribeSalesOrders(setLiveOrders);
@@ -484,8 +514,19 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
         actions={renderSdActions()}
       />
 
+      {/* ── Access Denied Banner if Tab Not Permitted ── */}
+      {!canAccessTab(activeTab) && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '20px 0' }}>
+          <ShieldAlert size={48} style={{ color: '#ef4444', margin: '0 auto 16px', display: 'block' }} />
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px' }}>Access Restricted</h2>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>
+            You do not have permission to view this section. Please contact your system administrator to request access.
+          </p>
+        </div>
+      )}
+
       {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
-      {showMetrics && (
+      {showMetrics && canAccessTab(activeTab) && (
         <div className="sd-top-kpis">
         {activeTab === 'dispatches' ? (
           <>
@@ -548,7 +589,7 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
 
 
       {/* ── TAB 1: Sales Orders & Stock Allocation ── */}
-      {activeTab === 'orders' && (
+      {activeTab === 'orders' && canAccessTab('orders') && (
         <div className="sd-section-card">
           {/* Active Filter Chips */}
           {(orderStatusFilter !== 'All' || orderCustomerFilter !== 'All') && (
@@ -651,7 +692,7 @@ export default function SalesDispatchView({ onOpenSalesOrder, onOpenDispatchModa
       )}
 
       {/* ── TAB 2: Dispatches & Delivery Challans ── */}
-      {activeTab === 'dispatches' && (
+      {activeTab === 'dispatches' && canAccessTab('dispatches') && (
         <div className="sd-section-card">
           {/* Active Filter Chips */}
           {dispatchStatusFilter !== 'All' && (

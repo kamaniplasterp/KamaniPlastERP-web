@@ -8,9 +8,12 @@ import {
 } from '../api/processMaterials.api';
 import SearchableSelect from '../components/SearchableSelect';
 import { showAlert } from '../context/CustomAlertContext';
+import { useAuth } from '../context/AuthContext';
+import { submitMasterChangeRequest } from '../api/approvals.api';
 import '../styles/Modals.css';
 
 export default function ProcessMasterModal({ processToEdit, process, onClose, onSaved }) {
+  const { isAdmin, user, userProfile } = useAuth();
   const targetProcess = processToEdit || process;
   const isEditing = Boolean(targetProcess && (targetProcess.id || targetProcess.processCode));
 
@@ -74,6 +77,21 @@ export default function ProcessMasterModal({ processToEdit, process, onClose, on
         toleranceKg: formData.isFixedWeight ? Number(formData.toleranceKg || 1) : 0,
         expectedScrapPct: Number(formData.expectedScrapPct || 0)
       };
+
+      const targetId = isEditing ? (targetProcess.id || targetProcess.processCode) : null;
+      await submitMasterChangeRequest({
+        masterType: 'processes',
+        masterLabel: 'Process Master',
+        action: isEditing ? 'UPDATE' : 'CREATE',
+        recordId: targetId,
+        recordTitle: formData.processName,
+        proposedData: payload,
+        previousData: targetProcess,
+        submittedBy: userProfile || user || { role: user?.role || 'staff' }
+      });
+      await showAlert(`Process details submitted for Administrator approval!`, { type: 'info', title: 'Submitted for Approval' });
+      onClose();
+      return;
 
       if (isEditing) {
         const targetId = targetProcess.id || targetProcess.processCode;

@@ -3,11 +3,12 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   Plus, Search, Download, ArrowUpDown, Printer, ChevronRight,
   Package, Users, Briefcase, DollarSign, Percent, Filter, X,
-  Clock, ShieldCheck, CheckCircle2, TrendingUp, BarChart3, Bell,
+  Clock, ShieldCheck, ShieldAlert, CheckCircle2, TrendingUp, BarChart3, Bell,
   FileSpreadsheet, Receipt, Layers, Calendar, Scissors,
   SlidersHorizontal, MoreVertical, Eye, RotateCcw, Columns, Scale,
   ChevronDown, ChevronUp, Edit2, Trash2
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import ReceiveJobWorkModal from '../modals/ReceiveJobWorkModal';
 import ExtraCuttingModal from '../modals/ExtraCuttingModal';
@@ -25,27 +26,61 @@ import '../styles/JobWorkHub.css';
 export default function JobWorkHubView({ onOpenNewJobWork }) {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { isAdmin, can } = useAuth();
 
   const [processorSubView, setProcessorSubView] = useState('statement');
   const [settlementSubView, setSettlementSubView] = useState('monthlySettlement');
 
+  const canAccessTab = (tabName) => {
+    if (isAdmin) return true;
+    if (!can) return true;
+    switch (tabName) {
+      case 'orders':
+        return can('jobwork_outward', 'read');
+      case 'challanReport':
+        return can('jobwork_trace', 'read');
+      case 'processorLedger':
+      case 'statement':
+      case 'material':
+      case 'wastage':
+        return can('jobwork_contractor', 'read');
+      case 'scrapSettlement':
+      case 'monthlySettlement':
+      case 'extraCutting':
+        return can('jobwork_scrap', 'read');
+      default:
+        return true;
+    }
+  };
+
+  const getFirstPermittedTab = () => {
+    if (canAccessTab('orders')) return 'orders';
+    if (canAccessTab('challanReport')) return 'challanReport';
+    if (canAccessTab('processorLedger')) return 'processorLedger';
+    if (canAccessTab('scrapSettlement')) return 'scrapSettlement';
+    return 'orders';
+  };
+
   const resolveTabState = (tabParam) => {
-    if (!tabParam) return 'orders';
-    if (tabParam === 'orders') return 'orders';
-    if (tabParam === 'challanReport') return 'challanReport';
-    if (['statement', 'material', 'wastage', 'processorLedger'].includes(tabParam)) {
+    let resolved = 'orders';
+    if (!tabParam || tabParam === 'orders') resolved = 'orders';
+    else if (tabParam === 'challanReport') resolved = 'challanReport';
+    else if (['statement', 'material', 'wastage', 'processorLedger'].includes(tabParam)) {
       if (['statement', 'material', 'wastage'].includes(tabParam)) {
         setProcessorSubView(tabParam);
       }
-      return 'processorLedger';
-    }
-    if (['monthlySettlement', 'extraCutting', 'scrapSettlement'].includes(tabParam)) {
+      resolved = 'processorLedger';
+    } else if (['monthlySettlement', 'extraCutting', 'scrapSettlement'].includes(tabParam)) {
       if (['monthlySettlement', 'extraCutting'].includes(tabParam)) {
         setSettlementSubView(tabParam);
       }
-      return 'scrapSettlement';
+      resolved = 'scrapSettlement';
     }
-    return 'orders';
+
+    if (!canAccessTab(resolved)) {
+      return getFirstPermittedTab();
+    }
+    return resolved;
   };
 
   const [activeTab, setActiveTab] = useState(() => resolveTabState(searchParams.get('tab') || location.state?.tab));
@@ -97,13 +132,15 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab') || location.state?.tab;
-    if (tabFromUrl) {
+    if (!canAccessTab(activeTab)) {
+      setActiveTab(resolveTabState(tabFromUrl));
+    } else if (tabFromUrl && tabFromUrl !== activeTab && canAccessTab(tabFromUrl)) {
       setActiveTab(resolveTabState(tabFromUrl));
     }
     if (location.state?.selectedJwId) {
       setSelectedJwId(location.state.selectedJwId);
     }
-  }, [searchParams, location.state]);
+  }, [searchParams, location.state, can]);
 
   useEffect(() => {
     const unsubJw = subscribeJobWorks(setLiveJobWorks);
@@ -829,7 +866,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         />
       )}
 
-      {(activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) && (
+      {(activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) && canAccessTab('processorLedger') && (
         <HeaderButton
           icon={Download}
           label="Export CSV"
@@ -865,7 +902,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </>
       )}
 
-      {(activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) && (
+      {(activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) && canAccessTab('scrapSettlement') && (
         <>
           <HeaderButton
             icon={Download}
@@ -919,8 +956,19 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         actions={renderHeaderActions()}
       />
 
+      {/* ── Access Denied Banner if Tab Not Permitted ── */}
+      {!canAccessTab(activeTab) && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '20px 0' }}>
+          <ShieldAlert size={48} style={{ color: '#ef4444', margin: '0 auto 16px', display: 'block' }} />
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px' }}>Access Restricted</h2>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>
+            You do not have permission to view this section. Please contact your system administrator to request access.
+          </p>
+        </div>
+      )}
+
       {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
-      {showMetrics && (
+      {showMetrics && canAccessTab(activeTab) && (
         <div className="jw-top-kpis">
         {(activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) ? (
           <>
@@ -1094,7 +1142,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
 
 
       {/* ── TAB 1: Job Work Ledger ── */}
-      {activeTab === 'orders' && (
+      {activeTab === 'orders' && canAccessTab('orders') && (
         <div className="jw-ledger-section">
           {/* Progressive Filter & Actions Bar */}
           {(() => {
@@ -1325,7 +1373,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       )}
 
       {/* ── TAB 2: Challan Balance Report ── */}
-      {activeTab === 'challanReport' && (
+      {activeTab === 'challanReport' && canAccessTab('challanReport') && (
         <div className="jw-ledger-section">
 
           {/* Challan Wise Table (Stacked KPI grid eliminated; contextual metrics displayed in Top Area) */}
@@ -1411,7 +1459,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       )}
 
       {/* ── TAB 3: Job Worker Statement & Reconciliation (Matching Excel 'Statement' sheet) ── */}
-      {activeTab === 'processorLedger' && (
+      {activeTab === 'processorLedger' && canAccessTab('processorLedger') && (
         <div className="erp-subnav-pills">
           <button
             className={`erp-subnav-pill ${processorSubView === 'statement' ? 'active' : ''}`}
@@ -1437,7 +1485,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {(activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) && (
+      {(activeTab === 'statement' || (activeTab === 'processorLedger' && processorSubView === 'statement')) && canAccessTab('processorLedger') && (
         <div className="jw-ledger-section">
           {/* Party & Date Range Selector - Only visible when Filters is clicked */}
           {showStatementFilterPanel && (
@@ -1615,7 +1663,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       )}
 
       {/* ── Material at Outside Processors ── */}
-      {(activeTab === 'material' || (activeTab === 'processorLedger' && processorSubView === 'material')) && (
+      {(activeTab === 'material' || (activeTab === 'processorLedger' && processorSubView === 'material')) && canAccessTab('processorLedger') && (
         <div className="jw-material-tab-container">
           <div className="jw-ledger-section">
             {/* Vendor Grouped Cards & Tables */}
@@ -1709,7 +1757,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       )}
 
       {/* ── Vendor Wastage & Yield Analysis ── */}
-      {(activeTab === 'wastage' || (activeTab === 'processorLedger' && processorSubView === 'wastage')) && (
+      {(activeTab === 'wastage' || (activeTab === 'processorLedger' && processorSubView === 'wastage')) && canAccessTab('processorLedger') && (
         <div className="jw-wastage-tab-container">
           <div className="jw-ledger-section">
             {/* Performance Section Table */}
@@ -1761,7 +1809,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       )}
 
       {/* ── TAB 4: Scrap Settlement & Deductions (Merged) ── */}
-      {activeTab === 'scrapSettlement' && (
+      {activeTab === 'scrapSettlement' && canAccessTab('scrapSettlement') && (
         <div className="erp-subnav-pills">
           <button
             className={`erp-subnav-pill ${settlementSubView === 'monthlySettlement' ? 'active' : ''}`}
@@ -1780,7 +1828,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
         </div>
       )}
 
-      {(activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) && (
+      {(activeTab === 'extraCutting' || (activeTab === 'scrapSettlement' && settlementSubView === 'extraCutting')) && canAccessTab('scrapSettlement') && (
         <div className="jw-ledger-section">
           {/* Summary Metric Pills */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
@@ -1895,7 +1943,7 @@ export default function JobWorkHubView({ onOpenNewJobWork }) {
       )}
 
       {/* ── Month-End Consolidated Scrap Settlement Hub ── */}
-      {(activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) && (
+      {(activeTab === 'monthlySettlement' || (activeTab === 'scrapSettlement' && settlementSubView === 'monthlySettlement')) && canAccessTab('scrapSettlement') && (
         <div className="jw-settlement-panel">
           {/* Consolidated Financial & Material Balance Summary Banner */}
           <div className="jw-stmt-summary-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginTop: '4px' }}>

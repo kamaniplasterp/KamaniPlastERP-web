@@ -7,6 +7,7 @@ import {
   createEmployeeUser, 
   ERP_MODULES, 
   ROLE_DEFAULT_MODULES, 
+  ROLE_DEFAULT_PERMISSIONS,
   ROLE_LABELS, 
   ROLE_COLORS 
 } from '../api/rbac.api';
@@ -82,6 +83,7 @@ export default function CreateUserModal({ onClose, onUserCreated }) {
         email: cleanEmail,
         role: form.role,
         assignedModules: form.role === 'admin' ? ERP_MODULES.map(m => m.id) : assignedModules,
+        permissions: form.role === 'admin' ? ROLE_DEFAULT_PERMISSIONS.admin : (ROLE_DEFAULT_PERMISSIONS[form.role] || ROLE_DEFAULT_PERMISSIONS.employee),
         status: form.status
       });
 

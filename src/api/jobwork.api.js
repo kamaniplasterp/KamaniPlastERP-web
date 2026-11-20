@@ -18,7 +18,8 @@ import {
   updateFgStock, 
   updateScrapStock, 
   logStockMovement, 
-  addInventoryBagsBatch 
+  addInventoryBagsBatch,
+  updateMaterialLooseStock
 } from './inventory.api';
 import { logAuditEvent } from './audit.api';
 
@@ -443,26 +444,70 @@ export async function receiveJobWork({
     }, { merge: true });
   });
 
-  // If bag list was generated, write bags to inventory_bags
+  // Handle Bags and Loose Stock segregation:
+  // Standard bags (FIXED) are written to discrete inventory_bags.
+  // Loose stock items are credited strictly as weight in KG to material_loose_stock.
   if (Array.isArray(bagsList) && bagsList.length > 0) {
     try {
-      await addInventoryBagsBatch(bagsList.map((b, idx) => ({
-        bagNumber: b.bagNumber !== undefined ? b.bagNumber : (idx + 1),
-        inwardSlipNo: receiptSlip,
-        jobWorkNo: jwId,
-        productName: itemLabel || 'Processed Material',
-        quality: b.quality || 'ANDN',
-        size: b.size || '3x3',
-        standardWeightKg: Number(b.standardWeightKg || 50),
-        actualWeightKg: Number(b.actualWeightKg || 50),
-        coilCount: Number(b.coilCount || 12),
-        stockType: b.stockType || (Number(b.actualWeightKg) >= 48 ? 'FIXED' : 'LOOSE'),
-        location: targetGodown,
-        status: 'AVAILABLE',
-        receivedAt: dateOfReceipt
-      })));
+      const fixedBags = bagsList.filter(b => b.stockType === 'FIXED');
+      const looseItems = bagsList.filter(b => b.stockType === 'LOOSE');
+
+      if (fixedBags.length > 0) {
+        let nextBagNumber = 1;
+        try {
+          const bagQuery = query(collection(db, 'inventory_bags'), orderBy('bagNumber', 'desc'), limit(1));
+          const snap = await getDocs(bagQuery);
+          if (!snap.empty) {
+            nextBagNumber = (Number(snap.docs[0].data().bagNumber) || 0) + 1;
+          }
+        } catch (err) {
+          console.warn('Could not query max bagNumber:', err);
+        }
+
+        await addInventoryBagsBatch(fixedBags.map((b, idx) => ({
+          bagNumber: nextBagNumber + idx,
+          inwardSlipNo: receiptSlip,
+          jobWorkNo: jwId,
+          productName: itemLabel || 'Processed Material',
+          quality: b.quality || 'ANDN',
+          size: b.size || '3x3',
+          form: b.form || 'Hanks',
+          standardWeightKg: Number(b.standardWeightKg || 50),
+          actualWeightKg: Number(b.actualWeightKg || 50),
+          coilCount: Number(b.coilCount || 12),
+          stockType: 'FIXED',
+          location: targetGodown,
+          status: 'AVAILABLE',
+          receivedAt: dateOfReceipt
+        })));
+      }
+
+      // If any loose remainder weight was recorded, credit it directly to material_loose_stock
+      if (looseItems.length > 0) {
+        const looseBySpec = {};
+        for (const item of looseItems) {
+          const q = item.quality || 'VIP';
+          const f = item.form || 'Hank';
+          const s = item.size || 'Standard';
+          const key = `${q}_${f}_${s}`;
+          if (!looseBySpec[key]) {
+            looseBySpec[key] = { quality: q, form: f, size: s, weightKg: 0 };
+          }
+          looseBySpec[key].weightKg += Number(item.actualWeightKg || 0);
+        }
+
+        for (const key of Object.keys(looseBySpec)) {
+          const spec = looseBySpec[key];
+          await updateMaterialLooseStock({
+            quality: spec.quality,
+            form: spec.form,
+            size: spec.size,
+            location: targetGodown
+          }, spec.weightKg);
+        }
+      }
     } catch (bagErr) {
-      console.error('Error saving bag serials:', bagErr);
+      console.error('Error saving bags / loose stock:', bagErr);
     }
   }
 

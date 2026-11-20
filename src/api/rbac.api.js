@@ -59,6 +59,81 @@ export const ERP_MODULES = [
 ];
 
 /**
+ * Platform Granular Sub-Modules
+ */
+export const ERP_SUBMODULES = [
+  // 1. Job Work Hub
+  { id: 'jobwork_outward', moduleId: 'jobwork', moduleLabel: 'Job Work Hub', label: 'Outward Challans', description: 'Create and dispatch material to job workers (JW-1)' },
+  { id: 'jobwork_inward', moduleId: 'jobwork', moduleLabel: 'Job Work Hub', label: 'Inward Slips', description: 'Receive processed goods & record wastage (JW-2)' },
+  { id: 'jobwork_trace', moduleId: 'jobwork', moduleLabel: 'Job Work Hub', label: 'Challan Trace', description: 'Reconcile outstanding materials outside plant' },
+  { id: 'jobwork_contractor', moduleId: 'jobwork', moduleLabel: 'Job Work Hub', label: 'Contractor Ledger', description: 'Processor billing, statements & rate audits' },
+  { id: 'jobwork_scrap', moduleId: 'jobwork', moduleLabel: 'Job Work Hub', label: 'Scrap & Burning Loss', description: 'Burning loss & processing scrap settlements' },
+
+  // 2. Inventory & Stock
+  { id: 'inventory_rm', moduleId: 'inventory', moduleLabel: 'Inventory & Stock', label: 'Raw Material GRN', description: 'GRN inward register, gross-tare weighment' },
+  { id: 'inventory_fg', moduleId: 'inventory', moduleLabel: 'Inventory & Stock', label: 'Finished Goods', description: 'Finished yarn inventory & stock balance' },
+  { id: 'inventory_bags', moduleId: 'inventory', moduleLabel: 'Inventory & Stock', label: 'Bags & Dual Stock', description: 'Bag-level barcode scanning & physical audit' },
+  { id: 'inventory_movements', moduleId: 'inventory', moduleLabel: 'Inventory & Stock', label: 'Stock Movements', description: 'Internal godown transfers and adjustments' },
+
+  // 3. Sales & Dispatch
+  { id: 'sales_orders', moduleId: 'sales', moduleLabel: 'Sales & Dispatch', label: 'Sales Orders', description: 'Customer orders and stock reservations' },
+  { id: 'sales_challans', moduleId: 'sales', moduleLabel: 'Sales & Dispatch', label: 'Dispatch Challans', description: 'Rule 55 delivery slips and transport gates' },
+
+  // 4. Process & Plant Masters
+  { id: 'masters_operations', moduleId: 'processMasters', moduleLabel: 'Process & Plant Masters', label: 'Operations & Wastage', description: 'Machine processes and tolerance benchmarks' },
+  { id: 'masters_godowns', moduleId: 'processMasters', moduleLabel: 'Process & Plant Masters', label: 'Godowns & Locations', description: 'Storage locations, godowns and vendor units' },
+  { id: 'masters_products', moduleId: 'processMasters', moduleLabel: 'Process & Plant Masters', label: 'Product Matrix & SKUs', description: 'Color, form, size & product SKU generator' },
+
+  // 5. Directory & Admin
+  { id: 'directory_business', moduleId: 'directory', moduleLabel: 'Directory & Admin', label: 'Business Directory', description: 'Vendor, contractor and customer profiles' },
+  { id: 'directory_rates', moduleId: 'directory', moduleLabel: 'Directory & Admin', label: 'JW Rates & Valuation', description: 'Processing rate contracts and Rule 55 valuation' },
+  { id: 'directory_settings', moduleId: 'directory', label: 'Plant Settings', moduleLabel: 'Directory & Admin', description: 'Tare standards, FY setup and signatories' },
+  { id: 'directory_rbac', moduleId: 'directory', label: 'User Roles & RBAC', moduleLabel: 'Directory & Admin', description: 'Staff credentials and access permissions' },
+  { id: 'directory_audit', moduleId: 'directory', label: 'Security Audit Logs', moduleLabel: 'Directory & Admin', description: 'Security audit trail and operational history' }
+];
+
+/**
+ * Default granular permissions per role: { [subModuleId]: { read, create, update } }
+ */
+export const ROLE_DEFAULT_PERMISSIONS = {
+  admin: ERP_SUBMODULES.reduce((acc, sub) => {
+    acc[sub.id] = { read: true, create: true, update: true };
+    return acc;
+  }, {}),
+  accountant: ERP_SUBMODULES.reduce((acc, sub) => {
+    const isMasterOrAdmin = sub.moduleId === 'processMasters' || sub.id === 'directory_rbac' || sub.id === 'directory_settings';
+    acc[sub.id] = {
+      read: true,
+      create: !isMasterOrAdmin,
+      update: !isMasterOrAdmin
+    };
+    return acc;
+  }, {}),
+  employee: ERP_SUBMODULES.reduce((acc, sub) => {
+    const isFloorOp = sub.moduleId === 'jobwork' || sub.moduleId === 'inventory' || sub.moduleId === 'sales';
+    acc[sub.id] = {
+      read: isFloorOp,
+      create: isFloorOp,
+      update: false
+    };
+    return acc;
+  }, {})
+};
+
+/**
+ * Helper to check whether a user profile has permission for a specific sub-module action
+ */
+export function checkPermission(userProfile, subModuleId, action = 'read') {
+  if (!userProfile) return false;
+  if (userProfile.role === 'admin') return true;
+  if (userProfile.permissions && userProfile.permissions[subModuleId]) {
+    return Boolean(userProfile.permissions[subModuleId][action]);
+  }
+  const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[userProfile.role] || ROLE_DEFAULT_PERMISSIONS.employee;
+  return Boolean(defaultRolePerms[subModuleId]?.[action]);
+}
+
+/**
  * Default module access per role
  */
 export const ROLE_DEFAULT_MODULES = {
@@ -130,6 +205,11 @@ export function subscribeUsers(callback) {
             ? data.assignedModules 
             : (ROLE_DEFAULT_MODULES[role] || ROLE_DEFAULT_MODULES.employee));
 
+      const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS.employee;
+      const permissions = role === 'admin'
+        ? ROLE_DEFAULT_PERMISSIONS.admin
+        : (data.permissions && typeof data.permissions === 'object' ? data.permissions : defaultRolePerms);
+
       return {
         id: docSnap.id,
         uid: data.uid || docSnap.id,
@@ -138,6 +218,7 @@ export function subscribeUsers(callback) {
         username: data.username || '',
         role: role,
         assignedModules: assignedModules,
+        permissions: permissions,
         status: data.status || 'ACTIVE',
         updatedAt: data.updatedAt
       };
@@ -153,18 +234,23 @@ export function subscribeUsers(callback) {
  * Admin updates a user's role and assigned modules
  * Updates all matching documents (by document ID, UID, and Email) to guarantee consistency.
  */
-export async function updateUserAccess(userTarget, { role, assignedModules, status }) {
+export async function updateUserAccess(userTarget, { role, assignedModules, permissions, status }) {
   if (!db || !userTarget) throw new Error('Firestore not initialized or missing user target');
   
   const targetId = typeof userTarget === 'string' ? userTarget : (userTarget.id || userTarget.uid);
   const targetUid = typeof userTarget === 'object' ? userTarget.uid : null;
   const targetEmail = typeof userTarget === 'object' ? userTarget.email : null;
 
+  const finalRole = role || 'employee';
+  const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[finalRole] || ROLE_DEFAULT_PERMISSIONS.employee;
   const updates = {
-    role: role || 'employee',
-    assignedModules: role === 'admin' 
+    role: finalRole,
+    assignedModules: finalRole === 'admin' 
       ? ERP_MODULES.map(m => m.id) 
-      : (Array.isArray(assignedModules) ? assignedModules : (ROLE_DEFAULT_MODULES[role] || [])),
+      : (Array.isArray(assignedModules) ? assignedModules : (ROLE_DEFAULT_MODULES[finalRole] || [])),
+    permissions: finalRole === 'admin'
+      ? ROLE_DEFAULT_PERMISSIONS.admin
+      : (permissions && typeof permissions === 'object' ? permissions : defaultRolePerms),
     status: status || 'ACTIVE',
     updatedAt: serverTimestamp()
   };
@@ -207,6 +293,7 @@ export async function createEmployeeUser({
   displayName,
   role = 'employee',
   assignedModules = null,
+  permissions = null,
   status = 'ACTIVE'
 }) {
   const cleanUsername = (username || '').trim().toLowerCase().replace(/^@+/, '');
@@ -268,6 +355,11 @@ export async function createEmployeeUser({
 
   const validRoles = ['admin', 'accountant', 'employee'];
   const finalRole = validRoles.includes(role) ? role : 'employee';
+  const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[finalRole] || ROLE_DEFAULT_PERMISSIONS.employee;
+  const finalPermissions = finalRole === 'admin'
+    ? ROLE_DEFAULT_PERMISSIONS.admin
+    : (permissions && typeof permissions === 'object' ? permissions : defaultRolePerms);
+
   const finalModules = finalRole === 'admin'
     ? ERP_MODULES.map(m => m.id)
     : (Array.isArray(assignedModules) && assignedModules.length > 0
@@ -283,6 +375,7 @@ export async function createEmployeeUser({
       displayName: cleanDisplayName,
       role: finalRole,
       assignedModules: finalModules,
+      permissions: finalPermissions,
       status: status || 'ACTIVE',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
@@ -318,7 +411,8 @@ export async function createEmployeeUser({
     email: cleanEmail,
     displayName: cleanDisplayName,
     role: finalRole,
-    assignedModules: finalModules
+    assignedModules: finalModules,
+    permissions: finalPermissions
   };
 }
 

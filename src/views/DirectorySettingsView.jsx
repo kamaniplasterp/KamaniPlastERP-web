@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Search, Phone, MapPin, Building, RotateCcw, Save, CheckCircle2, FileText, Plus, Download,
@@ -11,10 +11,17 @@ import {
   subscribeUsers, 
   updateUserAccess, 
   ERP_MODULES, 
+  ERP_SUBMODULES,
   ROLE_DEFAULT_MODULES, 
+  ROLE_DEFAULT_PERMISSIONS,
   ROLE_LABELS, 
   ROLE_COLORS 
 } from '../api/rbac.api';
+import {
+  subscribePendingApprovals,
+  submitMasterChangeRequest
+} from '../api/approvals.api';
+import ApprovalCenterModal from '../modals/ApprovalCenterModal';
 import { 
   subscribeAuditLogs, 
   logAuditEvent, 
@@ -65,27 +72,62 @@ import '../styles/DirectorySettings.css';
 
 export default function DirectorySettingsView() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { isAdmin, user, userProfile, can } = useAuth();
   const [directorySubView, setDirectorySubView] = useState('vendors'); // 'vendors' | 'customers'
   const [pricingSubView, setPricingSubView] = useState('rates'); // 'rates' | 'value'
   const [settingsSubView, setSettingsSubView] = useState('tare'); // 'tare' | 'erp'
 
-  const resolveDirTab = (tabParam) => {
-    if (!tabParam) return 'directory';
-    if (tabParam === 'vendors') { setDirectorySubView('vendors'); return 'directory'; }
-    if (tabParam === 'customers') { setDirectorySubView('customers'); return 'directory'; }
-    if (tabParam === 'directory') return 'directory';
+  const canAccessTab = (tabName) => {
+    if (isAdmin) return true;
+    if (!can) return true;
+    switch (tabName) {
+      case 'directory':
+      case 'vendors':
+      case 'customers':
+        return can('directory_business', 'read');
+      case 'ratesValuation':
+      case 'rateMaster':
+      case 'valueMaster':
+        return can('directory_rates', 'read');
+      case 'settings':
+      case 'miscMaster':
+        return can('directory_settings', 'read');
+      case 'rbac':
+        return isAdmin || can('directory_rbac', 'read');
+      case 'audit':
+        return isAdmin || can('directory_audit', 'read');
+      default:
+        return true;
+    }
+  };
 
-    if (tabParam === 'rateMaster') { setPricingSubView('rates'); return 'ratesValuation'; }
-    if (tabParam === 'valueMaster') { setPricingSubView('value'); return 'ratesValuation'; }
-    if (tabParam === 'ratesValuation') return 'ratesValuation';
-
-    if (tabParam === 'miscMaster') { setSettingsSubView('tare'); return 'settings'; }
-    if (tabParam === 'settings') { setSettingsSubView('erp'); return 'settings'; }
-
-    if (tabParam === 'rbac') return 'rbac';
-    if (tabParam === 'audit') return 'audit';
-
+  const getFirstPermittedTab = () => {
+    if (canAccessTab('directory')) return 'directory';
+    if (canAccessTab('ratesValuation')) return 'ratesValuation';
+    if (canAccessTab('settings')) return 'settings';
+    if (canAccessTab('rbac')) return 'rbac';
+    if (canAccessTab('audit')) return 'audit';
     return 'directory';
+  };
+
+  const resolveDirTab = (tabParam) => {
+    let resolved = 'directory';
+    if (!tabParam) resolved = 'directory';
+    else if (tabParam === 'vendors') { setDirectorySubView('vendors'); resolved = 'directory'; }
+    else if (tabParam === 'customers') { setDirectorySubView('customers'); resolved = 'directory'; }
+    else if (tabParam === 'directory') resolved = 'directory';
+    else if (tabParam === 'rateMaster') { setPricingSubView('rates'); resolved = 'ratesValuation'; }
+    else if (tabParam === 'valueMaster') { setPricingSubView('value'); resolved = 'ratesValuation'; }
+    else if (tabParam === 'ratesValuation') resolved = 'ratesValuation';
+    else if (tabParam === 'miscMaster') { setSettingsSubView('tare'); resolved = 'settings'; }
+    else if (tabParam === 'settings') { setSettingsSubView('erp'); resolved = 'settings'; }
+    else if (tabParam === 'rbac') resolved = 'rbac';
+    else if (tabParam === 'audit') resolved = 'audit';
+
+    if (!canAccessTab(resolved)) {
+      return getFirstPermittedTab();
+    }
+    return resolved;
   };
 
   const [activeTab, setActiveTab] = useState(() => resolveDirTab(searchParams.get('tab')));
@@ -97,10 +139,13 @@ export default function DirectorySettingsView() {
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
-    if (tabFromUrl) {
+    const targetTab = resolveDirTab(tabFromUrl);
+    if (!canAccessTab(activeTab)) {
+      setActiveTab(targetTab);
+    } else if (tabFromUrl && resolveDirTab(tabFromUrl) !== activeTab) {
       setActiveTab(resolveDirTab(tabFromUrl));
     }
-  }, [searchParams]);
+  }, [searchParams, can]);
 
   const [liveVendors, setLiveVendors] = useState([]);
   const [liveBuyers, setLiveBuyers] = useState([]);
@@ -110,13 +155,22 @@ export default function DirectorySettingsView() {
   const [liveValueMasters, setLiveValueMasters] = useState([]);
 
   // RBAC User Permissions State
-  const { isAdmin } = useAuth();
   const [liveUsers, setLiveUsers] = useState([]);
   const [userSearch, setUserSearch] = useState('');
   const [selectedUserForRbac, setSelectedUserForRbac] = useState(null);
   const [editRole, setEditRole] = useState('employee');
   const [editAssignedModules, setEditAssignedModules] = useState([]);
+  const [editPermissions, setEditPermissions] = useState({});
   const [isSavingRbac, setIsSavingRbac] = useState(false);
+
+  // Master Changes Approval Workflow State
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribePendingApprovals(setPendingApprovals);
+    return () => unsub();
+  }, []);
 
   // Audit Trail State (Admin Only)
   const [liveAuditLogs, setLiveAuditLogs] = useState([]);
@@ -141,7 +195,9 @@ export default function DirectorySettingsView() {
     process: '',
     item: 'ANCHOR YARN ^ YARN HANK',
     uom: 'Kgs',
-    rate: '17.50'
+    rate: '17.50',
+    notes: '',
+    date: new Date().toISOString().split('T')[0]
   });
 
   const [tareStandards, setTareStandards] = useState(DEFAULT_TARE_STANDARDS);
@@ -190,22 +246,71 @@ export default function DirectorySettingsView() {
         ? [...u.assignedModules]
         : [...(ROLE_DEFAULT_MODULES[u.role || 'employee'] || [])]
     );
+    const defaultPerms = ROLE_DEFAULT_PERMISSIONS[u.role || 'employee'] || ROLE_DEFAULT_PERMISSIONS.employee;
+    setEditPermissions(
+      u.permissions && typeof u.permissions === 'object'
+        ? JSON.parse(JSON.stringify(u.permissions))
+        : JSON.parse(JSON.stringify(defaultPerms))
+    );
   };
 
   const handleRoleChange = (newRole) => {
     setEditRole(newRole);
     if (newRole === 'admin') {
       setEditAssignedModules(ERP_MODULES.map(m => m.id));
+      setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS.admin)));
     } else {
       setEditAssignedModules([...(ROLE_DEFAULT_MODULES[newRole] || [])]);
+      setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS[newRole] || ROLE_DEFAULT_PERMISSIONS.employee)));
     }
   };
 
-  const handleToggleModule = (modId) => {
+  const handleToggleSubPermission = (subModuleId, action) => {
     if (editRole === 'admin') return;
-    setEditAssignedModules(prev =>
-      prev.includes(modId) ? prev.filter(id => id !== modId) : [...prev, modId]
-    );
+    setEditPermissions(prev => {
+      const current = prev[subModuleId] || { read: false, create: false, update: false };
+      return {
+        ...prev,
+        [subModuleId]: {
+          ...current,
+          [action]: !current[action]
+        }
+      };
+    });
+  };
+
+  const handleToggleColumnAll = (action) => {
+    if (editRole === 'admin') return;
+    setEditPermissions(prev => {
+      const allCurrentTrue = ERP_SUBMODULES.every(sub => prev[sub.id]?.[action]);
+      const nextVal = !allCurrentTrue;
+      const updated = { ...prev };
+      ERP_SUBMODULES.forEach(sub => {
+        updated[sub.id] = {
+          ...(updated[sub.id] || { read: false, create: false, update: false }),
+          [action]: nextVal
+        };
+      });
+      return updated;
+    });
+  };
+
+  const handlePresetAll = () => {
+    setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS.admin)));
+    setEditAssignedModules(ERP_MODULES.map(m => m.id));
+  };
+
+  const handlePresetReadOnly = () => {
+    const ro = {};
+    ERP_SUBMODULES.forEach(sub => {
+      ro[sub.id] = { read: true, create: false, update: false };
+    });
+    setEditPermissions(ro);
+  };
+
+  const handleResetRoleDefaults = () => {
+    setEditAssignedModules([...(ROLE_DEFAULT_MODULES[editRole] || [])]);
+    setEditPermissions(JSON.parse(JSON.stringify(ROLE_DEFAULT_PERMISSIONS[editRole] || ROLE_DEFAULT_PERMISSIONS.employee)));
   };
 
   const handleSaveRbac = async (e) => {
@@ -216,13 +321,14 @@ export default function DirectorySettingsView() {
       await updateUserAccess(selectedUserForRbac, {
         role: editRole,
         assignedModules: editRole === 'admin' ? ERP_MODULES.map(m => m.id) : editAssignedModules,
+        permissions: editRole === 'admin' ? ROLE_DEFAULT_PERMISSIONS.admin : editPermissions,
         status: selectedUserForRbac.status || 'ACTIVE'
       });
 
       logAuditEvent({
         category: 'SECURITY',
         action: 'RBAC_PERMISSIONS_UPDATED',
-        summary: `Updated role to "${editRole.toUpperCase()}" with ${editAssignedModules.length} assigned modules for ${selectedUserForRbac.displayName || selectedUserForRbac.email}`,
+        summary: `Updated role to "${editRole.toUpperCase()}" with granular sub-module permissions for ${selectedUserForRbac.displayName || selectedUserForRbac.email}`,
         targetId: selectedUserForRbac.displayName || selectedUserForRbac.email,
         details: {
           userUid: selectedUserForRbac.uid || selectedUserForRbac.id,
@@ -231,11 +337,14 @@ export default function DirectorySettingsView() {
         }
       });
 
-      alert(`Permissions updated successfully for ${selectedUserForRbac.displayName || selectedUserForRbac.email}!`);
+      await showAlert(`Permissions updated successfully for ${selectedUserForRbac.displayName || selectedUserForRbac.email}!`, {
+        type: 'success',
+        title: 'Permissions Saved'
+      });
       setSelectedUserForRbac(null);
     } catch (err) {
       console.error('Failed to update user RBAC:', err);
-      alert('Failed to update permissions: ' + err.message);
+      await showAlert('Failed to update permissions: ' + err.message, { type: 'error' });
     } finally {
       setIsSavingRbac(false);
     }
@@ -251,29 +360,45 @@ export default function DirectorySettingsView() {
       const cleanGst = typeof data.gst === 'object' && data.gst ? (data.gst.target?.value || data.gst.value || '') : String(data.gst || '').trim();
       const cleanRate = Number(typeof data.rate === 'object' && data.rate ? data.rate.target?.value : data.rate) || 17.5;
 
+      const vendorPayload = {
+        name: cleanName,
+        processBadge: cleanBadge,
+        phone: cleanPhone,
+        location: cleanLocation,
+        gst: cleanGst,
+        rate: cleanRate
+      };
+
+      await submitMasterChangeRequest({
+        masterType: 'vendors',
+        masterLabel: 'Vendor / Supplier',
+        action: targetId ? 'UPDATE' : 'CREATE',
+        recordId: targetId,
+        recordTitle: cleanName,
+        proposedData: vendorPayload,
+        previousData: selectedVendorToEdit,
+        submittedBy: userProfile || user || { role: userRole || 'staff' }
+      });
+      await showAlert(`Change submitted! Administrator approval required before vendor "${cleanName}" takes effect.`, {
+        type: 'info',
+        title: 'Submitted for Approval'
+      });
+      setSelectedVendorToEdit(null);
+      setShowAddVendorModal(false);
+      return;
+
       if (targetId) {
-        await updateVendor(targetId, {
-          name: cleanName,
-          processBadge: cleanBadge,
-          phone: cleanPhone,
-          location: cleanLocation,
-          gst: cleanGst,
-          rate: cleanRate
-        });
+        await updateVendor(targetId, vendorPayload);
         await showAlert(`Vendor "${cleanName}" updated successfully!`, { type: 'success', title: 'Vendor Updated' });
       } else {
         await addVendor({
-          name: cleanName,
-          processBadge: cleanBadge,
-          phone: cleanPhone,
-          location: cleanLocation,
-          gst: cleanGst,
-          rate: cleanRate,
+          ...vendorPayload,
           pendingKg: 0
         });
         await showAlert(`Vendor "${cleanName}" added successfully!\n✓ Godown location auto-created for "${cleanName}" for instant inventory tracking.`, { type: 'success', title: 'Vendor Registered' });
       }
       setSelectedVendorToEdit(null);
+      setShowAddVendorModal(false);
     } catch (err) {
       console.error('Error saving vendor:', err);
       await showAlert('Error saving vendor: ' + err.message, { type: 'error' });
@@ -305,11 +430,21 @@ export default function DirectorySettingsView() {
     }
 
     try {
-      await deleteVendor(v.id, v.name);
-      await showAlert(`Vendor "${v.name}" deleted successfully.`, { type: 'success', title: 'Vendor Deleted' });
+      await submitMasterChangeRequest({
+        masterType: 'vendors',
+        masterLabel: 'Vendor / Supplier',
+        action: 'DELETE',
+        recordId: v.id,
+        recordTitle: v.name,
+        previousData: v,
+        submittedBy: userProfile || user || { role: userRole || 'staff' }
+      });
+      await showAlert(`Deletion request submitted! Administrator approval required to remove vendor "${v.name}".`, {
+        type: 'info',
+        title: 'Submitted for Approval'
+      });
     } catch (err) {
-      console.error('Error deleting vendor:', err);
-      await showAlert('Failed to delete vendor: ' + err.message, { type: 'error' });
+      await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
     }
   };
 
@@ -332,6 +467,24 @@ export default function DirectorySettingsView() {
         paymentTerms: data.paymentTerms
       };
 
+      await submitMasterChangeRequest({
+        masterType: 'customers',
+        masterLabel: 'Customer / Buyer',
+        action: targetId ? 'UPDATE' : 'CREATE',
+        recordId: targetId,
+        recordTitle: data.name,
+        proposedData: payload,
+        previousData: selectedCustomerToEdit,
+        submittedBy: userProfile || user || { role: userRole || 'staff' }
+      });
+      await showAlert(`Change submitted! Administrator approval required before customer "${data.name}" takes effect.`, {
+        type: 'info',
+        title: 'Submitted for Approval'
+      });
+      setSelectedCustomerToEdit(null);
+      setShowAddCustomerModal(false);
+      return;
+
       if (targetId) {
         await updateBuyer(targetId, payload);
         await showAlert(`Customer "${data.name}" updated successfully!`, { type: 'success', title: 'Customer Updated' });
@@ -344,6 +497,7 @@ export default function DirectorySettingsView() {
         await showAlert(`Customer "${data.name}" registered successfully!`, { type: 'success', title: 'Customer Registered' });
       }
       setSelectedCustomerToEdit(null);
+      setShowAddCustomerModal(false);
     } catch (err) {
       console.error('Error saving customer:', err);
       await showAlert('Error saving customer: ' + err.message, { type: 'error' });
@@ -375,17 +529,45 @@ export default function DirectorySettingsView() {
     }
 
     try {
-      await deleteBuyer(c.id, c.name);
-      await showAlert(`Customer "${c.name}" deleted successfully.`, { type: 'success', title: 'Customer Deleted' });
+      await submitMasterChangeRequest({
+        masterType: 'customers',
+        masterLabel: 'Customer / Buyer',
+        action: 'DELETE',
+        recordId: c.id,
+        recordTitle: c.name,
+        previousData: c,
+        submittedBy: userProfile || user || { role: userRole || 'staff' }
+      });
+      await showAlert(`Deletion request submitted! Administrator approval required to remove customer "${c.name}".`, {
+        type: 'info',
+        title: 'Submitted for Approval'
+      });
     } catch (err) {
-      console.error('Error deleting customer:', err);
-      await showAlert('Failed to delete customer: ' + err.message, { type: 'error' });
+      await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
     }
   };
 
   const handleSaveNewRate = async (e) => {
     e.preventDefault();
     try {
+      await submitMasterChangeRequest({
+        masterType: 'jobWorkRates',
+        masterLabel: 'Job Work Rate Contract',
+        action: selectedRateToEdit?.id ? 'UPDATE' : 'CREATE',
+        recordId: selectedRateToEdit?.id,
+        recordTitle: `${newRateForm.party} (${newRateForm.process})`,
+        proposedData: newRateForm,
+        previousData: selectedRateToEdit,
+        submittedBy: userProfile || user || { role: userRole || 'staff' }
+      });
+      await showAlert(`Rate contract submitted for Administrator approval!`, {
+        type: 'info',
+        title: 'Submitted for Approval'
+      });
+      setShowAddRateModal(false);
+      setSelectedRateToEdit(null);
+      return;
+
       if (selectedRateToEdit?.id) {
         await updateJobWorkRate(selectedRateToEdit.id, newRateForm);
         await showAlert(`Updated rate contract for ${newRateForm.party} (${newRateForm.process})!`, { type: 'success', title: 'Rate Contract Updated' });
@@ -410,11 +592,21 @@ export default function DirectorySettingsView() {
     });
     if (confirmed) {
       try {
-        await deleteJobWorkRate(r.id, r);
-        await showAlert('Rate contract deleted successfully!', { type: 'success' });
+        await submitMasterChangeRequest({
+          masterType: 'jobWorkRates',
+          masterLabel: 'Job Work Rate Contract',
+          action: 'DELETE',
+          recordId: r.id,
+          recordTitle: `${r.party} (${r.process})`,
+          previousData: r,
+          submittedBy: userProfile || user || { role: userRole || 'staff' }
+        });
+        await showAlert(`Deletion request submitted for Administrator approval.`, {
+          type: 'info',
+          title: 'Submitted for Approval'
+        });
       } catch (err) {
-        console.error('Error deleting rate:', err);
-        await showAlert('Failed to delete rate: ' + err.message, { type: 'error' });
+        await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
       }
     }
   };
@@ -428,11 +620,21 @@ export default function DirectorySettingsView() {
     });
     if (confirmed) {
       try {
-        await deleteJwValueMaster(v.id);
-        await showAlert(`Valuation entry "${v.code}" deleted successfully!`, { type: 'success' });
+        await submitMasterChangeRequest({
+          masterType: 'valueMasters',
+          masterLabel: 'JW Valuation Standard',
+          action: 'DELETE',
+          recordId: v.id,
+          recordTitle: v.code,
+          previousData: v,
+          submittedBy: userProfile || user || { role: userRole || 'staff' }
+        });
+        await showAlert(`Deletion request submitted for Administrator approval.`, {
+          type: 'info',
+          title: 'Submitted for Approval'
+        });
       } catch (err) {
-        console.error('Error deleting valuation entry:', err);
-        await showAlert('Failed to delete valuation entry: ' + err.message, { type: 'error' });
+        await showAlert('Failed to submit request: ' + err.message, { type: 'error' });
       }
     }
   };
@@ -651,12 +853,12 @@ export default function DirectorySettingsView() {
       { label: 'User Roles & RBAC' }
     ];
   } else if (activeTab === 'audit') {
-    dirTitle = 'Security Audit Trail';
+    dirTitle = 'Security Audit Logs';
     dirTooltip = 'Perpetual immutable audit log of administrative actions, user logins, and data modifications.';
     dirBadge = `${liveAuditLogs.length} Events`;
     dirCrumbs = [
       { label: 'Directory & Admin', route: '/directory' },
-      { label: 'Security Audit Trail' }
+      { label: 'Security Audit Logs' }
     ];
   }
 
@@ -838,10 +1040,19 @@ export default function DirectorySettingsView() {
         actions={renderDirActions()}
       />
 
-
+      {/* ── Access Denied Banner if Tab Not Permitted ── */}
+      {!canAccessTab(activeTab) && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '20px 0' }}>
+          <ShieldAlert size={48} style={{ color: '#ef4444', margin: '0 auto 16px', display: 'block' }} />
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px' }}>Access Restricted</h2>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>
+            You do not have permission to view this section. Please contact your system administrator to request access.
+          </p>
+        </div>
+      )}
 
       {/* ── Business Directory Switcher ── */}
-      {activeTab === 'directory' && (
+      {activeTab === 'directory' && canAccessTab('directory') && (
         <div className="erp-subnav-pills" style={{ marginBottom: 18 }}>
           <button
             className={`erp-subnav-pill ${directorySubView === 'vendors' ? 'active' : ''}`}
@@ -861,7 +1072,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── Rates & Valuation Switcher ── */}
-      {activeTab === 'ratesValuation' && (
+      {activeTab === 'ratesValuation' && canAccessTab('ratesValuation') && (
         <div className="erp-subnav-pills" style={{ marginBottom: 18 }}>
           <button
             className={`erp-subnav-pill ${pricingSubView === 'rates' ? 'active' : ''}`}
@@ -881,7 +1092,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── Plant & System Settings Switcher ── */}
-      {activeTab === 'settings' && (
+      {activeTab === 'settings' && canAccessTab('settings') && (
         <div className="erp-subnav-pills" style={{ marginBottom: 18 }}>
           <button
             className={`erp-subnav-pill ${settingsSubView === 'tare' ? 'active' : ''}`}
@@ -901,7 +1112,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 1: Processing Vendors ── */}
-      {(activeTab === 'vendors' || (activeTab === 'directory' && directorySubView === 'vendors')) && (
+      {(activeTab === 'vendors' || (activeTab === 'directory' && directorySubView === 'vendors')) && canAccessTab('directory') && (
         <>
           <div className="ds-cards-grid">
             {filteredVendors.map(v => (
@@ -970,7 +1181,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 2: Job Work Rate Master (Matching Excel 'JW Rate Master') ── */}
-      {(activeTab === 'rateMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'rates')) && (
+      {(activeTab === 'rateMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'rates')) && canAccessTab('ratesValuation') && (
         <div className="jw-ledger-section">
           <div className="jw-table-container">
             <table className="jw-ledger-table">
@@ -982,6 +1193,7 @@ export default function DirectorySettingsView() {
                   <th>UOM</th>
                   <th>DATE</th>
                   <th>RATE</th>
+                  <th>NOTES</th>
                   <th>STATUS</th>
                   <th style={{ textAlign: 'center' }}>ACTION</th>
                 </tr>
@@ -989,7 +1201,7 @@ export default function DirectorySettingsView() {
               <tbody>
                 {filteredRates.length === 0 ? (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
+                    <td colSpan="9" style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
                       No rate contracts found in database. Click <strong>"+ Add Rate Contract"</strong> above to create one.
                     </td>
                   </tr>
@@ -1003,6 +1215,9 @@ export default function DirectorySettingsView() {
                       <td className="td-date">{r.date}</td>
                       <td className="td-charges" style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>
                         ₹{Number(r.rate).toFixed(2)} / {r.uom || 'Kg'}
+                      </td>
+                      <td className="td-material-col" style={{ fontSize: '0.8rem', color: '#64748b', maxWidth: '220px' }} title={r.notes || ''}>
+                        {r.notes || '-'}
                       </td>
                       <td className="td-status">
                         <span className="badge-green-sm">{r.status || 'Active Contract'}</span>
@@ -1031,6 +1246,7 @@ export default function DirectorySettingsView() {
                                 item: r.item || '',
                                 rate: String(r.rate !== undefined ? r.rate : '17.50'),
                                 uom: r.uom || 'Kgs',
+                                notes: r.notes || '',
                                 date: r.date || new Date().toISOString().split('T')[0]
                               });
                               setShowAddRateModal(true);
@@ -1070,7 +1286,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB: Job Work Value Master (Sheet: JW Value Master) ── */}
-      {(activeTab === 'valueMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'value')) && (
+      {(activeTab === 'valueMaster' || (activeTab === 'ratesValuation' && pricingSubView === 'value')) && canAccessTab('ratesValuation') && (
         <div className="jw-ledger-section">
           <div className="jw-table-container">
             <table className="jw-ledger-table">
@@ -1153,8 +1369,8 @@ export default function DirectorySettingsView() {
 
       {/* ── TAB 3: Misc Master & Packaging Tare Standards ── */}
       {/* ── TAB 3: Misc Master & Packaging Tare Standards (Sheet: Misc Master) ── */}
-      {(activeTab === 'miscMaster' || (activeTab === 'settings' && settingsSubView === 'tare')) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+      {(activeTab === 'miscMaster' || (activeTab === 'settings' && settingsSubView === 'tare')) && canAccessTab('settings') && (
+        <div className="ds-two-col-grid">
           {/* Packaging Tare Standards Card */}
           <div className="ds-settings-card">
             <div className="ds-card-header-inner">
@@ -1413,7 +1629,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 4: Customers ── */}
-      {(activeTab === 'customers' || (activeTab === 'directory' && directorySubView === 'customers')) && (
+      {(activeTab === 'customers' || (activeTab === 'directory' && directorySubView === 'customers')) && canAccessTab('directory') && (
         <>
           <div className="ds-cards-grid">
             {filteredCustomers.map(c => (
@@ -1549,7 +1765,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 5: ERP Settings ── */}
-      {(activeTab === 'settings' && settingsSubView === 'erp') && (
+      {(activeTab === 'settings' && settingsSubView === 'erp') && canAccessTab('settings') && (
         <div className="ds-settings-grid">
           <div className="ds-settings-card">
             <div className="ds-card-header-inner">
@@ -1633,7 +1849,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 8: Role-Based Access Control (RBAC) ── */}
-      {activeTab === 'rbac' && isAdmin && (
+      {activeTab === 'rbac' && canAccessTab('rbac') && (
         <>
           <div className="ds-table-card">
             <div className="ds-table-wrap">
@@ -1785,7 +2001,7 @@ export default function DirectorySettingsView() {
       )}
 
       {/* ── TAB 9: Audit Trail (Admin Only) ── */}
-      {activeTab === 'audit' && isAdmin && (
+      {activeTab === 'audit' && canAccessTab('audit') && (
         <>
           {auditCategoryFilter !== 'ALL' && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '4px 10px', fontSize: '0.78rem', color: '#1d4ed8', fontWeight: 600, marginBottom: '10px' }}>
@@ -2137,12 +2353,15 @@ export default function DirectorySettingsView() {
           }}
         >
           <div 
-            className="modal-dialog"
+            className="modal-dialog modal-md"
             style={{
               background: '#ffffff',
               borderRadius: '12px',
-              maxWidth: '560px',
+              maxWidth: '680px',
+              maxHeight: '90vh',
               width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
               boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
               overflow: 'hidden'
             }}
@@ -2154,7 +2373,8 @@ export default function DirectorySettingsView() {
                 justifyContent: 'space-between',
                 padding: '16px 20px',
                 borderBottom: '1px solid #e2e8f0',
-                background: '#f8fafc'
+                background: '#f8fafc',
+                flexShrink: 0
               }}
             >
               <div>
@@ -2180,166 +2400,249 @@ export default function DirectorySettingsView() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveRbac} style={{ padding: '20px' }}>
-              {/* User details snippet */}
-              <div style={{
-                background: '#f1f5f9',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                marginBottom: '16px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
-                    {selectedUserForRbac.displayName || 'No Name Set'}
-                  </div>
-                  <div style={{ color: '#64748b', fontSize: '0.75rem' }}>
-                    {selectedUserForRbac.email}
-                  </div>
-                </div>
-                <span style={{
-                  padding: '3px 8px',
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '9999px',
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
-                  color: '#475569'
+            <form 
+              onSubmit={handleSaveRbac} 
+              style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                flex: 1, 
+                minHeight: 0, 
+                overflow: 'hidden' 
+              }}
+            >
+              <div 
+                style={{ 
+                  padding: '20px', 
+                  overflowY: 'auto', 
+                  flex: 1, 
+                  minHeight: 0 
+                }}
+              >
+                {/* User details snippet */}
+                <div style={{
+                  background: '#f1f5f9',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
                 }}>
-                  {selectedUserForRbac.uid?.slice(0, 10)}...
-                </span>
-              </div>
-
-              {/* 1. Select Role */}
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '8px' }}>
-                  1. Select Primary Role
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                  {[
-                    { id: 'admin', label: 'Admin', desc: 'Full System Access' },
-                    { id: 'accountant', label: 'Accountant', desc: 'Finance & Operations' },
-                    { id: 'employee', label: 'Employee', desc: 'Floor & Job Work' }
-                  ].map(r => {
-                    const isSelected = editRole === r.id;
-                    return (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => handleRoleChange(r.id)}
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'flex-start',
-                          padding: '10px',
-                          borderRadius: '8px',
-                          border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                          background: isSelected ? '#eff6ff' : '#ffffff',
-                          cursor: 'pointer',
-                          textAlign: 'left'
-                        }}
-                      >
-                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: isSelected ? '#1d4ed8' : '#1e293b' }}>
-                          {r.label}
-                        </span>
-                        <span style={{ fontSize: '0.7rem', color: isSelected ? '#3b82f6' : '#64748b', marginTop: '2px' }}>
-                          {r.desc}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {editRole === 'admin' && (
-                  <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <ShieldAlert size={13} />
-                    Admins automatically have access to all modules and configurations.
-                  </p>
-                )}
-              </div>
-
-              {/* 2. Assign Modules */}
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#334155', margin: 0 }}>
-                    2. Permitted Modules ({editRole === 'admin' ? ERP_MODULES.length : editAssignedModules.length}/{ERP_MODULES.length})
-                  </label>
-                  {editRole !== 'admin' && (
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setEditAssignedModules(ERP_MODULES.map(m => m.id))}
-                        style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
-                      >
-                        Select All
-                      </button>
-                      <span style={{ color: '#cbd5e1' }}>|</span>
-                      <button
-                        type="button"
-                        onClick={() => setEditAssignedModules([])}
-                        style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
-                      >
-                        Clear All
-                      </button>
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+                      {selectedUserForRbac.displayName || 'No Name Set'}
                     </div>
+                    <div style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                      {selectedUserForRbac.email}
+                    </div>
+                  </div>
+                  <span style={{
+                    padding: '3px 8px',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '9999px',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    color: '#475569'
+                  }}>
+                    {selectedUserForRbac.uid?.slice(0, 10)}...
+                  </span>
+                </div>
+
+                {/* 1. Select Role */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, color: '#334155', marginBottom: '8px' }}>
+                    1. Select Primary Role
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {[
+                      { id: 'admin', label: 'Admin', desc: 'Full System Access' },
+                      { id: 'accountant', label: 'Accountant', desc: 'Finance & Operations' },
+                      { id: 'employee', label: 'Employee', desc: 'Floor & Job Work' }
+                    ].map(r => {
+                      const isSelected = editRole === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => handleRoleChange(r.id)}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-start',
+                            padding: '10px',
+                            borderRadius: '8px',
+                            border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                            background: isSelected ? '#eff6ff' : '#ffffff',
+                            cursor: 'pointer',
+                            textAlign: 'left'
+                          }}
+                        >
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', color: isSelected ? '#1d4ed8' : '#1e293b' }}>
+                            {r.label}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: isSelected ? '#3b82f6' : '#64748b', marginTop: '2px' }}>
+                            {r.desc}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {editRole === 'admin' && (
+                    <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#b91c1c', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <ShieldAlert size={13} />
+                      Admins automatically have access to all modules and configurations.
+                    </p>
                   )}
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {ERP_MODULES.map(m => {
-                    const isChecked = editRole === 'admin' || editAssignedModules.includes(m.id);
-                    return (
-                      <label
-                        key={m.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          border: isChecked ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
-                          background: isChecked ? '#f0f9ff' : '#f8fafc',
-                          cursor: editRole === 'admin' ? 'not-allowed' : 'pointer',
-                          userSelect: 'none'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <input
-                            type="checkbox"
-                            disabled={editRole === 'admin'}
-                            checked={isChecked}
-                            onChange={() => handleToggleModule(m.id)}
-                            style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer' }}
-                          />
-                          <div>
-                            <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#0f172a' }}>
-                              {m.name}
-                            </div>
-                            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                              {m.description}
-                            </div>
-                          </div>
-                        </div>
+                {/* 2. Granular Permission Matrix Table */}
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>
+                      2. Granular Permissions Matrix (Sub-Modules &amp; Actions)
+                    </label>
+                    {editRole !== 'admin' && (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={handlePresetAll}
+                          style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                        >
+                          Grant All
+                        </button>
+                        <span style={{ color: '#cbd5e1' }}>|</span>
+                        <button
+                          type="button"
+                          onClick={handlePresetReadOnly}
+                          style={{ background: 'none', border: 'none', color: '#475569', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                        >
+                          Read-Only
+                        </button>
+                        <span style={{ color: '#cbd5e1' }}>|</span>
+                        <button
+                          type="button"
+                          onClick={handleResetRoleDefaults}
+                          style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 600, padding: 0 }}
+                        >
+                          Role Defaults
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                        <span style={{
-                          fontSize: '0.7rem',
-                          fontWeight: 600,
-                          padding: '2px 8px',
-                          borderRadius: '9999px',
-                          background: isChecked ? '#dcfce7' : '#fee2e2',
-                          color: isChecked ? '#166534' : '#991b1b'
-                        }}>
-                          {isChecked ? 'Visible' : 'Hidden'}
-                        </span>
-                      </label>
-                    );
-                  })}
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', maxHeight: '260px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.78rem' }}>
+                      <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #e2e8f0' }}>
+                        <tr>
+                          <th style={{ padding: '8px 12px', fontWeight: 700, color: '#475569' }}>SUB-MODULE</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', width: '80px', fontWeight: 700, color: '#475569' }}>
+                            <button
+                              type="button"
+                              disabled={editRole === 'admin'}
+                              onClick={() => handleToggleColumnAll('read')}
+                              style={{ background: 'none', border: 'none', cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', fontWeight: 700, color: '#2563eb', fontSize: '0.74rem' }}
+                              title="Toggle Read for all"
+                            >
+                              READ
+                            </button>
+                          </th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', width: '80px', fontWeight: 700, color: '#475569' }}>
+                            <button
+                              type="button"
+                              disabled={editRole === 'admin'}
+                              onClick={() => handleToggleColumnAll('create')}
+                              style={{ background: 'none', border: 'none', cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', fontWeight: 700, color: '#2563eb', fontSize: '0.74rem' }}
+                              title="Toggle Create for all"
+                            >
+                              CREATE
+                            </button>
+                          </th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', width: '80px', fontWeight: 700, color: '#475569' }}>
+                            <button
+                              type="button"
+                              disabled={editRole === 'admin'}
+                              onClick={() => handleToggleColumnAll('update')}
+                              style={{ background: 'none', border: 'none', cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', fontWeight: 700, color: '#2563eb', fontSize: '0.74rem' }}
+                              title="Toggle Update for all"
+                            >
+                              UPDATE
+                            </button>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ERP_MODULES.map(mod => {
+                          const subList = ERP_SUBMODULES.filter(s => s.moduleId === mod.id);
+                          if (subList.length === 0) return null;
+                          return (
+                            <Fragment key={mod.id}>
+                              <tr style={{ background: '#f1f5f9', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
+                                <td colSpan="4" style={{ padding: '6px 12px', fontWeight: 800, fontSize: '0.72rem', color: '#1e293b', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                                  {mod.label}
+                                </td>
+                              </tr>
+                              {subList.map(sub => {
+                                const subPerms = editRole === 'admin'
+                                  ? { read: true, create: true, update: true }
+                                  : (editPermissions[sub.id] || { read: false, create: false, update: false });
+                                return (
+                                  <tr key={sub.id} style={{ borderBottom: '1px solid #f1f5f9', background: '#ffffff' }}>
+                                    <td style={{ padding: '8px 12px' }}>
+                                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{sub.label}</div>
+                                      <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{sub.description}</div>
+                                    </td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                      <input
+                                        type="checkbox"
+                                        disabled={editRole === 'admin'}
+                                        checked={Boolean(subPerms.read)}
+                                        onChange={() => handleToggleSubPermission(sub.id, 'read')}
+                                        style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', width: '15px', height: '15px' }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                      <input
+                                        type="checkbox"
+                                        disabled={editRole === 'admin'}
+                                        checked={Boolean(subPerms.create)}
+                                        onChange={() => handleToggleSubPermission(sub.id, 'create')}
+                                        style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', width: '15px', height: '15px' }}
+                                      />
+                                    </td>
+                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                      <input
+                                        type="checkbox"
+                                        disabled={editRole === 'admin'}
+                                        checked={Boolean(subPerms.update)}
+                                        onChange={() => handleToggleSubPermission(sub.id, 'update')}
+                                        style={{ cursor: editRole === 'admin' ? 'not-allowed' : 'pointer', width: '15px', height: '15px' }}
+                                      />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
-              {/* Footer */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+              {/* Fixed Footer pinned to bottom */}
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  justifyContent: 'flex-end', 
+                  gap: '10px', 
+                  padding: '14px 20px', 
+                  borderTop: '1px solid #e2e8f0', 
+                  background: '#f8fafc',
+                  flexShrink: 0
+                }}
+              >
                 <button
                   type="button"
                   className="mfooter-btn cancel"
@@ -2456,6 +2759,16 @@ export default function DirectorySettingsView() {
                   <input type="date" className="mform-input" value={newRateForm.date || new Date().toISOString().split('T')[0]} onChange={e => setNewRateForm({ ...newRateForm, date: e.target.value })} required />
                 </div>
               </div>
+              <div className="mform-field" style={{ marginTop: '8px' }}>
+                <label className="mform-label">Contract Notes &amp; Terms</label>
+                <textarea
+                  className="mform-input"
+                  style={{ minHeight: '64px', resize: 'vertical' }}
+                  placeholder="e.g. Rate valid for Grade HD only. Permissible burning loss max 0.5%. Payment within 15 days."
+                  value={newRateForm.notes || ''}
+                  onChange={e => setNewRateForm({ ...newRateForm, notes: e.target.value })}
+                />
+              </div>
               <div className="modal-footer" style={{ marginTop: '14px' }}>
                 <button type="button" className="mfooter-btn cancel" onClick={() => { setShowAddRateModal(false); setSelectedRateToEdit(null); }}>Cancel</button>
                 <button type="submit" className="mfooter-btn confirm">{selectedRateToEdit ? 'Update Rate Master' : 'Save Rate Master'}</button>
@@ -2480,6 +2793,13 @@ export default function DirectorySettingsView() {
       {showCreateUserModal && (
         <CreateUserModal
           onClose={() => setShowCreateUserModal(false)}
+        />
+      )}
+
+      {/* Admin Master Approval Center Modal */}
+      {showApprovalModal && (
+        <ApprovalCenterModal
+          onClose={() => setShowApprovalModal(false)}
         />
       )}
     </div>

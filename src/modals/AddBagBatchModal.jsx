@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Scale, Plus, Check, AlertCircle, FileText, Package } from 'lucide-react';
-import { addInventoryBagsBatch } from '../api/inventory.api';
+import { addInventoryBagsBatch, updateMaterialLooseStock } from '../api/inventory.api';
 import { subscribeLocations, DEFAULT_LOCATIONS_LIST } from '../api/locations.api';
 import { subscribeProductAttributes, DEFAULT_PRODUCT_ATTRIBUTES } from '../api/productMatrix.api';
 
@@ -58,6 +58,22 @@ export default function AddBagBatchModal({ isOpen, onClose, currentMaxBagNumber 
     setErrorMsg('');
 
     try {
+      if (stockType === 'LOOSE') {
+        // Loose stock is tracked strictly by weight in KG in material_loose_stock
+        await updateMaterialLooseStock({
+          quality: quality.trim(),
+          form: formType.trim(),
+          size: size.trim(),
+          location: location.trim()
+        }, totalNetKg);
+
+        if (onBagsAdded) {
+          onBagsAdded([]);
+        }
+        onClose();
+        return;
+      }
+
       const coils = parseInt(coilCount, 10) || 12;
       const lotId = `LOT-${date.replace(/-/g, '')}-${quality.toUpperCase().slice(0, 3)}-${size}`;
       const lotTitle = `${totalBagsCount} Bags: ${quality} ${formType} ${size}`;
@@ -75,7 +91,7 @@ export default function AddBagBatchModal({ isOpen, onClose, currentMaxBagNumber 
           standardWeightKg: stdKg,
           actualWeightKg: actWt,
           coilCount: coils,
-          stockType: stockType,
+          stockType: 'FIXED',
           location: location.trim(),
           status: 'AVAILABLE',
           lotGroup: lotId,
@@ -246,7 +262,7 @@ export default function AddBagBatchModal({ isOpen, onClose, currentMaxBagNumber 
                   onChange={() => setStockType('FIXED')} 
                 />
                 <span style={{ fontWeight: stockType === 'FIXED' ? 700 : 500, color: stockType === 'FIXED' ? '#16a34a' : '#475569' }}>
-                  Fixed Stock (Standard 50.0 KG Bags)
+                  Standard Bags (Packaged Stock)
                 </span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', cursor: 'pointer' }}>
@@ -257,10 +273,15 @@ export default function AddBagBatchModal({ isOpen, onClose, currentMaxBagNumber 
                   onChange={() => setStockType('LOOSE')} 
                 />
                 <span style={{ fontWeight: stockType === 'LOOSE' ? 700 : 500, color: stockType === 'LOOSE' ? '#d97706' : '#475569' }}>
-                  Loose Stock (Odd / Remainder Weights)
+                  Loose Material Weight (Credited to Loose Balance in KG)
                 </span>
               </label>
             </div>
+            {stockType === 'LOOSE' && (
+              <div style={{ fontSize: '0.75rem', color: '#b45309', background: '#fef3c7', padding: '6px 10px', borderRadius: '4px', marginTop: '6px' }}>
+                ℹ️ Loose stock is tracked strictly by weight in KG. No discrete bag serial numbers will be generated. You can pack this loose stock into standard bags anytime from the Packing Hub.
+              </div>
+            )}
           </div>
 
           {/* Scale Weights Entry (The Heart of the Diary Register) */}

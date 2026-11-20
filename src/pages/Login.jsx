@@ -144,11 +144,11 @@ export default function Login() {
       <div className="simple-auth-card">
         {/* Header */}
         <div className="simple-auth-header">
-          <div className="simple-logo">
-            <Factory size={28} />
+          <div className="simple-logo" style={{ background: '#ffffff', padding: '10px 24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.25)', width: 'auto', minWidth: '220px', height: '78px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)' }}>
+            <img src="/logo.png" alt="Kamani Plastic Industries" style={{ height: '58px', width: 'auto', maxWidth: '240px', objectFit: 'contain' }} />
           </div>
-          <h2>KamaniPlast ERP</h2>
-          <p>
+          <h2 style={{ color: '#ffffff', fontSize: '1.45rem', fontWeight: 700, margin: '6px 0 2px 0' }}></h2>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>
             {isForgot ? 'Reset your password' : 'Sign in to your account'}
           </p>
         </div>
@@ -273,7 +273,9 @@ export default function Login() {
             <button 
               type="button" 
               onClick={() => resetFormState('forgot')}
-              style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.8125rem' }}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8125rem', transition: 'color 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#38bdf8'}
+              onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
             >
               Forgot Password?
             </button>

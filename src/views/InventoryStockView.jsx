@@ -4,9 +4,10 @@ import {
   Layers, Package, History, GitBranch, Search, Plus, ArrowUpRight,
   AlertTriangle, ArrowUpDown, ChevronRight, Filter, Download,
   CheckCircle2, ArrowRight, Truck, FileText, Scale, BookOpen, Edit3, Check, Calendar,
-  Printer, Clock, ShieldCheck, X, CheckSquare, XCircle, MapPin, ClipboardCheck,
+  Printer, Clock, ShieldCheck, ShieldAlert, X, CheckSquare, XCircle, MapPin, ClipboardCheck,
   BarChart3, ChevronDown, ChevronUp
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import NewJobWorkModal from '../modals/NewJobWorkModal';
 import SalesOrderModal from '../modals/SalesOrderModal';
 import AddRawMaterialModal from '../modals/AddRawMaterialModal';
@@ -18,6 +19,7 @@ import BagDetailDrawer from '../drawers/BagDetailDrawer';
 import GrnDetailView from '../views/GrnDetailView';
 import AddFinishedGoodsStockModal from '../modals/AddFinishedGoodsStockModal';
 import AddBagBatchModal from '../modals/AddBagBatchModal';
+import PackLooseStockModal from '../modals/PackLooseStockModal';
 import QcCheckModal from '../modals/QcCheckModal';
 import QuickBagLookupModal from '../modals/QuickBagLookupModal';
 import HeaderInfoTooltip from '../components/HeaderInfoTooltip';
@@ -31,6 +33,8 @@ import {
   subscribeRmFactoryIssues,
   subscribeInventoryBags,
   subscribeScrapStock,
+  subscribeMaterialLooseStock,
+  packLooseStockIntoBags,
   updateInventoryBag,
   addRawMaterial, 
   addFinishedGood, 
@@ -44,35 +48,78 @@ import { printMultipleBagStickers, printSingleBagSticker } from '../utils/sticke
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { exportToCsv } from '../utils/exportCsv';
-import { showAlert } from '../context/CustomAlertContext';
+import { showAlert, showConfirm } from '../context/CustomAlertContext';
 import { logAuditEvent } from '../api/audit.api';
 import { subscribeTareStandards, DEFAULT_TARE_STANDARDS } from '../api/directory.api';
 import '../styles/InventoryStock.css';
 
 
 
-export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) {
+function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { rmStock, jobWorkStock, fgStock } = useWorkflow();
+  const { currentUser, isAdmin, can } = useAuth();
 
   const [movementsSubView, setMovementsSubView] = useState('history');
 
+  const canAccessTab = (tabName) => {
+    if (isAdmin) return true;
+    if (!can) return true;
+    switch (tabName) {
+      case 'rm':
+      case 'qc':
+        return can('inventory_rm', 'read');
+      case 'fg':
+        return can('inventory_fg', 'read');
+      case 'bags':
+        return can('inventory_bags', 'read');
+      case 'movements':
+      case 'traceability':
+        return can('inventory_movements', 'read');
+      default:
+        return true;
+    }
+  };
+
+  const getFirstPermittedTab = () => {
+    if (canAccessTab('rm')) return 'rm';
+    if (canAccessTab('fg')) return 'fg';
+    if (canAccessTab('bags')) return 'bags';
+    if (canAccessTab('movements')) return 'movements';
+    return 'rm';
+  };
+
   const resolveInvTab = (tabParam) => {
-    if (!tabParam) return 'rm';
-    if (tabParam === 'traceability') {
+    let resolved = 'rm';
+    if (!tabParam) resolved = 'rm';
+    else if (tabParam === 'traceability') {
       setMovementsSubView('traceability');
-      return 'movements';
+      resolved = 'movements';
+    } else if (tabParam === 'movements') {
+      resolved = 'movements';
+    } else if (tabParam === 'loose') {
+      setBagSubView('loose');
+      resolved = 'bags';
+    } else {
+      resolved = tabParam;
     }
-    if (tabParam === 'movements') {
-      return 'movements';
+
+    if (!canAccessTab(resolved)) {
+      return getFirstPermittedTab();
     }
-    return tabParam;
+    return resolved;
   };
 
   const [activeTab, setActiveTab] = useState(() => resolveInvTab(searchParams.get('tab') || location.state?.tab));
   const [rmSubView, setRmSubView] = useState(location.state?.subView || 'ledger'); // 'ledger' | 'inward' | 'issue'
+  const [bagSubView, setBagSubView] = useState(() => {
+    const tab = searchParams.get('tab') || location.state?.tab;
+    const sub = searchParams.get('subView') || location.state?.subView;
+    if (tab === 'loose' || sub === 'loose') return 'loose';
+    return 'bags';
+  });
 
   const [liveRmList, setLiveRmList] = useState([]);
   const [liveFgList, setLiveFgList] = useState([]);
@@ -83,13 +130,24 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [liveRmInwards, setLiveRmInwards] = useState([]);
   const [liveRmIssues, setLiveRmIssues] = useState([]);
   const [liveBags, setLiveBags] = useState([]);
+  const [materialLooseList, setMaterialLooseList] = useState([]);
+  const [packingMaterial, setPackingMaterial] = useState(null);
+  const [isPackModalOpen, setIsPackModalOpen] = useState(false);
   const [liveQcChecks, setLiveQcChecks] = useState([]);
   const [scrapInfo, setScrapInfo] = useState({ totalScrapKg: 0, defaultRate: 70 });
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab') || location.state?.tab;
-    if (tabFromUrl) {
+    const subFromUrl = searchParams.get('subView') || location.state?.subView;
+    if (!canAccessTab(activeTab)) {
       setActiveTab(resolveInvTab(tabFromUrl));
+    } else if (tabFromUrl && tabFromUrl !== activeTab && canAccessTab(tabFromUrl)) {
+      setActiveTab(resolveInvTab(tabFromUrl));
+    }
+    if (tabFromUrl === 'loose' || subFromUrl === 'loose') {
+      setBagSubView('loose');
+    } else if (subFromUrl === 'bags' || subFromUrl === 'packaged') {
+      setBagSubView('bags');
     }
     if (location.state?.subView) {
       setRmSubView(location.state.subView);
@@ -97,7 +155,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     if (location.state?.search) {
       setRmSearch(location.state.search);
     }
-  }, [searchParams, location.state]);
+  }, [searchParams, location.state, can]);
 
   useEffect(() => {
     const unsubRm = subscribeRawMaterials(setLiveRmList);
@@ -109,6 +167,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     const unsubInw = subscribeRmInwards(setLiveRmInwards);
     const unsubIss = subscribeRmFactoryIssues(setLiveRmIssues);
     const unsubBags = subscribeInventoryBags(setLiveBags);
+    const unsubLoose = subscribeMaterialLooseStock(setMaterialLooseList);
     const unsubScrap = subscribeScrapStock(setScrapInfo);
     const unsubQc = subscribeQcChecks(setLiveQcChecks);
     const unsubTare = subscribeTareStandards(setTareStandards);
@@ -122,6 +181,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       unsubInw();
       unsubIss();
       unsubBags();
+      unsubLoose();
       unsubScrap();
       unsubQc();
       if (unsubTare) unsubTare();
@@ -142,7 +202,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const [movementTypeFilter, setMovementTypeFilter] = useState('All');
   const [traceSearch, setTraceSearch] = useState('');
   const [bagSearch, setBagSearch] = useState('');
-  const [bagStockTypeFilter, setBagStockTypeFilter] = useState('All');
+  const [bagQualityFilter, setBagQualityFilter] = useState('All');
   const [bagLocationFilter, setBagLocationFilter] = useState('All');
   const [qcSearch, setQcSearch] = useState('');
   const [qcStatusFilter, setQcStatusFilter] = useState('All');
@@ -227,6 +287,11 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         console.warn('Firestore update failed for bag location:', e.message);
       }
     }
+  };
+
+  const handleOpenPackModal = (material) => {
+    setPackingMaterial(material);
+    setIsPackModalOpen(true);
   };
 
   const handleOpenDrawer = (item) => {
@@ -739,12 +804,29 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
   const overallValuationInr = totalRmValuationInr + totalFgValuationInr;
   const overallValuationLakhs = (overallValuationInr / 100000).toFixed(2);
 
-  // Bags Dual Stock Calculations
+  // Bags & Loose Stock Calculations
   const fixedBags = liveBags.filter(b => b.stockType === 'FIXED');
-  const looseBags = liveBags.filter(b => b.stockType === 'LOOSE');
   const totalFixedKg = fixedBags.reduce((sum, b) => sum + (Number(b.actualWeightKg) || Number(b.standardWeightKg) || 0), 0);
-  const totalLooseKg = looseBags.reduce((sum, b) => sum + (Number(b.actualWeightKg) || 0), 0);
-  const totalBagStockKg = totalFixedKg + totalLooseKg;
+
+  // Material loose stock tracked strictly by weight in KG from material_loose_stock
+  const totalCombinedLooseKg = materialLooseList.reduce((sum, m) => sum + (Number(m.looseWeightKg) || 0), 0);
+  const totalBagStockKg = totalFixedKg + totalCombinedLooseKg;
+
+  // List of active loose materials
+  const combinedLooseMaterials = useMemo(() => {
+    return materialLooseList
+      .filter(m => Number(m.looseWeightKg || 0) > 0)
+      .map(m => ({
+        id: m.id,
+        materialKey: m.materialKey || `${m.quality}_${m.form}_${m.size}`,
+        quality: m.quality || 'VIP',
+        form: m.form || 'Hank',
+        size: m.size || 'Standard',
+        color: m.color || 'Natural',
+        location: m.location || 'KPI Godown',
+        looseWeightKg: Number(m.looseWeightKg || 0)
+      }));
+  }, [materialLooseList]);
 
   const filteredBags = liveBags.filter(bag => {
     const bagNumStr = `bag ${bag.bagNumber || ''}`.toLowerCase();
@@ -762,10 +844,10 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       (bag.location || '').toLowerCase().includes(query) ||
       (bag.status || '').toLowerCase().includes(query);
 
-    const matchesStockType = bagStockTypeFilter === 'All' || bag.stockType === bagStockTypeFilter;
+    const matchesQuality = bagQualityFilter === 'All' || (bag.quality || '').toLowerCase() === bagQualityFilter.toLowerCase();
     const matchesLocation = bagLocationFilter === 'All' || bag.location === bagLocationFilter;
 
-    return matchesQuery && matchesStockType && matchesLocation;
+    return matchesQuery && matchesQuality && matchesLocation;
   });
 
   // Group bags for Physical Diary View matching handwritten sheet
@@ -866,13 +948,24 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       { label: 'Finished Goods (FG)' }
     ];
   } else if (activeTab === 'bags') {
-    invTitle = 'Bags & Dual Stock';
-    invTooltip = 'Individual bag tracking with sequential integer serials (1, 2, 3...) & scale weights.';
-    invBadge = `${filteredBags.length} Bags`;
-    invCrumbs = [
-      { label: 'Inventory & Stock', route: '/inventory' },
-      { label: 'Bags & Dual Stock' }
-    ];
+    if (bagSubView === 'loose') {
+      invTitle = 'Loose Material Stock';
+      invTooltip = 'Real-time loose material stock balances tracked strictly by weight in KG. Pack into discrete standard bags.';
+      invBadge = `${totalCombinedLooseKg.toFixed(1)} KG Loose`;
+      invCrumbs = [
+        { label: 'Inventory & Stock', route: '/inventory' },
+        { label: 'Bags & Dual Stock', route: '/inventory?tab=bags' },
+        { label: 'Loose Material Stock' }
+      ];
+    } else {
+      invTitle = 'Bags & Dual Stock';
+      invTooltip = 'Discrete sealed bag tracking with sequential integer serials (1, 2, 3...) & scale weights.';
+      invBadge = `${filteredBags.length} Bags`;
+      invCrumbs = [
+        { label: 'Inventory & Stock', route: '/inventory' },
+        { label: 'Bags & Dual Stock' }
+      ];
+    }
   } else if (activeTab === 'movements' || activeTab === 'traceability') {
     const subLabel = movementsSubView === 'traceability' ? 'Material Traceability Explorer' : 'Stock Movements & Audit';
     invTitle = subLabel;
@@ -920,16 +1013,16 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     }
   ], [uniqueFgCategories]);
 
+  const uniqueBagQualities = Array.from(new Set(liveBags.map(b => b.quality).filter(Boolean)));
   const bagFilterCategories = useMemo(() => [
     {
-      id: 'stockType',
-      label: 'Stock Type',
+      id: 'quality',
+      label: 'Material Quality',
       icon: Package,
-      allLabel: 'All Types',
+      allLabel: 'All Qualities',
       options: [
-        { value: 'All', label: 'All Types' },
-        { value: 'FIXED', label: 'Fixed Stock (50kg std)' },
-        { value: 'LOOSE', label: 'Loose Stock (Cut / Odd)' }
+        { value: 'All', label: 'All Qualities' },
+        ...uniqueBagQualities.map(q => ({ value: q, label: q }))
       ]
     },
     {
@@ -942,7 +1035,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         ...uniqueBagLocations.map(l => ({ value: l, label: l }))
       ]
     }
-  ], [uniqueBagLocations]);
+  ], [uniqueBagQualities, uniqueBagLocations]);
 
   const movementFilterCategories = useMemo(() => [
     {
@@ -1011,13 +1104,13 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     invSearchProps = null;
     invFilterProps = {
       categories: bagFilterCategories,
-      activeFilters: { stockType: bagStockTypeFilter, location: bagLocationFilter },
+      activeFilters: { quality: bagQualityFilter, location: bagLocationFilter },
       onApply: (f) => {
-        if (f.stockType !== undefined) setBagStockTypeFilter(f.stockType);
+        if (f.quality !== undefined) setBagQualityFilter(f.quality);
         if (f.location !== undefined) setBagLocationFilter(f.location);
       },
       onReset: () => {
-        setBagStockTypeFilter('All');
+        setBagQualityFilter('All');
         setBagLocationFilter('All');
       }
     };
@@ -1099,7 +1192,27 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </>
       )}
 
-      {activeTab === 'bags' && (
+      {activeTab === 'bags' && bagSubView === 'loose' && (
+        <>
+          {combinedLooseMaterials.length > 0 && (
+            <HeaderButton
+              icon={Package}
+              label="Pack Loose Stock"
+              onClick={() => handleOpenPackModal(combinedLooseMaterials[0])}
+              style={{ color: '#16a34a', borderColor: '#bbf7d0', background: '#f0fdf4' }}
+              title="Pack loose stock weight into standard bags"
+            />
+          )}
+          <HeaderButton
+            icon={Download}
+            label="Export CSV"
+            onClick={() => exportToCsv('Loose_Material_Stock.csv', combinedLooseMaterials)}
+            title="Export CSV"
+          />
+        </>
+      )}
+
+      {activeTab === 'bags' && bagSubView === 'bags' && (
         <>
           <HeaderButton
             icon={Download}
@@ -1180,8 +1293,19 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         actions={renderInvActions()}
       />
 
+      {/* ── Access Denied Banner if Tab Not Permitted ── */}
+      {!canAccessTab(activeTab) && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '20px 0' }}>
+          <ShieldAlert size={48} style={{ color: '#ef4444', margin: '0 auto 16px', display: 'block' }} />
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', margin: '0 0 6px' }}>Access Restricted</h2>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', margin: 0 }}>
+            You do not have permission to view this section. Please contact your system administrator to request access.
+          </p>
+        </div>
+      )}
+
       {/* ── Contextual Metric Area (Toggleable, Hidden by default for minimal UI) ── */}
-      {showMetrics && (
+      {showMetrics && canAccessTab(activeTab) && (
         <div className="inv-top-kpis">
         {activeTab === 'qc' ? (
           <>
@@ -1223,44 +1347,83 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
             </div>
           </>
         ) : activeTab === 'bags' ? (
-          <>
+          bagSubView === 'loose' ? (
+            <>
+              <div className="inv-kpi-card">
+                <div className="inv-kpi-card-header">
+                  <span className="inv-kpi-title">Total Loose Stock</span>
+                  <div className="inv-kpi-icon inv-icon-orange"><Package size={16} /></div>
+                </div>
+                <div className="inv-kpi-val-row">
+                  <span className="inv-kpi-num inv-text-orange">{totalCombinedLooseKg.toFixed(1)}</span>
+                  <span className="inv-kpi-sublabel">KG Net</span>
+                </div>
+                <div className="inv-kpi-sub inv-text-orange">Odd cuts &amp; remainder material</div>
+              </div>
 
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Fixed Stock (Std 50kg)</span>
-                <div className="inv-kpi-icon inv-icon-green"><Scale size={16} /></div>
+              <div className="inv-kpi-card">
+                <div className="inv-kpi-card-header">
+                  <span className="inv-kpi-title">Std 50kg Bags Packable</span>
+                  <div className="inv-kpi-icon inv-icon-green"><Scale size={16} /></div>
+                </div>
+                <div className="inv-kpi-val-row">
+                  <span className="inv-kpi-num inv-text-green">{Math.floor(totalCombinedLooseKg / 50)} Bags</span>
+                  <span className="inv-kpi-sublabel">({Math.floor(totalCombinedLooseKg / 50) * 50} KG)</span>
+                </div>
+                <div className="inv-kpi-sub inv-text-green">Ready to pack into standard bags</div>
               </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num inv-text-green">{fixedBags.length} Bags</span>
-                <span className="inv-kpi-sublabel">({totalFixedKg.toFixed(1)} KG)</span>
-              </div>
-              <div className="inv-kpi-sub inv-text-green">Standard 50.0 KG bag weight</div>
-            </div>
 
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Loose Stock (Cut Bags)</span>
-                <div className="inv-kpi-icon inv-icon-orange"><Package size={16} /></div>
+              <div className="inv-kpi-card">
+                <div className="inv-kpi-card-header">
+                  <span className="inv-kpi-title">Loose Remainder</span>
+                  <div className="inv-kpi-icon inv-icon-purple"><Layers size={16} /></div>
+                </div>
+                <div className="inv-kpi-val-row">
+                  <span className="inv-kpi-num">{(totalCombinedLooseKg % 50).toFixed(1)}</span>
+                  <span className="inv-kpi-sublabel">KG Remainder</span>
+                </div>
+                <div className="inv-kpi-sub">Leftover under 50 KG</div>
               </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num inv-text-orange">{looseBags.length} Bags</span>
-                <span className="inv-kpi-sublabel">({totalLooseKg.toFixed(1)} KG)</span>
+            </>
+          ) : (
+            <>
+              <div className="inv-kpi-card">
+                <div className="inv-kpi-card-header">
+                  <span className="inv-kpi-title">Packaged Bags (Std 50kg)</span>
+                  <div className="inv-kpi-icon inv-icon-green"><Scale size={16} /></div>
+                </div>
+                <div className="inv-kpi-val-row">
+                  <span className="inv-kpi-num inv-text-green">{fixedBags.length} Bags</span>
+                  <span className="inv-kpi-sublabel">({totalFixedKg.toFixed(1)} KG)</span>
+                </div>
+                <div className="inv-kpi-sub inv-text-green">Standard discrete packaged bags</div>
               </div>
-              <div className="inv-kpi-sub inv-text-orange">Odd weights / remainder cuts</div>
-            </div>
 
-            <div className="inv-kpi-card">
-              <div className="inv-kpi-card-header">
-                <span className="inv-kpi-title">Total Bag Stock</span>
-                <div className="inv-kpi-icon inv-icon-purple"><Layers size={16} /></div>
+              <div className="inv-kpi-card">
+                <div className="inv-kpi-card-header">
+                  <span className="inv-kpi-title">Loose Material Stock</span>
+                  <div className="inv-kpi-icon inv-icon-orange"><Package size={16} /></div>
+                </div>
+                <div className="inv-kpi-val-row">
+                  <span className="inv-kpi-num inv-text-orange">{totalCombinedLooseKg.toFixed(1)}</span>
+                  <span className="inv-kpi-sublabel">KG Net</span>
+                </div>
+                <div className="inv-kpi-sub inv-text-orange">Tracked strictly by weight • No dummy bags</div>
               </div>
-              <div className="inv-kpi-val-row">
-                <span className="inv-kpi-num">{totalBagStockKg.toFixed(1)}</span>
-                <span className="inv-kpi-sublabel">KG Net</span>
+
+              <div className="inv-kpi-card">
+                <div className="inv-kpi-card-header">
+                  <span className="inv-kpi-title">Total Finished Stock</span>
+                  <div className="inv-kpi-icon inv-icon-purple"><Layers size={16} /></div>
+                </div>
+                <div className="inv-kpi-val-row">
+                  <span className="inv-kpi-num">{totalBagStockKg.toFixed(1)}</span>
+                  <span className="inv-kpi-sublabel">KG Net</span>
+                </div>
+                <div className="inv-kpi-sub">{fixedBags.length} Bags + {totalCombinedLooseKg.toFixed(1)} KG Loose</div>
               </div>
-              <div className="inv-kpi-sub">Stored in KPI &amp; Marvel Godowns</div>
-            </div>
-          </>
+            </>
+          )
         ) : activeTab === 'fg' ? (
           <>
 
@@ -1422,7 +1585,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
 
 
       {/* ── TAB 1: Raw Materials (RM) ── */}
-      {activeTab === 'rm' && (
+      {activeTab === 'rm' && canAccessTab('rm') && (
         <div className="inv-section-card">
 
           {/* Sub-view Selector Tabs for RM Module */}
@@ -1988,7 +2151,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       )}
 
       {/* ── TAB 2: Finished Goods (FG) ── */}
-      {activeTab === 'fg' && (
+      {activeTab === 'fg' && canAccessTab('fg') && (
         <div className="inv-section-card">
 
           {/* Change 9: Active Filters Bar */}
@@ -2097,7 +2260,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       )}
 
       {/* ── TAB 4: Stock Movements & Traceability (Merged) ── */}
-      {activeTab === 'movements' && (
+      {activeTab === 'movements' && canAccessTab('movements') && (
         <div className="erp-subnav-pills">
           <button
             className={`erp-subnav-pill ${movementsSubView === 'history' ? 'active' : ''}`}
@@ -2116,7 +2279,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       )}
 
-      {(activeTab === 'movements' && movementsSubView === 'history') && (
+      {(activeTab === 'movements' && movementsSubView === 'history') && canAccessTab('movements') && (
         <div className="inv-section-card">
 
           {/* Active Filter Chips */}
@@ -2182,7 +2345,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       )}
 
       {/* ── Batch Traceability Explorer ── */}
-      {(activeTab === 'traceability' || (activeTab === 'movements' && movementsSubView === 'traceability')) && (
+      {(activeTab === 'traceability' || (activeTab === 'movements' && movementsSubView === 'traceability')) && canAccessTab('movements') && (
         <div className="inv-trace-container">
           <div className="inv-section-card">
             {/* Fast Trace Presets */}
@@ -2338,7 +2501,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
       )}
 
       {/* ── TAB: Quality Control (QC) Register & 24h SLA (Change 5) ── */}
-      {activeTab === 'qc' && (
+      {activeTab === 'qc' && canAccessTab('qc') && (
         <div className="inv-section-card">
 
           {/* Change 9: Active Filter Chips */}
@@ -2499,12 +2662,38 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         </div>
       )}
 
-      {/* ── TAB: Bags & Dual Stock (Fixed vs Loose) ── */}
-      {activeTab === 'bags' && (
-        <div className="inv-section-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+      {/* ── TAB: Bags & Dual Stock (Subnav Pills & Segregated Views) ── */}
+      {activeTab === 'bags' && canAccessTab('bags') && (
+        <>
+          {/* Subnav Pills for Bags & Loose Stock */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            <div className="erp-subnav-pills" style={{ margin: 0 }}>
+              <button
+                type="button"
+                className={`erp-subnav-pill ${bagSubView === 'bags' ? 'active' : ''}`}
+                onClick={() => {
+                  setBagSubView('bags');
+                  setSearchParams({ tab: 'bags', subView: 'bags' });
+                }}
+              >
+                <Scale size={14} />
+                <span>Packaged Bag Register</span>
+              </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className={`erp-subnav-pill ${bagSubView === 'loose' ? 'active' : ''}`}
+                onClick={() => {
+                  setBagSubView('loose');
+                  setSearchParams({ tab: 'bags', subView: 'loose' });
+                }}
+              >
+                <Package size={14} />
+                <span>Loose Material Stock</span>
+              </button>
+            </div>
+
+            {bagSubView === 'bags' && (
               <div className="inv-view-toggle-wrap">
                 <button
                   type="button"
@@ -2521,11 +2710,125 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                   <Scale size={13} /> Flat View
                 </button>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Change 9: Active Filters Bar */}
-          {(bagSearch || bagStockTypeFilter !== 'All' || bagLocationFilter !== 'All') && (
+          {/* ── SUB-VIEW 1: LOOSE MATERIAL STOCK BALANCES & PACKING HUB ── */}
+          {bagSubView === 'loose' && (
+            <div className="inv-section-card">
+              {combinedLooseMaterials.length > 0 ? (
+                <div className="inv-table-container">
+                  <table className="inv-table">
+                    <thead>
+                      <tr>
+                        <th>MATERIAL &amp; SPECIFICATION</th>
+                        <th>COLOR</th>
+                        <th>FORM</th>
+                        <th>SIZE</th>
+                        <th>GODOWN / BAY</th>
+                        <th style={{ textAlign: 'right' }}>AVAILABLE WEIGHT</th>
+                        <th style={{ textAlign: 'right' }}>PACKABLE (50KG BAGS)</th>
+                        <th style={{ textAlign: 'center', width: '150px' }}>ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {combinedLooseMaterials.map((mat) => {
+                        const maxBags = Math.floor(mat.looseWeightKg / 50);
+                        const remKg = (mat.looseWeightKg % 50).toFixed(1);
+                        return (
+                          <tr key={mat.materialKey || mat.id}>
+                            <td>
+                              <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                                {mat.quality}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                Ref: {mat.materialKey || 'LOOSE-STOCK'}
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.8rem', color: '#334155' }}>
+                                {mat.color || 'Natural'}
+                              </span>
+                            </td>
+                            <td style={{ color: '#475569' }}>
+                              {mat.form || 'Hank'}
+                            </td>
+                            <td style={{ fontWeight: 600, color: '#334155' }}>
+                              {mat.size || 'Standard'}
+                            </td>
+                            <td style={{ color: '#334155', fontSize: '0.8rem' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <MapPin size={13} style={{ color: '#94a3b8' }} /> {mat.location || 'LOC-KPI'}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#ea580c' }}>
+                                {mat.looseWeightKg.toFixed(1)} <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>KG</span>
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>
+                                {maxBags} Bags
+                              </span>
+                              <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '4px' }}>
+                                ({maxBags * 50} kg)
+                              </span>
+                              {Number(remKg) > 0 && (
+                                <div style={{ fontSize: '0.72rem', color: '#9a3412', fontWeight: 500 }}>
+                                  + {remKg} kg remainder
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="inv-btn-issue"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  background: '#16a34a',
+                                  color: '#ffffff',
+                                  padding: '5px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  border: 'none',
+                                  transition: 'background 0.15s'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = '#15803d'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = '#16a34a'; }}
+                                onClick={() => handleOpenPackModal(mat)}
+                              >
+                                <Package size={13} /> Pack into Bags
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '36px 20px', textAlign: 'center', border: '1px dashed #cbd5e1' }}>
+                  <CheckCircle2 size={32} style={{ color: '#16a34a', margin: '0 auto 8px', display: 'block' }} />
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#1e293b' }}>
+                    No loose material stock currently on floor
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px', maxWidth: '460px', margin: '4px auto 0' }}>
+                    All finished inventory is fully packaged into standard bags. Any loose cuts received from job work will appear here strictly as weight.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── SUB-VIEW 2: DISCRETE PACKAGED BAGS REGISTER ── */}
+          {bagSubView === 'bags' && (
+            <div className="inv-section-card">
+              {/* Active Filters Bar */}
+          {(bagSearch || bagQualityFilter !== 'All' || bagLocationFilter !== 'All') && (
             <div className="inv-active-filters-bar">
               <span style={{ color: '#64748b', fontWeight: 600 }}>Active Filters:</span>
               {bagSearch && (
@@ -2536,10 +2839,10 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                   </button>
                 </span>
               )}
-              {bagStockTypeFilter !== 'All' && (
+              {bagQualityFilter !== 'All' && (
                 <span className="inv-filter-chip">
-                  Type: {bagStockTypeFilter}
-                  <button type="button" className="inv-filter-chip-remove" onClick={() => setBagStockTypeFilter('All')}>
+                  Quality: {bagQualityFilter}
+                  <button type="button" className="inv-filter-chip-remove" onClick={() => setBagQualityFilter('All')}>
                     <X size={12} />
                   </button>
                 </span>
@@ -2557,7 +2860,7 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                 className="inv-filter-clear-all-btn"
                 onClick={() => {
                   setBagSearch('');
-                  setBagStockTypeFilter('All');
+                  setBagQualityFilter('All');
                   setBagLocationFilter('All');
                 }}
               >
@@ -2729,15 +3032,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                                   {bag.coilCount || lot.coilCount}
                                 </td>
                                 <td>
-                                  {bag.stockType === 'FIXED' ? (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: 'rgba(22, 163, 74, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
-                                      FIXED (50kg)
-                                    </span>
-                                  ) : (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#d97706', background: 'rgba(217, 119, 6, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
-                                      LOOSE (Odd)
-                                    </span>
-                                  )}
+                                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: 'rgba(22, 163, 74, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                                    STANDARD (50kg)
+                                  </span>
                                 </td>
                                 <td>
                                   <span style={{ fontSize: '0.76rem', color: '#334155' }}>
@@ -2848,15 +3145,9 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
                             </span>
                           </td>
                           <td>
-                            {isFixed ? (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: 'rgba(22, 163, 74, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
-                                FIXED (50kg)
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#d97706', background: 'rgba(217, 119, 6, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
-                                LOOSE (Odd)
-                              </span>
-                            )}
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#16a34a', background: 'rgba(22, 163, 74, 0.1)', padding: '2px 8px', borderRadius: '12px' }}>
+                              STANDARD (50kg)
+                            </span>
                           </td>
                           <td style={{ fontWeight: 600, color: '#2563eb', fontSize: '0.78rem' }}>
                             {bag.inwardSlipNo || 'SLIP-3001'}
@@ -2941,6 +3232,8 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
           )}
         </div>
       )}
+      </>
+    )}
 
       {/* ── Local Modals & Drawers ── */}
       {showJWModal && <NewJobWorkModal onClose={() => setShowJWModal(false)} />}
@@ -2962,6 +3255,17 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
         currentMaxBagNumber={Math.max(0, ...liveBags.map(b => Number(b.bagNumber) || 0))}
         onBagsAdded={handleBagsAdded}
       />
+      {isPackModalOpen && packingMaterial && (
+        <PackLooseStockModal
+          isOpen={isPackModalOpen}
+          material={packingMaterial}
+          onClose={() => {
+            setIsPackModalOpen(false);
+            setPackingMaterial(null);
+          }}
+          onPackedSuccess={() => {}}
+        />
+      )}
       <MaterialDetailDrawer
         material={selectedMaterial}
         isOpen={isDrawerOpen}
@@ -2998,3 +3302,6 @@ export default function InventoryStockView({ onOpenJobWork, onOpenSalesOrder }) 
     </div>
   );
 }
+
+export { InventoryStockView };
+export default InventoryStockView;

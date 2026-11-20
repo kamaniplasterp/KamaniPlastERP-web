@@ -20,7 +20,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db, auth, googleProvider, isFirebaseConfigured } from '../firebase/firebase';
-import { ROLE_DEFAULT_MODULES, ERP_MODULES, getDefaultRouteForRole } from '../api/rbac.api';
+import { ROLE_DEFAULT_MODULES, ERP_MODULES, getDefaultRouteForRole, ROLE_DEFAULT_PERMISSIONS, checkPermission } from '../api/rbac.api';
 import { logAuditEvent } from '../api/audit.api';
 
 const AuthContext = createContext();
@@ -84,6 +84,11 @@ export const AuthProvider = ({ children }) => {
                   ? data.assignedModules
                   : (ROLE_DEFAULT_MODULES[role] || ROLE_DEFAULT_MODULES.employee));
 
+            const defaultRolePerms = ROLE_DEFAULT_PERMISSIONS[role] || ROLE_DEFAULT_PERMISSIONS.employee;
+            const permissions = role === 'admin'
+              ? ROLE_DEFAULT_PERMISSIONS.admin
+              : (data.permissions && typeof data.permissions === 'object' ? data.permissions : defaultRolePerms);
+
             const profile = {
               uid: currentUser.uid,
               email: data.email || currentUser.email || '',
@@ -91,6 +96,7 @@ export const AuthProvider = ({ children }) => {
               displayName: data.displayName || currentUser.displayName || data.username || 'Staff User',
               role: role,
               assignedModules: assignedModules,
+              permissions: permissions,
               status: data.status || 'ACTIVE'
             };
 
@@ -365,15 +371,22 @@ export const AuthProvider = ({ children }) => {
 
   const defaultRoute = getDefaultRouteForRole(userRole, assignedModules);
 
+  // Granular Sub-Module Permissions check
+  const can = (subModuleId, action = 'read') => {
+    return checkPermission(userProfile, subModuleId, action);
+  };
+
   const value = {
     user,
     userProfile,
     userRole,
     isAdmin,
+    permissions: userProfile?.permissions || (isAdmin ? ROLE_DEFAULT_PERMISSIONS.admin : (ROLE_DEFAULT_PERMISSIONS[userRole] || ROLE_DEFAULT_PERMISSIONS.employee)),
     assignedModules,
     allowedModules,
     defaultRoute,
     hasAccess,
+    can,
     loading,
     error,
     isFirebaseConfigured,

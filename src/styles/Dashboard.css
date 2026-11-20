@@ -163,24 +163,21 @@
   gap: 12px;
   padding: 16px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  min-height: 64px;
+  min-height: 70px;
   flex-shrink: 0;
   position: relative;
 }
 
 .sidebar-logo-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #4f46e5 0%, #2563eb 100%);
-  color: #fff;
-  font-size: 1.15rem;
-  font-weight: 900;
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 .sidebar-brand-text {
@@ -502,6 +499,14 @@
   gap: 4px;
   margin-bottom: 16px;
   border: 1px solid #e2e8f0;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.erp-subnav-pills::-webkit-scrollbar {
+  display: none;
 }
 
 .erp-subnav-pill {
@@ -512,12 +517,18 @@
   font-size: 0.81rem;
   font-weight: 500;
   color: #64748b;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   border-radius: 7px;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+  outline: none;
+}
+
+.erp-subnav-pill:focus,
+.erp-subnav-pill:focus-visible {
+  outline: none;
 }
 
 .erp-subnav-pill:hover {
@@ -528,6 +539,7 @@
   background: #ffffff;
   color: #0f172a;
   font-weight: 600;
+  border-color: rgba(0, 0, 0, 0.06);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
@@ -2025,9 +2037,17 @@
   }
 }
 
+.dashboard-bottom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+  align-items: stretch;
+}
+
 @media (max-width: 768px) {
   .erp-content {
-    padding: 14px 16px 24px;
+    padding: 12px 14px 24px;
   }
 
   .page-header {
@@ -2059,22 +2079,53 @@
     display: none;
   }
   .lifecycle-stage {
-    min-width: 135px;
+    min-width: 140px;
     flex-shrink: 0;
   }
 
   .erp-statusbar {
     display: none;
   }
+
+  .dashboard-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+    overflow-x: visible !important;
+  }
+
+  .kpi-card {
+    min-width: 0 !important;
+    padding: 10px 12px !important;
+  }
+
+  .kpi-num {
+    font-size: 1.15rem !important;
+  }
+
+  .kpi-label {
+    font-size: 0.7rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
 }
 
 @media (max-width: 540px) {
   .erp-content {
-    padding: 10px 12px 20px;
+    padding: 10px 10px 20px;
   }
 
   .topnav-search {
-    max-width: 130px;
+    max-width: none;
+    flex: 1;
+    min-width: 0;
   }
 
   .search-shortcut {

@@ -16,7 +16,6 @@ export default function QuickBagLookupModal({
   if (!isOpen) return null;
 
   const [query, setQuery] = useState('');
-  const [stockTypeFilter, setStockTypeFilter] = useState('ALL'); // 'ALL' | 'FIXED' | 'LOOSE'
   const [selectedBagId, setSelectedBagId] = useState(null);
   const searchInputRef = useRef(null);
 
@@ -42,10 +41,6 @@ export default function QuickBagLookupModal({
   const filteredBags = useMemo(() => {
     const cleanQ = query.trim().toLowerCase();
     return liveBags.filter(b => {
-      // Stock type filter
-      if (stockTypeFilter === 'FIXED' && b.stockType !== 'FIXED') return false;
-      if (stockTypeFilter === 'LOOSE' && b.stockType === 'FIXED') return false;
-
       if (!cleanQ) return true;
 
       // Extract string representations
@@ -76,7 +71,7 @@ export default function QuickBagLookupModal({
         locationStr.includes(cleanQ)
       );
     });
-  }, [liveBags, query, stockTypeFilter]);
+  }, [liveBags, query]);
 
   // Determine current active bag for hero profile
   const activeBag = useMemo(() => {
@@ -191,58 +186,10 @@ export default function QuickBagLookupModal({
             )}
           </div>
 
-          {/* Quick Filter Bar */}
+          {/* Bag Count and Status */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', marginRight: '4px' }}>FILTER:</span>
-              <button
-                type="button"
-                onClick={() => setStockTypeFilter('ALL')}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  fontSize: '0.76rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  border: stockTypeFilter === 'ALL' ? '1px solid #2563eb' : '1px solid #cbd5e1',
-                  background: stockTypeFilter === 'ALL' ? '#eff6ff' : '#ffffff',
-                  color: stockTypeFilter === 'ALL' ? '#1d4ed8' : '#475569'
-                }}
-              >
-                All ({liveBags.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStockTypeFilter('FIXED')}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  fontSize: '0.76rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  border: stockTypeFilter === 'FIXED' ? '1px solid #16a34a' : '1px solid #cbd5e1',
-                  background: stockTypeFilter === 'FIXED' ? '#f0fdf4' : '#ffffff',
-                  color: stockTypeFilter === 'FIXED' ? '#15803d' : '#475569'
-                }}
-              >
-                Fixed 50kg Bags ({liveBags.filter(b => b.stockType === 'FIXED').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStockTypeFilter('LOOSE')}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  fontSize: '0.76rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  border: stockTypeFilter === 'LOOSE' ? '1px solid #ea580c' : '1px solid #cbd5e1',
-                  background: stockTypeFilter === 'LOOSE' ? '#fff7ed' : '#ffffff',
-                  color: stockTypeFilter === 'LOOSE' ? '#c2410c' : '#475569'
-                }}
-              >
-                Loose Stock ({liveBags.filter(b => b.stockType !== 'FIXED').length})
-              </button>
+            <div style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>
+              Discrete Packaged Bag Register (Standard 50kg Units)
             </div>
 
             <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>

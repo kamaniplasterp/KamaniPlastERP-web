@@ -85,7 +85,7 @@ export default function BagDetailDrawer({ bag, isOpen, onClose, onUpdateBagWeigh
                   border: isFixed ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)'
                 }}
               >
-                {isFixed ? 'FIXED (50 KG STD)' : 'LOOSE STOCK'}
+                {bag.packedFromLoose ? 'PACKED FROM LOOSE (50 KG)' : 'STANDARD BAG (50 KG)'}
               </span>
             </h2>
 

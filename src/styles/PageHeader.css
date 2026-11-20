@@ -340,14 +340,6 @@
   }
 }
 
-@media (max-width: 600px) {
-  .header-search-popover {
-    left: auto;
-    right: 0;
-    width: 260px;
-  }
-}
-
 @media (max-width: 900px) {
   .header-title-actions-row {
     flex-wrap: wrap;
@@ -357,5 +349,25 @@
     width: 100%;
     justify-content: flex-start;
     flex-wrap: wrap;
+    gap: 8px;
+  }
+  /* On compact screens, ensure primary create/action button retains full visibility and label */
+  .header-btn.header-btn-primary .header-btn-label {
+    display: inline-block !important;
+    font-size: 0.78rem;
+  }
+  .header-btn.header-btn-primary {
+    padding: 7px 12px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .header-page-title {
+    font-size: 1.15rem;
+  }
+  .header-search-popover {
+    left: auto;
+    right: 0;
+    width: min(280px, calc(100vw - 32px));
   }
 }
